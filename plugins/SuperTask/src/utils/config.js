@@ -1,50 +1,22 @@
-/**
- * Config management with persistent storage
- *
- * Load priority:
- *   1. RNFS JSON file -- /storage/emulated/0/MyStyle/SuperTask/supertask-config.json
- *   2. Bundled config.local.js -- build-time injection (dev only)
- *   3. Defaults
- *
- * First launch: if no config file exists, a template is generated automatically
- * with placeholder values. The user can then connect via USB and edit the file.
- *
- * Obfuscation: XOR + base64. Obfuscated values start with "xor1:" prefix.
- * Plain text sensitive values are detected on load and obfuscated back to disk
- * automatically, so USB-edited configs are secured on next launch.
- *
- * The config file lives in shared storage (MyStyle/SuperTask/) and persists
- * across plugin reinstalls.
- */
-
+/** Settings and credentials are private. Shared legacy settings are read only for migration. */
 import RNFS from 'react-native-fs';
+import {PluginManager} from 'sn-plugin-lib';
+import {privateStorage} from '../offline/privateStorage';
 import {log, setDebugServerUrl} from './debug';
 import {setFontScale, normalizeFontScale} from './fontScale';
 
-// Push derived values into consumers that can't import config (cycle-free
-// direction: config -> debug/fontScale). Keeps the debug server URL and the
-// accessibility text scale runtime-editable.
 function withDerived(merged) {
-  setDebugServerUrl(merged.debugServerUrl);
-  // F-035: snap legacy/out-of-step values (the old 1.15 "Large") onto a
-  // supported step BEFORE anything reads them, so the settings control and the
-  // scale actually applied can never disagree. Persists on the next save.
   merged.fontScale = normalizeFontScale(merged.fontScale);
   setFontScale(merged.fontScale);
+  setDebugServerUrl(merged.debugServerUrl);
   return merged;
-}
-
-// Bundled config (build-time, gitignored)
-let bundledConfig = {};
-try {
-  const localConfig = require('../../config.local');
-  bundledConfig = localConfig.default || localConfig;
-} catch {
-  // No config.local.js -- normal in production
 }
 
 const DEFAULT_CONFIG = {
   apiToken: '',
+  aiApiKey: '',
+  aiModel: 'gpt-4.1-mini',
+  privacyWarning: '',
   debugServerUrl: '',
   defaultProjectId: null,
   defaultPriority: 1,
@@ -80,326 +52,102 @@ const DEFAULT_CONFIG = {
   refreshOnOpen: true,
 };
 
-// Fields that get obfuscated on disk
-const SENSITIVE_KEYS = ['apiToken', 'debugServerUrl'];
-
-const CONFIG_DIR = '/storage/emulated/0/MyStyle/SuperTask';
-const CONFIG_FILE = CONFIG_DIR + '/supertask-config.json';
-
-// Obfuscation key -- embedded in Hermes bytecode, not trivially readable
-const OBF_KEY = 'sntask_v1_8f3a2c9d7e1b';
-const OBF_PREFIX = 'xor1:';
-
-const PLACEHOLDER_TOKEN = 'YOUR_TOKEN_HERE';
-
-// In-memory cache (always holds decoded values)
+const LEGACY_FILE = '/storage/emulated/0/MyStyle/SuperTask/supertask-config.json';
+const LEGACY_KEY = 'sntask_v1_8f3a2c9d7e1b';
 let _runtimeConfig = null;
-let _configSource = 'defaults'; // 'file' | 'bundled' | 'defaults'
-let _templateGenerated = false;
+let _configSource = 'defaults';
+let _loadPromise = null;
+let _saveChain = Promise.resolve();
 
-/**
- * Check if a string is an obfuscated value
- */
-function isObfuscated(value) {
-  return typeof value === 'string' && value.startsWith(OBF_PREFIX);
+function decodeLegacy(value) {
+  if (typeof value !== 'string' || !value.startsWith('xor1:')) return value;
+  const bytes = global.atob(value.slice(5));
+  return Array.from(bytes).map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ LEGACY_KEY.charCodeAt(i % LEGACY_KEY.length))).join('');
 }
 
-/**
- * XOR a string against the key, return base64-encoded result.
- */
-function xorEncode(str) {
-  const chars = [];
-  for (let i = 0; i < str.length; i++) {
-    chars.push(str.charCodeAt(i) ^ OBF_KEY.charCodeAt(i % OBF_KEY.length));
-  }
-  return btoa(String.fromCharCode(...chars));
+async function readLegacy() {
+  if (await PluginManager.hasPermission('plugin.permission.FILE:READ') !== 1) return null;
+  if (!(await RNFS.exists(LEGACY_FILE))) return null;
+  const value = JSON.parse(await RNFS.readFile(LEGACY_FILE, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy settings are damaged. Import your token in Settings.');
+  value.apiToken = decodeLegacy(value.apiToken) || '';
+  value.debugServerUrl = decodeLegacy(value.debugServerUrl) || '';
+  if (value.apiToken === 'YOUR_TOKEN_HERE') value.apiToken = '';
+  return value;
 }
-
-/**
- * Decode a base64+XOR obfuscated string
- */
-function xorDecode(encoded) {
-  const bytes = atob(encoded);
-  const chars = [];
-  for (let i = 0; i < bytes.length; i++) {
-    chars.push(bytes.charCodeAt(i) ^ OBF_KEY.charCodeAt(i % OBF_KEY.length));
-  }
-  return String.fromCharCode(...chars);
-}
-
-/**
- * Obfuscate a string value. If encoding throws (btoa fails on any XOR'd char
- * code > 255, e.g. a smart-quote pasted into the config via USB), keep the
- * plain value rather than losing it -- a throw here used to silently discard
- * the ENTIRE saved config including the API token (B-026).
- */
-function obfuscate(value) {
-  if (!value) return value;
-  try {
-    return OBF_PREFIX + xorEncode(value);
-  } catch (e) {
-    log('Config', `Obfuscation failed (non-ASCII value?), keeping plain text: ${e.message}`);
-    return value;
-  }
-}
-
-/**
- * Deobfuscate a string value. Returns original if not obfuscated.
- */
-function deobfuscate(value) {
-  if (!value || !isObfuscated(value)) return value;
-  try {
-    return xorDecode(value.slice(OBF_PREFIX.length));
-  } catch {
-    return value;
-  }
-}
-
-/**
- * Deobfuscate sensitive fields in a config object (for loading)
- */
-function deobfuscateConfig(config) {
-  const result = {...config};
-  for (const key of SENSITIVE_KEYS) {
-    if (result[key]) {
-      result[key] = deobfuscate(result[key]);
-    }
-  }
-  return result;
-}
-
-/**
- * Obfuscate sensitive fields in a config object (for saving)
- */
-function obfuscateConfig(config) {
-  const result = {...config};
-  for (const key of SENSITIVE_KEYS) {
-    if (result[key] && !isObfuscated(result[key])) {
-      result[key] = obfuscate(result[key]);
-    }
-  }
-  return result;
-}
-
-const CONFIG_TMP = CONFIG_FILE + '.tmp';
-
-/**
- * Write the config file atomically: full temp file first, then swap in.
- * A process kill mid-write can no longer truncate the config (B-025).
- */
-async function writeConfigFile(obj) {
-  const dirExists = await RNFS.exists(CONFIG_DIR);
-  if (!dirExists) {
-    await RNFS.mkdir(CONFIG_DIR);
-    log('Config', 'Created config directory');
-  }
-  const json = JSON.stringify(obj, null, 2);
-  await RNFS.writeFile(CONFIG_TMP, json, 'utf8');
-  // rename(2) replaces the destination atomically on Android -- no unlink,
-  // so this path needs FILE:WRITE only (Chauvet 3.29.44 permission model).
-  await RNFS.moveFile(CONFIG_TMP, CONFIG_FILE);
-  return json.length;
-}
-
-/**
- * Generate a template config file on first launch.
- * Only runs if no config file exists. The template contains a placeholder
- * token so the user can find and edit the file via USB.
- */
-async function generateTemplate() {
-  try {
-    const exists = await RNFS.exists(CONFIG_FILE);
-    if (exists) return false;
-
-    await writeConfigFile({apiToken: PLACEHOLDER_TOKEN});
-    _templateGenerated = true;
-    log('Config', `Generated template config at ${CONFIG_FILE}`);
-    return true;
-  } catch (e) {
-    log('Config', `Template generation failed: ${e.message}`);
-    return false;
-  }
-}
-
-/**
- * Check if a sensitive value is real (not empty, not a placeholder)
- */
-function isRealValue(value) {
-  return value && value !== PLACEHOLDER_TOKEN && !value.includes('YOUR_');
-}
-
-/**
- * Read config from JSON file on device.
- * If plain text sensitive fields are found, obfuscates them back to disk.
- */
-async function loadFromFile() {
-  try {
-    let readPath = CONFIG_FILE;
-    const exists = await RNFS.exists(CONFIG_FILE);
-    if (!exists) {
-      // Crash recovery: if we died between writing the temp file and the
-      // rename, the temp file holds the last complete config.
-      if (await RNFS.exists(CONFIG_TMP)) {
-        log('Config', 'Main config missing, recovering from temp file');
-        readPath = CONFIG_TMP;
-      } else {
-        log('Config', 'Config file not found');
-        return null;
-      }
-    }
-    const json = await RNFS.readFile(readPath, 'utf8');
-    const data = JSON.parse(json);
-    if (data && typeof data === 'object') {
-      // Check if any sensitive fields are plain text and need obfuscation.
-      // This rewrite is best-effort: a failure here must never abort the
-      // load itself (it used to bubble to the outer catch and drop the
-      // whole config -- B-026).
-      try {
-        const hasPlainText = SENSITIVE_KEYS.some(
-          k => data[k] && isRealValue(data[k]) && !isObfuscated(data[k]),
-        );
-
-        if (hasPlainText) {
-          log('Config', 'Found plain text sensitive fields, obfuscating...');
-          const obfuscated = obfuscateConfig(data);
-          await writeConfigFile(obfuscated);
-          log('Config', 'Config file updated with obfuscated values');
-        }
-      } catch (e) {
-        log('Config', `Obfuscation rewrite failed (non-fatal): ${e.message}`);
-      }
-
-      const decoded = deobfuscateConfig(data);
-
-      // Treat placeholder as empty
-      if (decoded.apiToken === PLACEHOLDER_TOKEN) {
-        decoded.apiToken = '';
-      }
-
-      const hadObfuscated = SENSITIVE_KEYS.some(k => data[k] && isObfuscated(data[k]));
-      log('Config', `Loaded from file (${Object.keys(data).length} keys, obfuscated=${hadObfuscated})`);
-      return decoded;
-    }
-  } catch (e) {
-    log('Config', `File read failed: ${e.message}`);
-  }
-  return null;
-}
-
-/**
- * Write config to JSON file on device (obfuscates sensitive fields)
- */
-let _saveChain = Promise.resolve(); // Serializes writes so concurrent saves can't interleave (B-025)
-
-function saveToFile(config) {
-  const run = _saveChain.then(async () => {
-    try {
-      const encoded = obfuscateConfig(config);
-      const length = await writeConfigFile(encoded);
-      log('Config', `Saved to file (${length} chars, sensitive fields obfuscated)`);
-      return true;
-    } catch (e) {
-      log('Config', `File write failed: ${e.message}`);
-      return false;
-    }
-  });
-  _saveChain = run.then(() => undefined, () => undefined);
-  return run;
-}
-
-/**
- * Load config with priority: file > bundled > defaults.
- * On first launch, generates a template config file if none exists.
- */
-let _loadPromise = null; // Dedup: concurrent first loads share one file read (B-025)
 
 export async function loadConfig() {
-  if (_runtimeConfig) {
-    return withDerived({...DEFAULT_CONFIG, ...bundledConfig, ..._runtimeConfig});
-  }
-  if (_loadPromise) {
-    return _loadPromise;
-  }
-
+  if (_runtimeConfig) return withDerived({...DEFAULT_CONFIG, ..._runtimeConfig});
+  if (_loadPromise) return _loadPromise;
   _loadPromise = (async () => {
-    try {
-      // First launch: generate template if no config file exists
-      await generateTemplate();
-
-      const fileConfig = await loadFromFile();
-      if (fileConfig) {
-        _configSource = 'file';
-        _runtimeConfig = fileConfig;
-        return withDerived({...DEFAULT_CONFIG, ...bundledConfig, ...fileConfig});
+    const {storage} = await privateStorage();
+    const raw = await storage.readSettings();
+    if (raw !== null && raw !== undefined) {
+      const value = JSON.parse(raw);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Private settings are damaged.');
+      _runtimeConfig = value;
+      _configSource = 'private';
+    } else {
+      const legacy = await readLegacy();
+      const value = {...DEFAULT_CONFIG, ...(legacy || {})};
+      if (legacy) {
+        value.privacyWarning = 'Legacy settings were migrated. A prior shared copy may have been cloud-synced; rotate your token if needed.';
+        // Commit privately FIRST. A failed save leaves legacy settings intact.
+        await storage.saveSettings(JSON.stringify(value));
+        if (await PluginManager.hasPermission('plugin.permission.FILE:WRITE') === 1) {
+          try {
+            const redacted = {...legacy, apiToken: '', debugServerUrl: ''};
+            await RNFS.writeFile(LEGACY_FILE + '.tmp', JSON.stringify(redacted), 'utf8');
+            await RNFS.moveFile(LEGACY_FILE + '.tmp', LEGACY_FILE);
+          } catch {
+            value.privacyWarning += ' The shared settings copy could not be redacted; remove its token manually.';
+            await storage.saveSettings(JSON.stringify(value));
+          }
+        } else {
+          value.privacyWarning += ' Allow shared-folder access and remove the old token from MyStyle/SuperTask/supertask-config.json.';
+          await storage.saveSettings(JSON.stringify(value));
+        }
       }
-
-      if (bundledConfig.apiToken) {
-        _configSource = 'bundled';
-      }
-      return withDerived({...DEFAULT_CONFIG, ...bundledConfig});
-    } finally {
-      _loadPromise = null;
+      _runtimeConfig = value;
+      _configSource = legacy ? 'private' : 'defaults';
     }
-  })();
+    return withDerived({...DEFAULT_CONFIG, ..._runtimeConfig});
+  })().finally(() => { _loadPromise = null; });
   return _loadPromise;
 }
 
-/**
- * Synchronous config snapshot from the in-memory cache, or null if no
- * loadConfig() has completed yet this session. Lets screens initialize
- * state to saved values on their FIRST render (no post-mount snap) --
- * on any warm open the cache is already populated. Callers must still
- * loadConfig() async as the cold-start fallback.
- */
-/**
- * Resolve the configured default tab to a concrete TaskHome tab key (F-038).
- * 'last' means "wherever the user was when they last closed SuperTask",
- * tracked in the hidden lastOpenedTab key.
- */
 export function resolveDefaultTab(config) {
   const tab = config?.defaultTab || 'last';
-  if (tab === 'last') return config?.lastOpenedTab || 'today';
-  return tab;
+  return tab === 'last' ? config?.lastOpenedTab || 'today' : tab;
 }
-
 export function getCachedConfig() {
-  if (!_runtimeConfig) return null;
-  return {...DEFAULT_CONFIG, ...bundledConfig, ..._runtimeConfig};
+  return _runtimeConfig ? {...DEFAULT_CONFIG, ..._runtimeConfig} : null;
 }
-
-/**
- * Whether a template was just generated this session (first launch)
- */
-export function wasTemplateGenerated() {
-  return _templateGenerated;
-}
-
-/**
- * Save config to runtime memory + persistent file
- */
-export async function saveConfig(config) {
-  _runtimeConfig = {..._runtimeConfig, ...config};
-
-  const merged = withDerived({...DEFAULT_CONFIG, ...bundledConfig, ..._runtimeConfig});
-  const saved = await saveToFile(merged);
-  if (saved) {
-    _configSource = 'file';
-  }
-  return saved;
-}
-
-/**
- * Get where the current config was loaded from
- */
-export function getConfigSource() {
-  return _configSource;
-}
-
-/**
- * Force reload from disk (ignores runtime cache)
- */
+export function wasTemplateGenerated() { return false; }
+export function getConfigSource() { return _configSource; }
 export async function reloadConfig() {
+  await _saveChain;
   _runtimeConfig = null;
-  _configSource = 'defaults';
   return loadConfig();
+}
+export function saveConfig(changes) {
+  const run = _saveChain.then(async () => {
+    try {
+      const current = await loadConfig();
+      const merged = {...current, ...changes};
+      const {storage} = await privateStorage();
+      await storage.saveSettings(JSON.stringify(merged));
+      _runtimeConfig = withDerived(merged);
+      _configSource = 'private';
+      if (Object.prototype.hasOwnProperty.call(changes, 'apiToken')) {
+        require('../cache/taskCache').invalidateCache();
+      }
+      return true;
+    } catch (error) {
+      log('Config', `Private settings save failed: ${error.message}`);
+      return false;
+    }
+  });
+  _saveChain = run.catch(() => {});
+  return run;
 }

@@ -12,9 +12,9 @@ import {
   FlatList,
   StyleSheet,
 } from 'react-native';
-import {PluginManager, PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
+import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
-import {getTasksForNote, getAllTasks as getAllRegistryTasks, removeTask, markCompleted, getTask as getRegistryTask} from '../utils/taskRegistry';
+import {getTasksForNote, getAllTasks as getAllRegistryTasks, markCompleted, getTask as getRegistryTask} from '../utils/taskRegistry';
 import {openNote, jumpWithinNote} from '../utils/noteOpener';
 import {healRenamedNotes} from '../utils/noteHeal';
 import {noteLabel} from '../utils/noteLabel';
@@ -23,8 +23,10 @@ import {useFontScale} from '../utils/useFontScale';
 import {Check} from '../components/settings';
 import {loadConfig, getCachedConfig, resolveDefaultTab} from '../utils/config';
 import {getSessionTab, setSessionTab} from '../utils/viewState';
-import {reopenTask, getCompletedTasks} from '../api/todoist';
-import {getCache, fetchTaskData, invalidateCache, initTaskCache} from '../cache/taskCache';
+import {reopenTask, getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
+import {getCache, fetchTaskData, invalidateCache, initTaskCache, subscribeCache} from '../cache/taskCache';
+import {completedData} from '../offline/service';
+const {localDate} = require('../offline/model');
 import {log, logError} from '../utils/debug';
 import TabBar from '../components/TabBar';
 import TaskRow from '../components/TaskRow';
@@ -51,6 +53,7 @@ const TABS = [
   {key: 'projects', label: 'Projects'},
   {key: 'device', label: 'On Device'},
   {key: 'done', label: 'Done'},
+  {key: 'pending', label: 'Pending'},
 ];
 
 const TAB_KEYS = TABS.map(t => t.key);
@@ -88,6 +91,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [syncInfo, setSyncInfo] = useState<any>(null);
   const [jumpError, setJumpError] = useState('');
   const [noteCtx, setNoteCtx] = useState<{fileName: string; pageNum: number; filePath: string} | null>(null);
   const [pageTaskIds, setPageTaskIds] = useState<string[]>([]);
@@ -139,7 +143,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       }
     }, 150);
     return () => clearTimeout(t);
-  }, [loading]);
+  }, [loading, cfg0?.refreshOnOpen]);
 
   // Load default tab from config and detect current page on mount
   useEffect(() => {
@@ -183,14 +187,13 @@ export default function TaskHome({nav, focusTab}: Props) {
     // Detect current note/page, scan for supertask links, read registry
     (async () => {
       try {
-        const fp = await PluginCommAPI.getCurrentFilePath();
-        const pn = await PluginCommAPI.getCurrentPageNum();
+        const fp: any = await PluginCommAPI.getCurrentFilePath();
+        const pn: any = await PluginCommAPI.getCurrentPageNum();
         const filePath = fp?.result || '';
         const pageNum = pn?.result ?? 0;
         if (!filePath) return;
 
         const fileName = filePath.split('/').pop()?.replace('.note', '') || '';
-        const noteFile = filePath.split('/').pop() || '';
         log('TaskHome', `Note context: ${fileName} p.${pageNum}`);
 
         // B-033 mitigation A: read the (fast, local) registry FIRST and
@@ -199,7 +202,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         // element scan below then adds page chips as a single later commit.
         let regTasks: any[] = [];
         try {
-          regTasks = await getTasksForNote(noteFile);
+          regTasks = await getTasksForNote(filePath);
           log('TaskHome', `Registry: ${regTasks.length} tasks in this note`);
         } catch (e: any) {
           log('TaskHome', `Registry read failed: ${e.message}`);
@@ -209,7 +212,7 @@ export default function TaskHome({nav, focusTab}: Props) {
 
         // Scan page elements for supertask:// links
         try {
-          const elemResult = await PluginFileAPI.getElements(pageNum, filePath);
+          const elemResult: any = await PluginFileAPI.getElements(pageNum, filePath);
           if (elemResult?.success && elemResult.result) {
             const linkElements = elemResult.result.filter(
               (el: any) => el.type === 600 && el.link?.destPath?.startsWith('supertask://task/')
@@ -233,7 +236,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         log('TaskHome', `Page context detection failed: ${e.message}`);
       }
     })();
-  }, []);
+  }, [focusTab]);
 
   // Apply fetched data to component state. Skips the update entirely when
   // the data matches what is already rendered: the background revalidate
@@ -256,6 +259,12 @@ export default function TaskHome({nav, focusTab}: Props) {
     setProjectList(fetchedProjects || []);
     setTasks(fetchedTasks || []);
   }, []);
+  useEffect(() => subscribeCache((data: any) => {
+    setSyncInfo(data); setError(''); setLoading(false);
+    applyData(data.tasks, data.projects);
+    getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
+    completedData().then(setDoneTasks).catch(() => {});
+  }), [applyData]);
 
   // Reconcile registry: remove entries for tasks no longer in Todoist,
   // then heal any note renames (B-005, once per session, fire-and-forget)
@@ -270,19 +279,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       .catch(() => {});
     try {
       const allReg = await getAllRegistryTasks();
-      if (allReg.length > 0 && fetchedTasks && fetchedTasks.length > 0) {
-        const apiIds = new Set(fetchedTasks.map((t: any) => t.id));
-        const stale = allReg.filter((rt: any) => !apiIds.has(rt.id));
-        if (stale.length > 0) {
-          log('TaskHome', `Registry sync: removing ${stale.length} stale tasks (deleted/completed in Todoist)`);
-          for (const s of stale) {
-            await removeTask(s.id);
-          }
-          const refreshed = await getAllRegistryTasks();
-          setDeviceTasks(refreshed);
-          log('TaskHome', `Registry sync: ${refreshed.length} tasks remain`);
-        }
-      }
+      setDeviceTasks(allReg);
     } catch (syncErr: any) {
       log('TaskHome', `Registry sync failed (non-fatal): ${syncErr.message}`);
     }
@@ -295,6 +292,7 @@ export default function TaskHome({nav, focusTab}: Props) {
     try {
       const data = await fetchTaskData();
       if (data) {
+        setSyncInfo(data);
         applyData(data.tasks, data.projects);
         await reconcileRegistry(data.tasks);
         log('TaskHome', `Loaded ${data.tasks.length} tasks, ${data.projects.length} projects${silent ? ' (silent)' : ''}`);
@@ -324,6 +322,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         cached = await initTaskCache();
       }
       if (cached) {
+        setSyncInfo(cached);
         log('TaskHome', `Cache hit: ${cached.tasks.length} tasks (age: ${Date.now() - cached.timestamp}ms)`);
         applyData(cached.tasks, cached.projects);
         setLoading(false);
@@ -344,8 +343,9 @@ export default function TaskHome({nav, focusTab}: Props) {
 
       // Always fetch fresh data (deduplicates with any in-flight prefetch)
       fetchTaskData()
-        .then(data => {
+        .then((data: any) => {
           if (data) {
+            setSyncInfo(data);
             applyData(data.tasks, data.projects);
             reconcileRegistry(data.tasks);
             log('TaskHome', `Fresh data: ${data.tasks.length} tasks, ${data.projects.length} projects`);
@@ -354,7 +354,7 @@ export default function TaskHome({nav, focusTab}: Props) {
           }
           setLoading(false);
         })
-        .catch(err => {
+        .catch((err: any) => {
           logError('TaskHome', err);
           if (!cached) setError(err.message);
           setLoading(false);
@@ -436,7 +436,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       // only flagged, not removed), then pull active lists back in.
       getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
       if (noteCtx?.fileName) {
-        getTasksForNote(noteCtx.fileName).then(setRegistryNoteTasks).catch(() => {});
+        getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
       }
       invalidateCache();
       fetchData(true); // pull the reopened tasks back into the active lists
@@ -501,7 +501,7 @@ export default function TaskHome({nav, focusTab}: Props) {
     nav.push('task-add', {projects: projectList, defaultProjectId: config.defaultProjectId});
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate(new Date());
 
   // Tasks linked to the current NOTE (any page), each with the page it lives
   // on so the band tells you where you'd jump in a long note (design-home-v2).
@@ -595,7 +595,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       );
     }
 
-    if (error) {
+    if (error && !syncInfo) {
       return (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
@@ -603,6 +603,13 @@ export default function TaskHome({nav, focusTab}: Props) {
       );
     }
 
+    if (activeTab === 'pending') {
+      const pending = (syncInfo?.allTasks || tasks).filter((task: any) => task.syncState !== 'synced');
+      if (!pending.length) return <View style={styles.centered}><Text style={styles.emptyText}>No tasks waiting to sync</Text></View>;
+      return <FlatList data={pending} keyExtractor={(task: any) => task.id} renderItem={({item}) =>
+        <TaskRow task={item} onCheckPress={() => nav.push('task-detail', {task: item, projects: projectList})}
+          onPress={task => nav.push('task-detail', {task, projects: projectList})} checked={item.completed} />}/>;
+    }
     if (activeTab === 'today') return renderTodayTab();
     if (activeTab === 'upcoming') return renderUpcomingTab();
     if (activeTab === 'device') return renderDeviceTab();
@@ -618,7 +625,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         </View>
       );
     }
-    if (doneError) {
+    if (doneError && !doneTasks.length) {
       return (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{doneError}</Text>
@@ -964,6 +971,9 @@ export default function TaskHome({nav, focusTab}: Props) {
               <Pressable style={[styles.headerButton, styles.headerButtonPrimary]} onPress={handleAddTask}>
                 <Text style={[styles.headerButtonText, styles.headerButtonPrimaryText]}>+ New</Text>
               </Pressable>
+              <Pressable style={styles.headerButton} onPress={() => nav.push('task-batch', {projects: projectList})}>
+                <Text style={styles.headerButtonText}>+ Batch</Text>
+              </Pressable>
               {debugMode && (
                 <Pressable style={styles.headerButton} onPress={() => { log('TaskHome', 'LOG pressed'); nav.push('debug'); }}>
                   <Text style={styles.headerButtonText}>Log</Text>
@@ -997,6 +1007,10 @@ export default function TaskHome({nav, focusTab}: Props) {
       ) : null}
 
       {renderThisNote()}
+      {(error || syncInfo?.syncError || syncInfo?.warning || syncInfo?.otherAccountStores > 0) &&
+        <View style={styles.jumpError}><Text style={styles.jumpErrorText}>
+          {error || syncInfo?.syncError || syncInfo?.warning || 'Tasks for another configured token are retained separately. Switch back to that token to resume them.'}
+        </Text></View>}
 
       <View style={styles.body}>
         {renderContent()}
@@ -1005,6 +1019,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       <View style={styles.footer}>
         <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>
           {taskCount} task{taskCount !== 1 ? 's' : ''}
+          {` · ${syncInfo?.pendingCount || 0} queued · ${syncInfo?.timestamp ? 'Last sync ' + new Date(syncInfo.timestamp).toLocaleString() : 'Never synced'}`}
         </Text>
         <View style={styles.footerRight}>
           <Pressable style={styles.footerToggle} onPress={toggleShowDone} hitSlop={8}>
@@ -1014,7 +1029,9 @@ export default function TaskHome({nav, focusTab}: Props) {
           <Pressable onPress={() => {
             sel.clearSelection();
             fetchData(true);
-            if (activeTab === 'done' || showDone) setDoneFetched(false); // refetch completed list too
+            if (activeTab === 'done' || showDone) {
+              refreshCompletedTasks(30).then(setDoneTasks).catch((err: any) => setDoneError(`History refresh failed: ${err.message}`));
+            }
           }} hitSlop={8}>
             <Text style={[styles.footerRefresh, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
           </Pressable>

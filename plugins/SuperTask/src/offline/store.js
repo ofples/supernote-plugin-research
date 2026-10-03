@@ -36,7 +36,28 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
       const next = await reduce(clone(previous));
       next.revision = previous.revision + 1;
       validateStore(next, accountKey, deviceId);
-      await adapter.commit(JSON.stringify(next), JSON.stringify(previous));
+      try {
+        await adapter.commit(JSON.stringify(next), JSON.stringify(previous));
+      } catch (error) {
+        // The native write may have renamed successfully before returning an
+        // error. Re-read authoritative disk state before allowing another save.
+        try {
+          const disk = await adapter.read();
+          let recovered;
+          for (const raw of [disk.main, disk.backup]) {
+            if (!raw) continue;
+            try { recovered = validateStore(JSON.parse(raw), accountKey, deviceId); break; }
+            catch { /* try the previous generation before refusing more writes */ }
+          }
+          if (!recovered && disk.exists) throw new Error('Task storage could not be recovered after a failed save. Existing data was not overwritten.');
+          state = recovered || previous;
+          error.uncertainCommit = state.revision === next.revision;
+        } catch (readError) {
+          loading = Promise.reject(readError);
+          loading.catch(() => {});
+        }
+        throw error;
+      }
       state = clone(next);
       try { onChange(clone(state)); } catch { /* subscriber failure cannot undo a durable save */ }
       return clone(state);

@@ -11,10 +11,17 @@
     "test:offline": "node --test tests/*.test.cjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.83",
+    "ai": "7.0.127",
+    "base64-js": "1.5.1",
+    "fast-text-encoding": "1.0.6",
     "react": "19.0.0",
     "react-native": "0.79.2",
     "react-native-fs": "^2.20.0",
-    "sn-plugin-lib": "0.1.65"
+    "react-native-get-random-values": "1.11.0",
+    "react-native-url-polyfill": "2.0.0",
+    "sn-plugin-lib": "0.1.65",
+    "web-streams-polyfill": "4.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

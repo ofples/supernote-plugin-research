@@ -20,6 +20,39 @@ function memoryAdapter(data) {
 }
 const makeStore = adapter => createStore(adapter, 'account-a', 'device-a');
 
+test('failed commit recovers a valid backup when the newest model is damaged', async () => {
+  const disk = memoryAdapter(initial());
+  const store = makeStore(disk);
+  await store.load();
+  disk.commit = async function (next, previous) {
+    this.main = JSON.stringify({...JSON.parse(next), completedRemote: {damaged: true}});
+    this.backup = previous;
+    throw new Error('Interrupted write');
+  };
+  await assert.rejects(store.transaction(s => add(s)), /Interrupted write/);
+  assert.equal((await store.load()).outbox.length, 0);
+  disk.commit = memoryAdapter().commit;
+  await store.transaction(s => add(s));
+  assert.equal((await store.load()).outbox.length, 1);
+});
+
+test('failed response after a successful rename reloads the committed identities', async () => {
+  const disk = memoryAdapter(initial());
+  const store = makeStore(disk);
+  disk.commit = async function (next, previous) {
+    this.main = next; this.backup = previous;
+    throw new Error('Lost native result');
+  };
+  await assert.rejects(store.transaction(s => add(s, 10)), error => error.uncertainCommit === true);
+  assert.equal((await store.load()).outbox.length, 10);
+});
+
+test('completed history accepts older stores but rejects malformed new data', () => {
+  const old = initial(); delete old.completedRemote;
+  assert.doesNotThrow(() => m.validateStore(old, 'account-a', 'device-a'));
+  assert.throws(() => m.validateStore({...old, completedRemote: {}}, 'account-a', 'device-a'), /damaged/);
+});
+
 test('ten-task batch owns stable task/operation IDs and stores only stable source anchors', () => {
   const s = add(initial(), 10);
   assert.equal(Object.keys(s.tasks).length, 10);

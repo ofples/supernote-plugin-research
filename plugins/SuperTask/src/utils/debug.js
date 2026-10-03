@@ -2,29 +2,20 @@
  * Debug logger -- local-first (F-022 phase 1).
  *
  * Every entry goes to THREE places, most reliable first:
- *   1. Rotating session file in MyStyle/SuperTask/logs/ (always on,
- *      batched event-driven appends -- survives crashes, USB-retrievable)
+ *   1. Private rotating session file (batched appends; no shared export)
  *   2. In-memory ring buffer (2000 entries) for the in-app viewer
  *   3. Dev server via Upload Log (opportunistic; URL is runtime-configurable
  *      through the saved config, so an IP change never needs a rebuild)
  */
 
 import RNFS from 'react-native-fs';
+import {privateStorage} from '../offline/privateStorage';
 
-// Debug server URL: bundled config.local is only the FALLBACK default.
-// config.js calls setDebugServerUrl() with the saved-config value on every
-// load/save, so the URL can be changed in Settings or by USB-editing
-// supertask-config.json -- no rebuild needed.
+// Config supplies the private saved URL. Network upload is explicit.
 let _debugServerUrl = '';
-try {
-  const cfg = require('../../config.local');
-  _debugServerUrl = (cfg.default || cfg).debugServerUrl || '';
-} catch {}
 
 export function setDebugServerUrl(url) {
-  if (typeof url === 'string' && url.trim()) {
-    _debugServerUrl = url.trim();
-  }
+  _debugServerUrl = typeof url === 'string' ? url.trim() : '';
 }
 
 export function getDebugServerUrl() {
@@ -37,9 +28,16 @@ let _listener = null;
 let _debugMode = false;
 
 // --- Persistent session file (always on) ---
-const LOG_DIR = '/storage/emulated/0/MyStyle/SuperTask/logs';
-const SESSION_LOG = LOG_DIR + '/session.log';
-const SESSION_LOG_PREV = LOG_DIR + '/session.log.1';
+let LOG_DIR;
+let SESSION_LOG;
+let SESSION_LOG_PREV;
+async function prepareLogs() {
+  if (LOG_DIR) return;
+  const {directory} = await privateStorage();
+  LOG_DIR = directory + '/logs';
+  SESSION_LOG = LOG_DIR + '/session.log';
+  SESSION_LOG_PREV = LOG_DIR + '/session.log.1';
+}
 const FLUSH_EVERY = 25;             // entries per batched append. Event-driven --
                                     // JS timers are suspended while the view is closed.
 const ROTATE_BYTES = 512 * 1024;    // rotate session.log -> session.log.1 (2 files kept)
@@ -59,6 +57,7 @@ export function flushToFile() {
   _pendingFlush = [];
   _flushChain = _flushChain.then(async () => {
     try {
+      await prepareLogs();
       if (_flushedBytes < 0) {
         if (!(await RNFS.exists(LOG_DIR))) {
           await RNFS.mkdir(LOG_DIR);
@@ -173,17 +172,18 @@ export async function exportLog() {
     log('Export', 'No dev server URL configured');
   }
 
-  // Method 2: timestamped export file on device (retrievable via USB)
+  // Method 2: private device log; no implicit cloud-synced export.
   try {
+    await prepareLogs();
     const dirExists = await RNFS.exists(LOG_DIR);
     if (!dirExists) {
       await RNFS.mkdir(LOG_DIR);
     }
     const fileName = `supertask-${timestamp}.txt`;
     await RNFS.writeFile(`${LOG_DIR}/${fileName}`, logText, 'utf8');
-    return `Server unreachable -- saved to MyStyle/SuperTask/logs/${fileName}`;
+    return 'Log saved privately on this device. Configure a server for explicit upload.';
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return `Export failed: ${msg} (rolling log: MyStyle/SuperTask/logs/session.log)`;
+    return `Private log could not be saved: ${msg}`;
   }
 }

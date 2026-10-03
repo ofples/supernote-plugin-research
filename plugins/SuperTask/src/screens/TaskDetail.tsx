@@ -18,7 +18,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import {PluginCommAPI, PluginManager} from 'sn-plugin-lib';
+import {PluginCommAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
 import {openNote} from '../utils/noteOpener';
@@ -30,6 +30,7 @@ import PriorityPicker from '../components/PriorityPicker';
 import ProjectPicker from '../components/ProjectPicker';
 import DatePicker from '../components/DatePicker';
 import {useFontScale} from '../utils/useFontScale';
+import {retryOffline} from '../offline/service';
 
 type Nav = {
   push: (name: string, params?: Record<string, any>) => void;
@@ -65,7 +66,10 @@ export default function TaskDetail({nav, task, projects}: Props) {
   const scale = useFontScale();
   const [content, setContent] = useState(task?.content || '');
   const rawDescription = task?.description || '';
-  const [noteContext] = useState(() => parseNoteContext(rawDescription));
+  const [noteContext] = useState(() => task.source?.filePath ? {
+    notePath: task.source.filePath, noteFile: task.source.filePath.split('/').pop(),
+    pageNum: task.source.pageNum, userDescription: rawDescription,
+  } : parseNoteContext(rawDescription));
   const [description, setDescription] = useState(noteContext ? noteContext.userDescription : rawDescription);
   const [priority, setPriority] = useState(task?.priority || 1);
   const [dueString, setDueString] = useState(task?.due?.string || task?.due?.date || '');
@@ -84,7 +88,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
     setViewNoteStatus('Checking...');
 
     try {
-      const fp = await PluginCommAPI.getCurrentFilePath();
+      const fp: any = await PluginCommAPI.getCurrentFilePath();
       const currentPath = fp?.result || '';
       const currentFile = currentPath.split('/').pop() || '';
 
@@ -118,7 +122,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
     log('TaskDetail', `MOUNT task=${task?.id} content="${task?.content}" projects=${projects?.length}`);
     log('TaskDetail', `noteContext: ${noteContext ? `${noteContext.noteFile} p.${noteContext.pageNum}` : 'none'}`);
     setConfigLoader(loadConfig);
-  }, []);
+  }, [noteContext, projects?.length, task?.content, task?.id]);
 
   const isDirty =
     content !== (task.content || '') ||
@@ -140,7 +144,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
     try {
       // Re-append note context metadata if it existed
       let fullDescription = description.trim();
-      if (noteContext) {
+      if (noteContext && !task.source) {
         const pathOrFile = noteContext.notePath || noteContext.noteFile;
         const noteRef = `\n\n---\n[SuperTask] Captured from: ${pathOrFile} p.${noteContext.pageNum}`;
         fullDescription = fullDescription ? fullDescription + noteRef : noteRef.trim();
@@ -150,15 +154,15 @@ export default function TaskDetail({nav, task, projects}: Props) {
         content: content.trim(),
         description: fullDescription,
         priority,
-        dueString: dueString.trim() || undefined,
-        projectId: projectId || undefined,
+        dueString: dueString.trim(),
+        projectId: projectId || null,
       });
       log('TaskDetail', `Updated task ${task.id}`);
       // Update the task reference so isDirty resets
       task.content = content.trim();
       task.description = fullDescription;
       task.priority = priority;
-      task.due = dueString.trim() ? {...(task.due || {}), string: dueString.trim()} : task.due;
+      task.due = dueString.trim() ? {...(task.due || {}), date: dueString.trim(), string: dueString.trim()} : null;
       task.project_id = projectId;
       setStatus('');
       setLastSaved(new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
@@ -190,7 +194,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
       await completeTask(task.id);
       invalidateCache();
       log('TaskDetail', `Completed task ${task.id}`);
-      setStatus('Done!');
+      setStatus('Saved on device. Pending sync.');
       setTimeout(leaveAfterMutation, 500);
     } catch (err: any) {
       logError('TaskDetail', err);
@@ -257,13 +261,21 @@ export default function TaskDetail({nav, task, projects}: Props) {
         </View>
       </View>
 
+      {task.syncState !== 'synced' && <View style={styles.noteContext}>
+        <Text style={styles.noteContextValue}>{task.syncState === 'attention' ? 'Needs attention' : 'Pending sync'}{task.syncError ? `: ${task.syncError}` : ''}</Text>
+        <Text style={styles.noteContextLabel}>Editing and removal are available only before a task has been sent. A retry preserves its identity.</Text>
+        <Pressable style={styles.headerBtn} disabled={saving} onPress={async () => {
+          try {await retryOffline(task.id); setStatus('Same operation queued for retry.');}
+          catch (error: any) {setStatus(error.message);}
+        }}><Text style={styles.headerBtnText}>Retry sync</Text></Pressable>
+      </View>}
       {noteContext && (
         <View style={styles.noteContext}>
           <View style={styles.noteContextRow}>
             <View style={{flex: 1}}>
               <Text style={[styles.noteContextLabel, {fontSize: Math.round(12 * scale)}]}>Captured from</Text>
               <Text style={[styles.noteContextValue, {fontSize: Math.round(15 * scale)}]}>
-                {noteLabel(noteContext.notePath, noteContext.noteFile)} — page {noteContext.pageNum}
+                {noteLabel(noteContext.notePath, noteContext.noteFile)} — page {noteContext.pageNum + 1}
               </Text>
             </View>
             <Pressable style={styles.viewNoteBtn} onPress={handleViewNote}>

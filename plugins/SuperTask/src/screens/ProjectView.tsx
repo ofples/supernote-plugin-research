@@ -14,7 +14,6 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import {PluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
 import {setConfigLoader, getTasksByProject} from '../api/todoist';
@@ -23,6 +22,8 @@ import TaskRow from '../components/TaskRow';
 import SectionHeader from '../components/SectionHeader';
 import SelectionBar from '../components/SelectionBar';
 import {useTaskSelection} from '../utils/useTaskSelection';
+import {subscribeCache} from '../cache/taskCache';
+const {localDate} = require('../offline/model');
 
 type Nav = {
   push: (name: string, params?: Record<string, any>) => void;
@@ -63,7 +64,10 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
   useEffect(() => {
     log('ProjectView', `MOUNT projectId=${projectId} projectName="${projectName}"`);
     fetchTasks();
-  }, [fetchTasks]);
+  }, [fetchTasks, projectId, projectName]);
+  useEffect(() => subscribeCache((data: any) => {
+    setTasks(data.tasks.filter((task: any) => task.project_id === projectId));
+  }), [projectId]);
 
   // F-025 v2 / F-043: checkbox taps SELECT; completion commits from the
   // contextual header (SelectionBar swaps into the header band).
@@ -78,7 +82,7 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
     nav.push('task-detail', {task, projects: []});
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate(new Date());
 
   const buildSections = (): any[] => {
     const overdue = tasks.filter(t => t.due?.date && t.due.date < today);

@@ -8,7 +8,7 @@
  * @format
  */
 
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useRef, useMemo} from 'react';
 import {View, Text, ScrollView, Pressable, StyleSheet} from 'react-native';
 import {PluginManager} from 'sn-plugin-lib';
 
@@ -17,11 +17,10 @@ import ProjectView from './src/screens/ProjectView';
 import TaskDetail from './src/screens/TaskDetail';
 import TaskAdd from './src/screens/TaskAdd';
 import Capture from './src/screens/Capture';
-import QuickAdd from './src/screens/QuickAdd';
+import BatchAdd from './src/screens/BatchAdd';
+import AISettings from './src/screens/AISettings';
 import Config from './src/screens/Config';
 import Diagnostics from './src/screens/Diagnostics';
-import PermissionsIntro from './src/screens/PermissionsIntro';
-import {isPermissionApiAvailable, getPermissionStates} from './src/utils/permissions';
 import {log, logError, getEntries, setListener, exportLog, setDebugMode} from './src/utils/debug';
 import {initGestureDetector, clearLinkCache} from './src/utils/gestureDetector';
 import {markViewOpen, markViewClosed, setCurrentScreen} from './src/utils/viewState';
@@ -29,6 +28,12 @@ import {closePlugin} from './src/utils/closePlugin';
 import {loadConfig} from './src/utils/config';
 import {getTask as getRegistryTask} from './src/utils/taskRegistry';
 import {setConfigLoader, getTask as getApiTask, getProjects} from './src/api/todoist';
+
+declare global {
+  var __superTaskButtonId: number | string | null;
+  var __superTaskDeepLink: {action: string; taskId?: string; projectId?: string; projectName?: string; focusTab?: string} | null;
+  var __superTaskNavigate: ((screen: string, params?: Record<string, any>) => void) | null;
+}
 
 type ScreenEntry = {
   name: string;
@@ -121,7 +126,7 @@ function DeepLinkLoader({taskId, nav}: {taskId: string; nav: any}) {
         setTimeout(() => nav.resetTo('task-home'), 2000);
       }
     })();
-  }, []);
+  }, [taskId, nav]);
 
   return (
     <View style={{flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', padding: 24}}>
@@ -137,31 +142,14 @@ let navIdCounter = 0;
 // plugin cannot persist a "shown" flag before it has write permission, and
 // once the folder is granted the check itself says "don't show". "Not now"
 // suppresses it for the rest of the process only.
-let _introResolved = false;
-let _introDismissed = false;
 
 function App(): React.JSX.Element {
   const [screenStack, setScreenStack] = useState<ScreenEntry[]>([getInitialScreen()]);
-  const [intro, setIntro] = useState<'checking' | 'show' | 'done'>(() => {
-    if (_introResolved || _introDismissed || !isPermissionApiAvailable()) return 'done';
-    return 'checking';
-  });
-  useEffect(() => {
-    if (intro !== 'checking') return;
-    let cancelled = false;
-    getPermissionStates().then(snap => {
-      if (cancelled) return;
-      const need = snap.supported && snap.groups.folder !== 'granted';
-      log('App', `permission intro: folder=${snap.groups.folder ?? 'n/a'} -> ${need ? 'show' : 'skip'}`);
-      if (!need) _introResolved = true;
-      setIntro(need ? 'show' : 'done');
-    }).catch(() => setIntro('done'));
-    return () => { cancelled = true; };
-  }, [intro]);
   const [error, setError] = useState<string | null>(null);
-  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [, setDebugLog] = useState<string[]>([]);
   const [exportStatus, setExportStatus] = useState('');
-  const resetToRef = useRef<(name: string, params?: Record<string, any>) => void>();
+  const resetToRef = useRef<((name: string, params?: Record<string, any>) => void) | undefined>(undefined);
+  const initialScreenName = useRef(screenStack[0].name).current;
 
   const push = useCallback((name: string, params?: Record<string, any>) => {
     log('App', `push: ${name} ${params ? JSON.stringify(params) : ''}`);
@@ -192,10 +180,10 @@ function App(): React.JSX.Element {
     setListener(setDebugLog);
     loadConfig().then(config => {
       if (config.debugMode) setDebugMode(true);
-    });
+    }).catch((failure: any) => setError(failure.message));
 
     const initial = global.__superTaskButtonId;
-    log('App', `MOUNT -- initial buttonId=${JSON.stringify(initial)} screen=${screenStack[0].name}`);
+    log('App', `MOUNT -- initial buttonId=${JSON.stringify(initial)} screen=${initialScreenName}`);
     markViewOpen('app-mount'); // App only mounts with the view showing (B-031 tracking)
 
     // Gesture detector is initialized in index.js (before mount) so
@@ -217,11 +205,6 @@ function App(): React.JSX.Element {
       onClick: () => {
         log('App', 'CONFIG button pressed (listener)');
         markViewOpen('config-listener'); // (B-031 tracking)
-        resetToRef.current?.('config');
-      },
-      onConfigButtonPress: () => {
-        log('App', 'CONFIG button pressed (listener/legacy)');
-        markViewOpen('config-listener');
         resetToRef.current?.('config');
       },
     });
@@ -250,7 +233,7 @@ function App(): React.JSX.Element {
       if (configSub?.remove) configSub.remove();
       if (buttonSub?.remove) buttonSub.remove();
     };
-  }, []);
+  }, [initialScreenName]);
 
   const current = screenStack[screenStack.length - 1];
   const canGoBack = screenStack.length > 1;
@@ -258,7 +241,8 @@ function App(): React.JSX.Element {
   useEffect(() => {
     log('App', `SCREEN changed: "${current.name}" stackDepth=${screenStack.length} params=${current.params ? Object.keys(current.params).join(',') : 'none'}`);
     setCurrentScreen(current.name); // B-031: names the screen in pen-through-view logs
-  }, [screenStack]);
+  }, [current.name, current.params, screenStack.length]);
+  const nav = useMemo(() => ({push, pop, replace, resetTo, canGoBack}), [push, pop, replace, resetTo, canGoBack]);
 
   // Show debug log on error or when navigated to
   if (error || current.name === 'debug') {
@@ -308,22 +292,7 @@ function App(): React.JSX.Element {
     );
   }
 
-  const nav = {push, pop, replace, resetTo, canGoBack};
-  const isOverlay = current.name === 'capture-lasso';
-
-  if (intro === 'checking') {
-    return <View style={styles.container} />;
-  }
-  if (intro === 'show') {
-    return (
-      <PermissionsIntro
-        onDone={() => {
-          _introDismissed = true;
-          setIntro('done');
-        }}
-      />
-    );
-  }
+  const isOverlay = false;
 
   return (
     <View style={[styles.container, isOverlay && styles.containerOverlay]}>
@@ -346,11 +315,17 @@ function App(): React.JSX.Element {
           initialDescription={current.params?.initialDescription}
           captureMode={current.params?.captureMode}
           noteContext={current.params?.noteContext}
+          capturedAt={current.params?.capturedAt}
         />
       )}
       {current.name === 'capture-lasso' && (
-        <QuickAdd key={current.id} nav={nav} />
+        <Capture key={current.id} mode="lasso" nav={nav} />
       )}
+      {current.name === 'task-batch' && <BatchAdd key={current.id} nav={nav}
+        projects={current.params?.projects || []} defaultProjectId={current.params?.defaultProjectId}
+        initialContent={current.params?.initialContent} initialDescription={current.params?.initialDescription}
+        noteContext={current.params?.noteContext} capturedAt={current.params?.capturedAt} preview={current.params?.preview} />}
+      {current.name === 'ai-settings' && <AISettings key={current.id} nav={nav} />}
       {current.name === 'capture-doc' && (
         <Capture key={current.id} mode="doc" nav={nav} />
       )}

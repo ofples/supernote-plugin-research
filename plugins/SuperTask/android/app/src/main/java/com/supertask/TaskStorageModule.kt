@@ -2,6 +2,12 @@ package com.supertask
 
 import android.system.Os
 import android.system.OsConstants
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.util.Base64
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -9,6 +15,7 @@ import com.facebook.react.bridge.ReactMethod
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -22,6 +29,93 @@ class TaskStorageModule(context: ReactApplicationContext) : ReactContextBaseJava
         .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
     private fun directory(): File = root ?: throw IllegalStateException("Private task storage is not initialized")
+
+    private fun prepareDirectory(pluginDir: String): File {
+        val sdkDir = File(pluginDir).canonicalFile
+        val allowed = File(reactApplicationContext.applicationContext.filesDir, "plugins/supertask001").canonicalFile
+        require(sdkDir == allowed) { "PluginHost returned an unexpected private directory" }
+        val dir = File(sdkDir, "offline-v1")
+        require(dir.isDirectory || dir.mkdirs()) { "Cannot create private task directory" }
+        root = dir
+        return dir
+    }
+
+    @ReactMethod
+    fun prepare(pluginDir: String, promise: Promise) = synchronized(lock) {
+        try { promise.resolve(prepareDirectory(pluginDir).absolutePath) }
+        catch (error: Exception) { promise.reject("TASK_STORAGE_INIT", error) }
+    }
+
+    private fun previewFile(path: String): File {
+        val file = File(path).canonicalFile
+        require(file.parentFile == directory().canonicalFile &&
+            file.name.matches(Regex("capture-[a-f0-9-]{36}\\.png"))) { "Invalid temporary preview path" }
+        return file
+    }
+
+    @ReactMethod
+    fun readPreview(path: String, rotation: Double, promise: Promise) = synchronized(lock) {
+        val bitmaps = mutableListOf<Bitmap>()
+        try {
+            val file = previewFile(path)
+            require(file.length() in 1..8_000_000) { "Preview too large or missing" }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.path, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 &&
+                bounds.outWidth.toLong() * bounds.outHeight <= 12_000_000) { "Preview dimensions invalid" }
+            val original = BitmapFactory.decodeFile(file.path) ?: error("Invalid preview")
+            bitmaps.add(original)
+            val white = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+            bitmaps.add(white)
+            Canvas(white).apply { drawColor(Color.WHITE); drawBitmap(original, 0f, 0f, null) }
+            require(rotation.isFinite() && rotation in -360.0..360.0) { "Invalid preview rotation" }
+            val rotated = if (rotation == 0.0) white else Bitmap.createBitmap(white, 0, 0,
+                white.width, white.height, Matrix().apply { postRotate(rotation.toFloat()) }, true)
+            if (rotated !== white) bitmaps.add(rotated)
+            val bytes = ByteArrayOutputStream().use { stream ->
+                rotated.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                stream.toByteArray()
+            }
+            require(bytes.size <= 8_000_000) { "Preview too large" }
+            promise.resolve(Base64.encodeToString(bytes, Base64.NO_WRAP))
+        } catch (error: Exception) { promise.reject("PREVIEW_READ", "Could not read selected handwriting image") }
+        finally { bitmaps.distinct().forEach { it.recycle() } }
+    }
+
+    @ReactMethod
+    fun deletePreview(path: String, promise: Promise) = synchronized(lock) {
+        try {
+            val file = previewFile(path)
+            require(!file.exists() || file.delete()) { "Cannot remove temporary preview" }
+            promise.resolve(null)
+        } catch (error: Exception) { promise.reject("PREVIEW_DELETE", error) }
+    }
+
+    @ReactMethod
+    fun readSettings(promise: Promise) = synchronized(lock) {
+        try {
+            val file = File(directory(), "settings.json")
+            val backup = File(directory(), "settings.previous")
+            val payload = generation(file) ?: generation(backup)
+            require(payload != null || (!file.exists() && !backup.exists())) { "Private settings are damaged; keep files for recovery" }
+            promise.resolve(payload)
+        } catch (error: Exception) { promise.reject("SETTINGS_READ", error) }
+    }
+
+    @ReactMethod
+    fun saveSettings(payload: String, promise: Promise) = synchronized(lock) {
+        try {
+            diskLock {
+                JSONObject(payload)
+                val file = File(directory(), "settings.json")
+                val old = generation(file) ?: generation(File(directory(), "settings.previous"))
+                require(old != null || !file.exists()) { "Private settings are damaged; refusing replacement" }
+                if (old != null) atomicWrite(File(directory(), "settings.previous"), envelope(old))
+                atomicWrite(file, envelope(payload))
+                promise.resolve(true)
+            }
+        } catch (error: Exception) { promise.reject("SETTINGS_WRITE", error) }
+    }
 
     private fun accountFile(account: String, suffix: String): File {
         require(account.matches(Regex("[a-f0-9]{64}"))) { "Invalid account storage key" }
@@ -68,15 +162,12 @@ class TaskStorageModule(context: ReactApplicationContext) : ReactContextBaseJava
             require(token.isNotBlank()) { "Configure a Todoist token before capturing offline tasks" }
             // SDK directory and Android app-private identity must agree. A wrong
             // context fails visibly rather than leaking to shared storage.
-            val sdkDir = File(pluginDir).canonicalFile
-            val allowed = File(reactApplicationContext.applicationContext.filesDir, "plugins/supertask001").canonicalFile
-            require(sdkDir == allowed) { "PluginHost returned an unexpected private directory" }
-            val dir = File(sdkDir, "offline-v1")
-            require(dir.isDirectory || dir.mkdirs()) { "Cannot create private task directory" }
-            root = dir
+            val dir = prepareDirectory(pluginDir)
             val identity = File(dir, "device-id")
-            if (!identity.exists()) atomicWrite(identity, UUID.randomUUID().toString())
-            val deviceId = identity.readText(Charsets.UTF_8).trim()
+            val deviceId = diskLock {
+                if (!identity.exists()) atomicWrite(identity, UUID.randomUUID().toString())
+                identity.readText(Charsets.UTF_8).trim()
+            }
             UUID.fromString(deviceId)
             val account = hash(token)
             val otherStores = dir.listFiles()?.count { it.name.startsWith("account-") &&

@@ -23,6 +23,7 @@
  */
 import {PluginManager, PluginCommAPI} from 'sn-plugin-lib';
 import {log} from './debug';
+import {setOfflineForeground} from '../offline/service';
 
 let _viewOpen = false;
 let _currentScreen = null;
@@ -31,22 +32,21 @@ let _sessionTab = null;
 export function markViewOpen(source) {
   if (!_viewOpen) log('ViewState', `view OPEN (${source})`);
   _viewOpen = true;
+  setOfflineForeground(true);
   probeCanHandwrite(`viewOpen:${source}`);
 }
 
 export function markViewClosed(source) {
   if (_viewOpen) log('ViewState', `view CLOSED (${source})`);
   _viewOpen = false;
+  setOfflineForeground(false);
   _sessionTab = null; // next open honors the configured default tab (F-038)
   probeCanHandwrite(`viewClosed:${source}`);
 }
 
 /**
- * SDK 0.1.65 lifecycle listener -- LOG-ONLY mode (SNDEV-70 build 1).
- * Events are cross-checked against the manual open/close marks above for
- * one release; divergences in the log decide whether lifecycle becomes the
- * authoritative source and the manual paths get deleted. Late registration
- * within 1s of the last event is re-delivered by the SDK.
+ * SDK 0.1.65 lifecycle events stop foreground sync on pause/close and
+ * resume it on Start. Manual view marks cover explicit open/close paths.
  */
 let _lifecycleRegistered = false;
 export function registerLifecycleDiagnostics() {
@@ -58,11 +58,13 @@ export function registerLifecycleDiagnostics() {
   try {
     PluginManager.registerPluginLifeListener({
       onMsg: msg => {
+        if (msg.state === 2) setOfflineForeground(true);
+        if (msg.state >= 3) setOfflineForeground(false);
         log('ViewState', `LIFECYCLE ${JSON.stringify(msg)} (manual flag: ${_viewOpen ? 'open' : 'closed'})`);
       },
     });
     _lifecycleRegistered = true;
-    log('ViewState', 'lifecycle listener registered (log-only mode)');
+    log('ViewState', 'lifecycle listener registered (foreground sync)');
   } catch (e) {
     log('ViewState', `lifecycle listener registration failed: ${e.message}`);
   }

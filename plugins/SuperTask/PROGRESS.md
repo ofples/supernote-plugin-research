@@ -1,5 +1,26 @@
 # Offline task workflow progress
 
+## Current workflow handoff — 3 October 2026
+
+The offline/batch implementation is integrated. SuperDashboard is deferred; optional OpenAI/Vercel structured refinement was added. InkToClipboard and the recognition-enhancer experiment remain unchanged.
+
+- Private settings/credentials, fetched task/project/history cache, durable queue and account isolation are wired into existing screens. Legacy tokens are redacted only after private migration succeeds.
+- Ordinary create/complete/reopen works offline. Open/resume, Refresh and foreground reconnection trigger safe sync with stable UUIDs, frozen uncertain payloads and individual acknowledgements/mappings.
+- Lasso Capture opens editable multi-row review. Manual + Batch shares atomic saving. Merge/split/select/remove/per-row metadata, capture-time dates and private stable note/page references are implemented. Capture does not programmatically change handwriting.
+- AI refinement uses its own private key and the buffered Responses adapter with locally validated structured suggestions. Failure/cancellation retains edits; Undo restores previous review. No paid call was made.
+- Native preview cleanup, account-switch cache races and uncertain local saves are handled. Full TypeScript passes, including explicit weak SDK boundaries in retained upstream screens.
+- **32 tests passed**, changed-file lint has no errors (style warnings remain), complete native/JS build and actual nested package inspection passed.
+- Nomad beta.2 proved offline ten-row manual save, restart retention, cached projects, ten unique synced tasks, offline complete/reopen and automatic open/resume sync. Test tasks removed; original eight active tasks and zero queue restored, Wi-Fi on.
+- Final workflow artifact: beta.4/code 9. Hash and installation evidence are in VALIDATION.md. No destructive recovery/release/upstream PR was performed.
+
+**Pending:** handwritten line fidelity, landscape/edge crops, source-note navigation and paid AI scratch-note checks. Real lost-response injection is a dedicated-test-account follow-up; deterministic replay passes. Sections/subtask hierarchy UI, recurring offline changes and token-rotation queue transfer are unavailable. Inherited advisories need compatible remediation.
+
+The user additionally requested a **separate overview UI branch/PR**, with inline expandable projects and a native Tasks-inspired broad overview, plus a combined testing branch. This is a new goal phase; the workflow milestone alone does not complete the enlarged goal.
+
+See [WORKFLOW.md](WORKFLOW.md) and [VALIDATION.md](VALIDATION.md).
+
+## Historical foundation checkpoint
+
 3 October 2026. Branch `feature/offline-task-workflow`.
 
 ## Implemented foundation

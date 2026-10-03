@@ -1,6 +1,6 @@
 import {NativeModules} from 'react-native';
 import {PluginManager} from 'sn-plugin-lib';
-import {loadConfig} from '../utils/config';
+import {loadConfig, getCachedConfig} from '../utils/config';
 import {ensurePermissionGroup} from '../utils/permissions';
 import {log} from '../utils/debug';
 const model = require('./model');
@@ -37,7 +37,9 @@ async function openSession() {
     async read() { return JSON.parse(await storage.read(identity.accountKey)); },
     commit: (next, previous) => storage.commit(identity.accountKey, next, previous),
   };
-  const store = createStore(adapter, identity.accountKey, identity.deviceId, emit);
+  const store = createStore(adapter, identity.accountKey, identity.deviceId, state => {
+    if (getCachedConfig()?.apiToken?.trim() === token && session?.identity.accountKey === identity.accountKey) emit(state);
+  });
   const api = createTransport(token, fetch, () => ensurePermissionGroup('sync'));
   const worker = createSyncWorker(store, api);
   await store.load(); // damaged data is an error, never an empty fallback
@@ -62,33 +64,47 @@ async function idGenerator(count) {
 export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
-  return {tasks: model.mergedTasks(state), projects: state.projects, timestamp: state.lastSync,
+  const allTasks = model.mergedTasks(state);
+  return {tasks: allTasks.filter(task => !task.completed), allTasks, projects: state.projects, timestamp: state.lastSync,
     pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
     syncError: state.syncError, warning: current.store.getWarning(),
     otherAccountStores: current.identity.otherAccountStores};
 }
 
-export async function saveOfflineBatch(drafts, source = null, capturedAt = Date.now()) {
+export async function saveOfflineBatch(drafts, source = null, capturedAt = Date.now(), request = {}) {
   const current = await offlineSession();
-  const ids = await idGenerator(1 + drafts.length * 3);
+  if (!request.ids) {
+    request.ids = JSON.parse(await NativeModules.TaskStorage.newIds(1 + drafts.length * 3));
+  }
+  const batchId = request.ids[0];
+  const alreadySaved = Object.values((await current.store.load()).tasks).filter(task => task.batchId === batchId);
+  if (alreadySaved.length) return alreadySaved.map(task => ({...task, syncState: 'pending'}));
+  let index = 0;
+  const ids = () => {
+    if (index >= request.ids.length) throw new Error('Capture changed after an uncertain save; reopen SuperTask to review saved tasks.');
+    return request.ids[index++];
+  };
   let created;
   await current.store.transaction(state => {
     const result = model.addBatch(state, drafts, source, ids, capturedAt);
     created = result.tasks;
     return result.next;
   });
-  return created;
+  requestActiveSync();
+  return created.map(task => ({...task, syncState: 'pending'}));
 }
 
 export async function completeOffline(id, completed = true) {
   const current = await offlineSession();
   const ids = await idGenerator(1);
   await current.store.transaction(state => model.setCompleted(state, id, completed, ids));
+  requestActiveSync();
 }
 
 export async function editOfflineTask(id, draft) {
   const current = await offlineSession();
   await current.store.transaction(state => model.editUnsent(state, id, draft));
+  requestActiveSync();
 }
 
 export async function cancelOfflineTask(id) {
@@ -102,7 +118,85 @@ export async function syncOffline() {
     await current.worker.sync();
   } catch (error) {
     log('Offline', `Sync deferred: ${error.message}`);
+    await current.store.transaction(state => ({...state, syncError: error.message})).catch(() => {});
     throw error;
   }
   return offlineData();
+}
+
+export async function cachedTask(id) {
+  const current = await offlineSession();
+  const state = await current.store.load();
+  const task = model.mergedTasks(state).find(t => t.id === id || t.remoteId === id) ||
+    (state.completedRemote || []).find(t => t.id === id);
+  return task || null;
+}
+
+export async function rememberRemoteTask(task) {
+  const current = await offlineSession();
+  await current.store.transaction(state => {
+    const owned = Object.values(state.tasks).find(t => t.remoteId === task.id);
+    if (owned && !state.outbox.some(op => op.localId === owned.id)) {
+      const {id, remoteId, source, batchId, capturedAt} = owned;
+      Object.assign(owned, task, {id, remoteId, source, batchId, capturedAt, remoteMissing: false});
+    }
+    state.remote = [...state.remote.filter(t => t.id !== task.id), task];
+    return state;
+  });
+}
+export async function retryOffline(id) {
+  const current = await offlineSession();
+  await current.store.transaction(state => {
+    for (const op of state.outbox.filter(item => item.localId === id)) {
+      // An explicit retry reuses the frozen command UUID and payload.
+      op.state = 'pending'; op.retryAt = 0; op.error = null;
+    }
+    return state;
+  });
+  requestActiveSync();
+}
+
+export async function completedData() {
+  const current = await offlineSession();
+  const state = await current.store.load();
+  const owned = model.mergedTasks(state);
+  const remoteIds = new Set(owned.map(t => t.remoteId || t.id));
+  return [...(state.completedRemote || []).filter(t => !remoteIds.has(t.id)), ...owned.filter(t => t.completed)];
+}
+
+export async function rememberCompleted(tasks) {
+  const current = await offlineSession();
+  await current.store.transaction(state => ({...state, completedRemote: tasks}));
+}
+
+export async function forgetRemoteTask(id) {
+  const current = await offlineSession();
+  await current.store.transaction(state => {
+    const task = model.findTask(state, id);
+    if (task) delete state.tasks[task.id];
+    state.remote = state.remote.filter(t => t.id !== (task?.remoteId || id));
+    state.completedRemote = (state.completedRemote || []).filter(t => t.id !== (task?.remoteId || id));
+    return state;
+  });
+}
+
+let foreground = false;
+let poll = null;
+let lastAttempt = 0;
+export function requestActiveSync() {
+  if (!foreground) return;
+  lastAttempt = Date.now();
+  syncOffline().catch(() => {});
+}
+export function setOfflineForeground(active) {
+  foreground = active;
+  if (poll) clearInterval(poll);
+  poll = null;
+  if (!active) return;
+  requestActiveSync();
+  // Event-free RN host: a bounded foreground-only poll notices Wi-Fi returning.
+  // It is stopped on close; no promise of execution while plugins are closed.
+  poll = setInterval(() => {
+    if (Date.now() - lastAttempt >= 30000) requestActiveSync();
+  }, 30000);
 }

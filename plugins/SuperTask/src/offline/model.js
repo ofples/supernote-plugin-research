@@ -4,7 +4,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 
 function emptyStore(accountKey, deviceId) {
   return {schema: SCHEMA, accountKey, deviceId, revision: 0, userId: null,
-    lastSync: null, projects: [], remote: [], tasks: {}, outbox: [], syncError: null};
+    lastSync: null, projects: [], remote: [], completedRemote: [], tasks: {}, outbox: [], syncError: null};
 }
 
 function validateStore(store, accountKey, deviceId) {
@@ -12,6 +12,7 @@ function validateStore(store, accountKey, deviceId) {
       store.deviceId !== deviceId || !Number.isSafeInteger(store.revision) ||
       store.revision < 0 || !Array.isArray(store.remote) ||
       !Array.isArray(store.projects) || !Array.isArray(store.outbox) ||
+      (store.completedRemote !== undefined && !Array.isArray(store.completedRemote)) ||
       !store.tasks || Array.isArray(store.tasks) || typeof store.tasks !== 'object') {
     throw new Error('Unsupported, damaged, or differently bound task store. Existing data was not overwritten.');
   }
@@ -252,6 +253,11 @@ function replaceRemote(store, remote, projects, now = Date.now()) {
       const {id, remoteId, source, batchId, capturedAt} = task;
       Object.assign(task, latest, {id, remoteId, source, batchId, capturedAt,
         completed: Boolean(latest.is_completed || latest.checked), serverCompleted: Boolean(latest.is_completed || latest.checked)});
+      task.remoteMissing = false;
+    } else if (task.remoteId) {
+      // Sync full snapshots are authoritative for active items. Keep the source
+      // record for navigation/history but do not resurrect a remotely removed task.
+      task.remoteMissing = true;
     }
   }
   return next;
@@ -260,7 +266,7 @@ function replaceRemote(store, remote, projects, now = Date.now()) {
 function mergedTasks(store) {
   const owned = new Set(Object.values(store.tasks).map(t => t.remoteId).filter(Boolean));
   return [...store.remote.filter(t => !owned.has(t.id)).map(t => ({...t, completed: Boolean(t.is_completed || t.checked), syncState: 'synced'})),
-    ...Object.values(store.tasks).map(t => {
+    ...Object.values(store.tasks).filter(t => !t.remoteMissing || t.completed || store.outbox.some(op => op.localId === t.id)).map(t => {
       const ops = store.outbox.filter(op => op.localId === t.id);
       return {...clone(t), syncState: ops.some(op => op.state === 'attention') ? 'attention' : ops.length ? 'pending' : 'synced',
         syncError: ops.find(op => op.error)?.error || null};
