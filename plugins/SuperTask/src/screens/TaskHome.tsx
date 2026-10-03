@@ -30,6 +30,7 @@ const {localDate} = require('../offline/model');
 import {log, logError} from '../utils/debug';
 import TabBar from '../components/TabBar';
 import TaskRow from '../components/TaskRow';
+import ProjectOverview from '../components/ProjectOverview';
 import SelectionBar from '../components/SelectionBar';
 import {useTaskSelection} from '../utils/useTaskSelection';
 import SectionHeader from '../components/SectionHeader';
@@ -799,50 +800,15 @@ export default function TaskHome({nav, focusTab}: Props) {
   };
 
   const renderProjectsTab = () => {
-    // List of projects with task counts
-    const projectCounts: Record<string, number> = {};
-    tasks.forEach(t => {
-      const pid = t.project_id || 'none';
-      projectCounts[pid] = (projectCounts[pid] || 0) + 1;
-    });
-
     // If user selected specific projects in settings, show only those (even if empty)
     // Otherwise show all projects (even if empty)
     const filtered = enabledProjectIds.length > 0
       ? projectList.filter(p => enabledProjectIds.includes(p.id))
       : projectList;
-    const items = filtered.map(p => ({...p, taskCount: projectCounts[p.id] || 0}));
-
-    if (items.length === 0) {
-      return (
-        <View style={styles.centered}>
-          <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No projects</Text>
-        </View>
-      );
-    }
-
     return (
-      <FlatList
-        data={items}
-        keyExtractor={item => item.id}
-        renderItem={({item}) => (
-          <Pressable
-            style={styles.projectRow}
-            onPress={() => nav.push('project-view', {
-              projectId: item.id,
-              projectName: item.name,
-            })}>
-            <Text style={[styles.projectName, {fontSize: Math.round(17 * scale)}]}>{item.name}</Text>
-            <View style={styles.projectMeta}>
-              <Text style={[styles.projectCount, {fontSize: Math.round(14 * scale)}]}>
-                {item.taskCount} task{item.taskCount !== 1 ? 's' : ''}
-              </Text>
-              <Text style={styles.projectArrow}>{'>'}</Text>
-            </View>
-          </Pressable>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
+      <ProjectOverview projects={filtered} tasks={tasks} selectedIds={sel.selectedIds}
+        onSelect={sel.toggleSelect} onTask={handleTaskPress}
+        onProject={project => nav.push('project-view', {projectId: project.id, projectName: project.name})} />
     );
   };
 
