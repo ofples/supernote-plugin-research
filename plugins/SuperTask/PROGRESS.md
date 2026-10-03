@@ -1,3 +1,46 @@
+# Offline task workflow progress
+
+3 October 2026. Branch `feature/offline-task-workflow`.
+
+## Implemented foundation
+
+- Host-independent versioned task/outbox model, serialized transaction store and foreground sync worker.
+- Stable command UUIDs, frozen payloads after sending, partial acknowledgement handling and temporary-ID mapping.
+- Offline create/complete/reopen reducers, safe unsent correction/cancellation and pending task overlays.
+- Capture-time calendar date resolution, device/account partitioning and pre-upload user identity checks.
+- Strict private native storage with checksums, file/directory synchronization, atomic replacement, prior generation, writer lock and stale-writer rejection.
+- Runtime adapter and one-request timed Sync API transport. Existing screens still use their original paths; wiring them is next.
+
+## Evidence
+
+- `npm run test:offline`: 21 passed.
+- Targeted ESLint on `src/offline`: passed without warnings.
+- Android `:app:compileDebugKotlin`: passed.
+- Actual connected target: Nomad `SN078D10010594`, firmware `Chauvet.E103.2609111001.2505_beta`, PluginHost `1.00.26009090`.
+- No new workflow package installed. Native behavior in PluginHost is unverified.
+
+## Next implementation work
+
+1. Integrate private cached data and mutation services with all existing create/complete/reopen screens, status display, lifecycle/reconnection and registry/source navigation.
+2. Migrate credential/settings persistence privately without losing existing configuration; legacy shared credentials must not continue being silently written.
+3. Implement batch review from Capture/QuickAdd, preserve on-device line breaks and atomic saving; keep source handwriting intact.
+4. Implement opt-in sanitized snapshot publication/revocation and the distinct read-only Dashboard module with shared filter/date contract and tests.
+5. Review inherited dependency advisories compatibly, build and inspect both complete packages, back up target settings and run scratch-note/device checks.
+
+## Known items needing follow-up
+
+- The SDK/native private-directory agreement is deliberately strict and must be tested on this exact host.
+- Real Todoist repeated-command ID mappings need validation; a missing mapping leaves the original command queued rather than creating a replacement task.
+- Errors before command upload (identity lookup) and after upload (snapshot refresh) need visible status integration.
+- Token rotation retains previous queues separately; it must have a visible retained-data notice and documented recovery behavior.
+- Task identity and lifecycle races, source metadata migration, remote deletion handling and uncertain local commit acknowledgement need review during runtime integration.
+- No full workflow, package, e-ink UI, OCR line fidelity or Dashboard integration result has been claimed.
+
+See `WORKFLOW.md` for the storage decision, authoritative sources and dependency baseline.
+
+
+## Upstream progress history (preserved)
+
 # SuperTask
 
 Lasso-to-Todoist plugin for Supernote. Design doc: `docs/plugin-taskharvest-v2.md`
