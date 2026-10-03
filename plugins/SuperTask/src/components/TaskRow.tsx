@@ -38,9 +38,11 @@ type Props = {
   selected?: boolean;     // selection mode: box filled while selected
   completedAt?: string;   // ISO completion timestamp -> "Done Jul 24" chip
   onOpenNote?: () => void; // renders a right-aligned "Note >" jump button
+  compact?: boolean;
+  roundCheck?: boolean;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, pageNum, checked, selected, completedAt, onOpenNote}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false}: Props) {
   const scale = useFontScale();
 
   const handleCheckPress = () => {
@@ -72,13 +74,13 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, pageN
 
   return (
     <Pressable
-      style={[styles.row, !hasMeta && styles.rowCentered]}
+      style={[styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered]}
       onPress={() => { log('TaskRow', `ROW pressed id=${task.id}`); onPress(task); }}>
       <Pressable
         style={[styles.checkTarget, !hasMeta && styles.checkTargetCentered]}
         onPress={handleCheckPress}
         hitSlop={6}>
-        <Check checked={!!checked || !!selected} />
+        <Check checked={!!checked || !!selected} round={roundCheck} />
       </Pressable>
       <View style={styles.content}>
         <Text style={[styles.title, {fontSize: Math.round(16 * scale), lineHeight: Math.round(22 * scale)}]}>{task.content}</Text>
@@ -118,6 +120,7 @@ const styles = StyleSheet.create({
   rowCentered: {
     alignItems: 'center',
   },
+  compactRow: {paddingVertical: 6, paddingHorizontal: 12, minHeight: 56},
   checkTarget: {
     width: 44,
     minHeight: 44,
