@@ -1,5 +1,7 @@
 # Workflow validation — 3 October 2026
 
+This records the offline beta.4 checkpoint. The current combined overview/workflow artifact and pending installation are in [TESTING.md](TESTING.md).
+
 ## Local results
 
 | Check | Result |
@@ -30,7 +32,7 @@ The live batch used **manual input**, not handwriting. Actual uncertain-response
 
 ## Artifact
 
-`C:/Users/pless/Code/Supernote/SuperTask/plugins/SuperTask/build/outputs/SuperTask.snplg`
+`C:/Users/pless/Code/Supernote/SuperTask/plugins/SuperTask/build/outputs/SuperTask-offline-beta4.snplg` (archived locally before the combined build)
 
 Version `0.4.0-beta.4`, code `8`, 7,511,522 bytes.
 

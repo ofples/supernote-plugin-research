@@ -1,5 +1,11 @@
 # Offline task workflow progress
 
+## Combined testing branch — 3 October 2026
+
+`release/workflow-overview-testing` contains both independently reviewable draft PRs: offline/batch/AI [PR 1](https://github.com/ofples/supernote-plugin-research/pull/1), overview [PR 2](https://github.com/ofples/supernote-plugin-research/pull/2). Both histories were merged without conflicts. Exact feature revisions, beta.5 package hash and maintenance instructions are in TESTING.md.
+
+All **39 tests**, full TypeScript, lint error checks, native/JS build and expanded package verifier pass. Beta.5/code 10 is built and inspected but **not installed**: the user took the Nomad after beta.4 startup verification. Device interactions stopped immediately. The UI and handwriting/AI/source checks remain explicitly pending. No releases or main/upstream PR merges occurred.
+
 ## Current workflow handoff — 3 October 2026
 
 The offline/batch implementation is integrated. SuperDashboard is deferred; optional OpenAI/Vercel structured refinement was added. InkToClipboard and the recognition-enhancer experiment remain unchanged.

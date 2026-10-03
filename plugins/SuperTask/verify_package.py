@@ -29,6 +29,9 @@ with zipfile.ZipFile(artifact) as plugin:
     assert b'config.local' not in bundle
     for marker in [b'Review tasks', b'Refine with AI', b'Saved ', b'getLassoElements', b'json_schema']:
         assert marker in bundle, f'Missing JS implementation: {marker}'
+    if (root / 'src/overview/model.js').exists():
+        for marker in [b'Expand all', b'Collapse all', b'Comfortable']:
+            assert marker in bundle, f'Missing overview implementation: {marker}'
     with zipfile.ZipFile(io.BytesIO(plugin.read('app.npk'))) as native:
         libs = [name for name in native.namelist() if name.startswith('lib/') and name.endswith('.so')]
         assert libs == ['lib/arm64-v8a/libnative-lib.so'], libs
