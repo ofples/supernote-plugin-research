@@ -69,19 +69,19 @@ const SHORT = {
 export const PERMISSION_GROUPS = [
   {
     id: 'folder',
-    label: 'Remember your settings and captured tasks',
-    summary: 'Uses one folder of its own, MyStyle/SuperTask. Nothing else.',
-    why: 'SuperTask keeps its settings, the list of tasks you captured from notes, a cached copy of your task list, and a troubleshooting log in its own folder, MyStyle/SuperTask, and reads them back when it opens. It also checks that a note still exists before jumping to it. It never reads, changes, or uploads your notes, documents, or handwriting through this; handwriting is only read through Supernote\'s own plugin feature when you lasso it. (Supernote calls this FILE:READ and FILE:WRITE.)',
+    label: 'Import legacy settings and open source notes',
+    summary: 'Optional shared-folder access. Private task storage needs no file permission.',
+    why: 'SuperTask reads its old settings and task references from MyStyle/SuperTask during migration and can redact the old token after saving privately. Shared access also lets it import a token file and check source notes before opening them. New credentials, cached tasks, queues and troubleshooting logs stay in its private folder. Batch capture reads your lasso selection through Supernote without changing the note. (FILE:READ and FILE:WRITE.)',
     permissions: [READ, WRITE],
-    desc: 'SuperTask keeps its settings and your captured-task list in its own folder, MyStyle/SuperTask. It does not touch your notes or documents.',
+    desc: 'Allow shared access for legacy migration, token import and source-note navigation. Private settings and offline tasks do not require this.',
   },
   {
     id: 'sync',
-    label: 'Sync with Todoist',
-    summary: 'Talks only to your own Todoist account.',
-    why: 'SuperTask connects to Todoist (api.todoist.com) to create, list, edit, and complete your tasks, using the API token you provide. If you set one up under Debugging, it can also stream its troubleshooting log to a computer on your own wifi. Nothing is sent anywhere else, and nothing is sent to the plugin author. (Supernote calls this INTERNET.)',
+    label: 'Network access',
+    summary: 'Todoist sync, optional OpenAI refinement, and explicit log upload.',
+    why: 'SuperTask connects to api.todoist.com with your Todoist token. Refine with AI explicitly sends reviewed rows and the selected image to api.openai.com with your separately configured API key. Upload Log sends troubleshooting data only to a server you configure. No AI call is automatic and nothing is sent to the plugin author. (INTERNET.)',
     permissions: [INTERNET],
-    desc: 'SuperTask connects to Todoist (api.todoist.com) to sync your tasks. Nothing else is sent anywhere.',
+    desc: 'Allow Todoist sync, optional OpenAI refinement and explicit troubleshooting uploads.',
   },
   {
     id: 'cleanup',

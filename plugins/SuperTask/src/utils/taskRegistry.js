@@ -1,230 +1,77 @@
-/**
- * Task Registry -- local index of tasks created by SuperTask.
- *
- * Stores task metadata in RNFS JSON for fast page-level lookup
- * without hitting the Todoist API. Written on task creation,
- * read when SuperTask opens to show "tasks on this page."
- *
- * File: /MyStyle/SuperTask/task-registry.json
- */
-
+/** Source references live in the same private generation as tasks and outbox. */
 import RNFS from 'react-native-fs';
-import {log} from './debug';
+import {PluginManager} from 'sn-plugin-lib';
+import {offlineSession, offlineData} from '../offline/service';
+const {findTask} = require('../offline/model');
+const LEGACY = '/storage/emulated/0/MyStyle/SuperTask/task-registry.json';
+let imported = null;
+let importing = null;
 
-const REGISTRY_DIR = '/storage/emulated/0/MyStyle/SuperTask';
-const REGISTRY_FILE = REGISTRY_DIR + '/task-registry.json';
-const REGISTRY_TMP = REGISTRY_FILE + '.tmp';
-
-let _cache = null;
-let _readPromise = null;   // Dedup: concurrent first reads share one parse
-let _chain = Promise.resolve(); // Serializes read-modify-write mutations (B-025)
-
-function emptyRegistry() {
-  return {tasks: {}, lastSync: null};
-}
-
-/**
- * Run a mutation exclusively -- concurrent addTask/removeTask calls used to
- * read-modify-write independently, last writer silently dropping the other's
- * entry (B-025). Failures don't break the chain.
- */
-function serialize(op) {
-  const run = _chain.then(() => op());
-  _chain = run.then(() => undefined, () => undefined);
-  return run;
-}
-
-async function read() {
-  if (_cache) return _cache;
-  if (_readPromise) return _readPromise;
-  _readPromise = (async () => {
-    try {
-      const exists = await RNFS.exists(REGISTRY_FILE);
-      if (!exists) {
-        // Crash recovery: if we died between writing the temp file and the
-        // rename, the temp file holds the last complete registry.
-        if (await RNFS.exists(REGISTRY_TMP)) {
-          const rawTmp = await RNFS.readFile(REGISTRY_TMP, 'utf8');
-          _cache = JSON.parse(rawTmp);
-          log('Registry', `Recovered ${Object.keys(_cache.tasks).length} tasks from temp file`);
-          return _cache;
-        }
-        _cache = emptyRegistry();
-        return _cache;
-      }
-      const raw = await RNFS.readFile(REGISTRY_FILE, 'utf8');
-      _cache = JSON.parse(raw);
-      log('Registry', `Loaded ${Object.keys(_cache.tasks).length} tasks`);
-      return _cache;
-    } catch (e) {
-      log('Registry', `Read failed (starting empty): ${e.message}`);
-      _cache = emptyRegistry();
-      return _cache;
-    } finally {
-      _readPromise = null;
+async function importVerifiedSources() {
+  const current = await offlineSession();
+  if (imported === current.identity.accountKey) return;
+  const state = await current.store.load();
+  if (!state.userId || !state.lastSync) return;
+  if (await PluginManager.hasPermission('plugin.permission.FILE:READ') !== 1) return;
+  if (!(await RNFS.exists(LEGACY))) { imported = current.identity.accountKey; return; }
+  const legacy = JSON.parse(await RNFS.readFile(LEGACY, 'utf8'));
+  if (!legacy?.tasks || typeof legacy.tasks !== 'object') throw new Error('Legacy task references are damaged; original file retained.');
+  const verifiedIds = new Set(state.remote.map(task => task.id));
+  await current.store.transaction(next => {
+    for (const [id, reference] of Object.entries(legacy.tasks)) {
+      if (!verifiedIds.has(id) || findTask(next, id)?.source || !reference.notePath) continue;
+      const task = next.remote.find(item => item.id === id);
+      next.tasks[id] = {...task, id, remoteId: id, completed: false, serverCompleted: false,
+        source: {filePath: reference.notePath, pageNum: reference.pageNum ?? 0, bounds: null}};
     }
-  })();
-  return _readPromise;
-}
-
-async function write(registry) {
-  _cache = registry;
-  try {
-    const dirExists = await RNFS.exists(REGISTRY_DIR);
-    if (!dirExists) {
-      await RNFS.mkdir(REGISTRY_DIR);
-    }
-    // Atomic-ish write: full temp file first, then swap in. A process kill
-    // mid-write can no longer truncate the registry (B-025).
-    await RNFS.writeFile(REGISTRY_TMP, JSON.stringify(registry, null, 2), 'utf8');
-    // rename replaces atomically on Android -- no unlink (FILE:WRITE only)
-    await RNFS.moveFile(REGISTRY_TMP, REGISTRY_FILE);
-  } catch (e) {
-    log('Registry', `Write failed: ${e.message}`);
-  }
-}
-
-/**
- * Add a task to the registry after creation.
- */
-export function addTask(taskId, {content, noteFile, notePath, pageNum, completed = false}) {
-  return serialize(async () => {
-    const registry = await read();
-    registry.tasks[taskId] = {
-      content,
-      noteFile,
-      // Full path enables filesystem-style labels in the On Device tab
-      // ("Connor / 1x1"). Older entries without it fall back to noteFile.
-      ...(notePath ? {notePath} : {}),
-      pageNum,
-      createdAt: new Date().toISOString(),
-      completed,
-    };
-    await write(registry);
-    log('Registry', `Added task ${taskId}: "${content.slice(0, 30)}"`);
+    return next;
   });
+  imported = current.identity.accountKey;
+}
+function migrateVerifiedSources() {
+  if (!importing) importing = importVerifiedSources().finally(() => {importing = null;});
+  return importing;
 }
 
-/**
- * Get all tasks for a specific note file and page number.
- */
-export async function getTasksForPage(noteFile, pageNum) {
-  const registry = await read();
-  const results = [];
-  for (const [id, task] of Object.entries(registry.tasks)) {
-    if (task.noteFile === noteFile && task.pageNum === pageNum) {
-      results.push({id, ...task});
-    }
-  }
-  return results;
+function asReference(task) {
+  return {...task, notePath: task.source.filePath,
+    noteFile: task.source.filePath.split('/').pop(), pageNum: task.source.pageNum,
+    createdAt: task.capturedAt ? new Date(task.capturedAt).toISOString() : null};
 }
-
-/**
- * Get all tasks for a specific note file (any page).
- */
-export async function getTasksForNote(noteFile) {
-  const registry = await read();
-  const results = [];
-  for (const [id, task] of Object.entries(registry.tasks)) {
-    if (task.noteFile === noteFile) {
-      results.push({id, ...task});
-    }
-  }
-  return results;
-}
-
-/**
- * Mark a task as completed (or un-completed, for Undo) in the registry.
- * The entry is kept -- reconcile prunes it once Todoist confirms -- so the
- * note back-reference survives an immediate Undo.
- */
-export function markCompleted(taskId, completed = true) {
-  return serialize(async () => {
-    const registry = await read();
-    if (registry.tasks[taskId]) {
-      registry.tasks[taskId].completed = completed;
-      await write(registry);
-      log('Registry', `Marked ${completed ? 'completed' : 'reopened'}: ${taskId}`);
-    }
-  });
-}
-
-/**
- * Update a task's note reference (rename healing, B-005).
- */
-export function updateTaskNote(taskId, {noteFile, notePath}) {
-  return serialize(async () => {
-    const registry = await read();
-    const t = registry.tasks[taskId];
-    if (t) {
-      if (noteFile) t.noteFile = noteFile;
-      if (notePath) t.notePath = notePath;
-      await write(registry);
-      log('Registry', `Updated note ref for ${taskId}: ${noteFile}`);
-    }
-  });
-}
-
-/**
- * Update a task's ID (e.g., after offline sync replaces local ID with Todoist ID).
- */
-export function updateTaskId(oldId, newId) {
-  return serialize(async () => {
-    const registry = await read();
-    if (registry.tasks[oldId]) {
-      registry.tasks[newId] = registry.tasks[oldId];
-      delete registry.tasks[oldId];
-      await write(registry);
-      log('Registry', `Updated ID: ${oldId} -> ${newId}`);
-    }
-  });
-}
-
-/**
- * Get a single task by ID.
- */
-export async function getTask(taskId) {
-  const registry = await read();
-  const task = registry.tasks[taskId];
-  return task ? {id: taskId, ...task} : null;
-}
-
-/**
- * Get all tasks in the registry.
- */
 export async function getAllTasks() {
-  const registry = await read();
-  return Object.entries(registry.tasks).map(([id, task]) => ({id, ...task}));
+  await migrateVerifiedSources();
+  return (await offlineData()).allTasks.filter(task => task.source?.filePath).map(asReference);
 }
-
-/**
- * Remove a task from the registry.
- */
-export function removeTask(taskId) {
-  return serialize(async () => {
-    const registry = await read();
-    if (registry.tasks[taskId]) {
-      delete registry.tasks[taskId];
-      await write(registry);
-      log('Registry', `Removed task: ${taskId}`);
-    }
+export async function getTask(id) { return (await getAllTasks()).find(task => task.id === id || task.remoteId === id) || null; }
+export async function getTasksForNote(name) {
+  return (await getAllTasks()).filter(task => name.startsWith('/') ? task.notePath === name : task.noteFile === name);
+}
+export async function getTasksForPage(name, page) { return (await getTasksForNote(name)).filter(task => task.pageNum === page); }
+export async function addTask(id, {notePath, pageNum, noteFile, content}) {
+  if (!notePath) return;
+  const current = await offlineSession();
+  await current.store.transaction(state => {
+    const task = findTask(state, id);
+    if (!task) throw new Error('Task was not saved; source reference was not written.');
+    if (!state.tasks[task.id]) state.tasks[task.id] = {...task, remoteId: task.id};
+    state.tasks[task.id].source = {filePath: notePath, pageNum: pageNum ?? 0, bounds: null};
+    return state;
   });
 }
-
-/**
- * Update lastSync timestamp.
- */
-export function setLastSync() {
-  return serialize(async () => {
-    const registry = await read();
-    registry.lastSync = new Date().toISOString();
-    await write(registry);
+export async function updateTaskNote(id, {notePath}) {
+  if (!notePath) return;
+  const current = await offlineSession();
+  await current.store.transaction(state => {
+    const task = findTask(state, id);
+    if (task?.source) task.source.filePath = notePath;
+    return state;
   });
 }
-
-/**
- * Invalidate in-memory cache (force re-read from disk).
- */
-export function invalidateCache() {
-  _cache = null;
-}
+// Completion is already persisted by the API facade; registry reads reflect it.
+export async function markCompleted(id, completed = true) {}
+// Online deletion removes the authoritative task in the API facade. Never prune
+// a private queue merely because an active-only network list lacks its task.
+export async function removeTask(id) {}
+export async function setLastSync() {}
+export function invalidateCache() { imported = null; }
+export async function updateTaskId() { throw new Error('Local source IDs remain stable across synchronization.'); }

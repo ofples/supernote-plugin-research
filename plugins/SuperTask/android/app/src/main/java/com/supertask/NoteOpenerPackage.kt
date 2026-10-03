@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class NoteOpenerPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(NoteOpenerModule(reactContext))
+        return listOf(NoteOpenerModule(reactContext), TaskStorageModule(reactContext))
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {

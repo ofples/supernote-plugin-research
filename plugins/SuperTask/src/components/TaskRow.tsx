@@ -20,6 +20,7 @@ import {log} from '../utils/debug';
 import Chip from './Chip';
 import {Check} from './settings';
 import {useFontScale} from '../utils/useFontScale';
+const {localDate} = require('../offline/model');
 
 const PRIORITY_LABELS: Record<number, string> = {
   4: 'P1',
@@ -49,8 +50,8 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, pageN
   };
 
   const priorityLabel = PRIORITY_LABELS[task.priority] || '';
-  const dueDate = task.due?.date || '';
-  const today = new Date().toISOString().slice(0, 10);
+  const dueDate = (task.due?.date || '').slice(0, 10);
+  const today = localDate(new Date());
   const isOverdue = !checked && dueDate && dueDate < today;
   const isToday = dueDate === today;
 
@@ -62,7 +63,8 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, pageN
   if (priorityLabel) chips.push({label: priorityLabel});
   if (showProject) chips.push({label: showProject});
   if (pageNum !== undefined) chips.push({label: `p.${pageNum}`});
-  if (task._registryOnly) chips.push({label: 'pending sync'});
+  if (task.syncState === 'attention') chips.push({label: 'Needs attention', inverted: true});
+  else if (task.syncState === 'pending' || task._registryOnly) chips.push({label: 'Pending sync'});
 
   // Layout responds to PERSISTENT metadata: with chips the row top-aligns
   // (title pairs with the checkbox, chips wrap below); without chips the

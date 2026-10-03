@@ -10,6 +10,7 @@
  * @format
  */
 
+import './src/polyfills';
 import {AppRegistry, Image} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
@@ -90,14 +91,9 @@ PluginManager.registerButtonListener({
   },
 });
 
-// Config listener: try both callback names (SDK docs say onClick,
-// older code used onConfigButtonPress -- belt and suspenders)
+// SDK 0.1.65 exposes onClick for the config button.
 PluginManager.registerConfigButtonListener({
   onClick: () => {
-    global.__superTaskButtonId = 'config';
-    markViewOpen('config-button');
-  },
-  onConfigButtonPress: () => {
     global.__superTaskButtonId = 'config';
     markViewOpen('config-button');
   },

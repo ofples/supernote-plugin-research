@@ -35,10 +35,8 @@ import {
   Segmented,
   CheckRow,
   CheckItem,
-  InfoButton,
   InfoSheet,
   InputSheet,
-  SavedTick,
 } from '../components/settings';
 
 type Props = {
@@ -87,7 +85,7 @@ function normalizeLassoInput(v?: string): string {
   return v === 'pen-lasso' ? 'pen-lasso' : 'finger';
 }
 
-export default function Config({onNavigate, nav}: Props) {
+export default function Config({nav}: Props) {
   // Saved-config snapshot for the FIRST render. Settings is almost always
   // reached warm (from TaskHome), so every control can paint its saved value
   // immediately -- previously the screen mounted on defaults and every
@@ -107,13 +105,14 @@ export default function Config({onNavigate, nav}: Props) {
   const [token, setToken] = useState(cfg0?.apiToken || '');
   const [tokenMasked, setTokenMasked] = useState(true);
   const [status, setStatus] = useState('');
+  const [privacyWarning, setPrivacyWarning] = useState(cfg0?.privacyWarning || '');
   const [configSource, setConfigSource] = useState(() => (cfg0 ? getConfigSource() : 'defaults'));
   const [projects, setProjects] = useState<any[]>([]);
 
   // Settings values
   const [defaultTab, setDefaultTab] = useState(cfg0?.defaultTab || 'last');
   const [bezelSwipeEnabled, setBezelSwipeEnabled] = useState(cfg0?.bezelSwipeEnabled === true);
-  const [threeFingerTapEnabled, setThreeFingerTapEnabled] = useState(cfg0?.threeFingerTapEnabled === true);
+  const [, setThreeFingerTapEnabled] = useState(cfg0?.threeFingerTapEnabled === true);
   const [lassoGestureInput, setLassoGestureInput] = useState(normalizeLassoInput(cfg0?.lassoGestureInput));
   const [postCreateAction, setPostCreateAction] = useState(cfg0?.postCreateAction || 'prompt');
   const [markAsTextFontSize, setMarkAsTextFontSize] = useState(cfg0?.markAsTextFontSize || 32);
@@ -181,6 +180,7 @@ export default function Config({onNavigate, nav}: Props) {
       if (config.fontScale) setFontScaleField(config.fontScale);
 
       setConfigSource(getConfigSource());
+      setPrivacyWarning(config.privacyWarning || '');
       refreshPermissions();
       checkTokenFile();
 
@@ -199,7 +199,7 @@ export default function Config({onNavigate, nav}: Props) {
           log('Config', `Auto-fetch projects failed: ${err.message}`);
         }
       }
-    });
+    }).catch(() => setStatus('Private settings could not be opened.'));
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
@@ -213,7 +213,7 @@ export default function Config({onNavigate, nav}: Props) {
   const applyChange = async (rowKey: string, partial: Record<string, any>, gesture = false) => {
     const ok = await saveConfig(partial);
     setConfigSource(getConfigSource());
-    setLastSaved(new Date().toLocaleTimeString());
+    if (ok) setLastSaved(new Date().toLocaleTimeString());
     setSaveFailed(!ok);
     if (!ok) {
       try {
@@ -227,11 +227,11 @@ export default function Config({onNavigate, nav}: Props) {
     } else {
       setSaveFailedPerm(false);
     }
-    setSavedRow(rowKey);
+    setSavedRow(ok ? rowKey : null);
     if (savedTimer.current) clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSavedRow(null), 2000);
     if (gesture) reloadGestureConfig();
-    log('Config', `Applied ${Object.keys(partial).join(',')}${ok ? '' : ' (SESSION ONLY -- write failed)'}`);
+    log('Config', `Applied ${Object.keys(partial).join(',')}${ok ? '' : ' (NOT SAVED)'}`);
   };
 
   // ── Account handlers ─────────────────────────────────────
@@ -376,8 +376,7 @@ export default function Config({onNavigate, nav}: Props) {
 
   const sourceLabel = (src: string) => {
     switch (src) {
-      case 'file': return 'Device file';
-      case 'bundled': return 'Build config';
+      case 'private': return 'Private device settings';
       default: return 'Not saved';
     }
   };
@@ -412,11 +411,12 @@ export default function Config({onNavigate, nav}: Props) {
           </View>
         </View>
         <View style={s.headerRight}>
+          <Pressable style={s.headerBtn} onPress={() => nav?.resetTo('task-home')}><Text style={s.headerBtnText}>Tasks</Text></Pressable>
           {saveFailed ? (
             <Text style={s.headerFail} numberOfLines={2}>
               {saveFailedPerm
-                ? 'Not saved — allow "Remember your settings" under Setup > Permissions'
-                : 'Session only — device write failed'}
+                ? 'Private settings could not be saved'
+                : 'Not saved — device write failed'}
             </Text>
           ) : lastSaved ? (
             <Text style={s.headerSaved} numberOfLines={1}>Saved {lastSaved} ✓</Text>
@@ -438,6 +438,9 @@ export default function Config({onNavigate, nav}: Props) {
         {/* ── Setup page: Account & Sync ── */}
         {page === 'setup' && (
         <Section title="ACCOUNT & SYNC" first>
+          <SettingRow label="AI refinement" hint="Optional OpenAI refinement for lasso batches. Uses a separate key stored privately.">
+            <Pressable style={s.btnAction} onPress={() => nav?.push('ai-settings')}><Text style={s.btnActionText}>AI settings</Text></Pressable>
+          </SettingRow>
           <SettingRow
             label="Todoist API token"
             hint="Todoist: Settings > Integrations > Developer > API token"
@@ -508,13 +511,11 @@ export default function Config({onNavigate, nav}: Props) {
             </View>
           </SettingRow>
 
-          <SettingRow
-            label="Config source"
+            <SettingRow
+              label="Config source"
             hint={
-              configSource === 'file'
-                ? 'MyStyle/SuperTask/supertask-config.json'
-                : configSource === 'bundled'
-                ? 'Using build-time config.local.js'
+              configSource === 'private'
+                ? 'Settings and credentials are stored in SuperTask’s private folder.'
                 : 'No persistent config found'
             }>
             <View style={s.sourceChip}>
@@ -527,7 +528,7 @@ export default function Config({onNavigate, nav}: Props) {
             hint={
               permStates === null
                 ? 'This firmware does not manage plugin permissions. Tap ? to see what SuperTask does with your files and network.'
-                : 'Supernote asks about each of these the first time it is needed. Everything SuperTask touches stays inside MyStyle/SuperTask; the network is used only for Todoist. Tap ? for the full reasons.'
+                : 'Private task storage works without shared-folder access. Internet is used for Todoist, optional AI refinement and explicit log upload. Tap ? for details.'
             }
             onInfo={() => setInfoSheet('permissions')}>
             {permStates !== null && (
@@ -706,6 +707,8 @@ export default function Config({onNavigate, nav}: Props) {
                 ))}
               </View>
             </SettingRow>
+
+            {!!privacyWarning && <Text style={{color: '#000', fontSize: 15, lineHeight: 22}}>{privacyWarning}</Text>}
           </Section>
         )}
         </>
@@ -728,7 +731,7 @@ export default function Config({onNavigate, nav}: Props) {
 
           <SettingRow
             label="Debug log server"
-            hint="Where Upload Log streams logs (computer's LAN IP, not a .local name). Logs always also write to MyStyle/SuperTask/logs/session.log."
+            hint="Upload Log explicitly sends private troubleshooting logs to this server. Logs are also kept privately on-device."
             onInfo={() => setInfoSheet('server')}
             saved={savedRow === 'server'}>
             <View style={s.inputRow}>
@@ -767,11 +770,11 @@ export default function Config({onNavigate, nav}: Props) {
       <InfoSheet
         visible={infoSheet === 'token'}
         title="How to enter your API token"
-        intro={'1. In Todoist, go to Settings > Integrations > Developer (todoist.com/prefs/integrations). Copy your API token, or issue a new one there.\n\n2. Pick one of the options below. You only need to do this once: the token is saved on the device in an obscured form and survives reinstalls.'}
+        intro={'1. In Todoist, go to Settings > Integrations > Developer (todoist.com/prefs/integrations). Copy your API token, or issue a new one there.\n\n2. Pick one of the options below. You only need to do this once: the token is saved in SuperTask’s private device folder. Uninstalling or clearing PluginHost data can erase it.'}
         sections={[
-          {label: 'Option 1. Sync a token file from the Supernote Partner app (recommended)', body: 'From your phone or computer, create a plain text file named **supertask-token.txt** containing only the token.\n\nEnsure a fresh sync after installing SuperTask, so the **MyStyle/SuperTask** folder appears in the Supernote Partner app. Then use the Partner app\'s **Import** feature to pick the file from your phone or computer and place it in that folder. Supernote Cloud or USB work too.\n\nClose this sheet. Once the file is in place, the **Import** button on the Setup page becomes available; tap it and SuperTask saves the token and deletes the file. Only that one folder is checked.'},
+          {label: 'Option 1. Import a temporary token file over USB', body: 'From your phone or computer, create a plain text file named **supertask-token.txt** containing only the token.\n\nCreate **MyStyle/SuperTask** over USB if necessary and put the file there. A token file sent through a cloud service can remain in cloud history; direct paste or USB avoids that shared copy.\n\nClose this sheet. Once the file is in place, the **Import** button on the Setup page becomes available; tap it and SuperTask saves the token and deletes the file. Only that one folder is checked.'},
           {label: 'Option 2. Paste the token with a Bluetooth keyboard', body: 'Pair a Bluetooth keyboard (Supernote Settings > Bluetooth), tap the **Todoist API token** field on the Setup page, paste with Ctrl+V, then tap **Save**.'},
-          {label: 'Option 3. Edit the config file over USB', body: 'Connect to a computer, open **MyStyle/SuperTask/supertask-config.json** in a text editor, replace the apiToken value with your token, save, and reopen the plugin. It is obscured on the next load.'},
+          {label: 'Private storage', body: 'New settings are saved privately. The old shared config is read only for migration, then its credentials are redacted when shared write access is available. Shared copies previously synced to cloud services may remain in their history.'},
           {label: 'Option 4. Type it with the on-screen keyboard', body: 'Tap the **Todoist API token** field on the Setup page and type the 40-character token by hand, then tap **Save**. Slow, but it works with nothing else set up.'},
         ]}
         onClose={() => { setInfoSheet(null); checkTokenFile(); }}
@@ -816,7 +819,7 @@ export default function Config({onNavigate, nav}: Props) {
       <InfoSheet
         visible={infoSheet === 'server'}
         title="Debug log server setup"
-        intro="The plugin can stream debug logs over wifi to a small server on your computer. This is optional -- logs are ALWAYS saved on the device at MyStyle/SuperTask/logs/session.log, retrievable via USB. That file is usually all you need for a bug report."
+        intro="The plugin can explicitly upload debug logs over wifi to a small server on your computer. This is optional -- logs are ALWAYS saved on the device at a private rotating log. Use Upload Log to send it explicitly to a server you configure; review it in the plugin before sharing."
         sections={[
           {label: 'Get the server file', body: 'dev-server.js is a single small file with no dependencies. It comes with the SuperTask download (next to the .snplg) -- save it anywhere on your computer, e.g. your Desktop. It writes received logs to a logs/ folder beside itself.'},
           {label: 'Mac', body: '1. Install Node.js from nodejs.org (or: brew install node)\n2. Open Terminal\n3. cd into the folder where you saved dev-server.js\n4. Run: node dev-server.js\n\nThe server prints its address, e.g. http://192.168.1.20:3000/log -- enter that in the field, then tap Test.'},
@@ -877,8 +880,8 @@ export default function Config({onNavigate, nav}: Props) {
         intro="Tools for troubleshooting. Nothing here is needed for everyday use."
         sections={[
           {label: 'Debug mode', body: 'Adds Log buttons to screens and unlocks the Debug log and Diagnostics rows below. It does not change how SuperTask behaves.'},
-          {label: 'Where logs live', body: 'SuperTask always keeps a log on the device at MyStyle/SuperTask/logs/session.log (two rotating files, about 1 MB total). Attach that file to a bug report. It records what the plugin did, including task titles and note names, but never your API token.'},
-          {label: 'Debug log server', body: 'Optional: stream the same log live to a computer on your own wifi while you reproduce a problem. Set-up steps are under that row\'s (?).'},
+          {label: 'Where logs live', body: 'SuperTask always keeps a log on the device at its private folder (two rotating files, about 1 MB total). Use the in-app Log screen and explicit Upload Log action for troubleshooting. It records what the plugin did, including task titles and note names, but never your API token.'},
+          {label: 'Debug log server', body: 'Optional: explicitly upload the same log to a computer on your own wifi while you reproduce a problem. Set-up steps are under that row\'s (?).'},
           {label: 'Diagnostics', body: 'A live readout of touch and pen events, used for tuning gestures.'},
         ]}
         onClose={() => setInfoSheet(null)}
@@ -887,10 +890,10 @@ export default function Config({onNavigate, nav}: Props) {
       <InfoSheet
         visible={infoSheet === 'permissions'}
         title="What SuperTask is allowed to do"
-        intro="Supernote firmware 3.29.44 (2.26.41 on A5X/A6X) lets you decide, per plugin, what it may touch. SuperTask needs three things, and Supernote asks you about each one the first time it is needed: the folder when you first open the plugin, Todoist when your tasks first load, and deleting only when you import a token file. Say no to any of them and the matching feature simply stops working."
+        intro="Supernote firmware 3.29.44 (2.26.41 on A5X/A6X) lets you decide, per plugin, what it may touch. SuperTask needs three things, and Supernote asks you about each one the first time it is needed: shared access for migration, import and source-note navigation, network access for Todoist or optional AI, and deletion when you import a token file. Private offline storage needs no shared-file permission. Say no to any of them and the matching feature simply stops working."
         sections={[
           ...PERMISSION_GROUPS.map(g => ({label: g.label, body: g.why})),
-          {label: 'In short', body: 'Every file SuperTask reads or saves lives in one folder, MyStyle/SuperTask, and the only thing it ever deletes is the token file after import. Your notes and documents are never modified, uploaded, or deleted by it. The only place data goes is your own Todoist account. If you said no and change your mind, use Allow missing on this screen.'},
+          {label: 'In short', body: 'Credentials, queues, cached tasks and logs live in the private plugin folder. Shared files are used for migration and explicit token import. Batch capture leaves handwriting unchanged. Todoist sync is automatic while SuperTask is open; optional AI sends selected rows and the crop to OpenAI only when you tap Refine with AI. Logs are uploaded only by an explicit action. If you said no and change your mind, use Allow missing on this screen.'},
         ]}
         onClose={() => setInfoSheet(null)}
       />

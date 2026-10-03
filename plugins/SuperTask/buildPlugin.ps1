@@ -1213,9 +1213,9 @@ function Main {
         if ($buildSuccess) {
             Write-ColorOutput '=== Step 11: Copy APK and update nativeCodePackage ===' 'Blue'
             $apkCopied = Copy-ApkAndUpdateConfig -ProjectRoot $projectRoot -BuildGeneratedDir $buildGeneratedDir -BuildGeneratedConfigFile $buildGeneratedConfigFile
-            if (-not $apkCopied) { Write-ColorOutput 'Failed to copy APK or update configuration' 'Red' }
+            if (-not $apkCopied) { throw 'Failed to copy the required native package; refusing incomplete plugin' }
         } else {
-            Write-ColorOutput 'Gradle build failed, skipping APK copy and configuration update' 'Red'
+            throw 'Native build failed; refusing incomplete plugin'
         }
 
         # Step 12: Parse Autolinking source PackageList.java, filter and merge
@@ -1224,6 +1224,10 @@ function Main {
         $pkgFromAutolinking = Get-ReactPackagesFromAutolinkingSource -ProjectRoot $projectRoot -Exclude $excludePkgs
 
         $allPkgs = @()
+        # Keep explicitly declared local packages. Source discovery can miss
+        # Kotlin packages registered in apply { add(...) } expressions.
+        $declaredConfig = Get-Content -LiteralPath $rootConfigFile -Raw | ConvertFrom-Json
+        $allPkgs += @($declaredConfig.reactPackages)
         $allPkgs += $projectReactPkgs
         $allPkgs += $pkgFromAutolinking
         $dedupPkgs = $allPkgs | Sort-Object -Unique

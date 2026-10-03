@@ -2,7 +2,7 @@
  * TaskAdd - Create a new task from the task viewer
  */
 
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import {PluginManager, PluginNoteAPI, PluginCommAPI} from 'sn-plugin-lib';
+import {PluginNoteAPI, PluginCommAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
 import {setConfigLoader, createTask} from '../api/todoist';
@@ -67,9 +67,12 @@ type Props = {
   initialDescription?: string;
   captureMode?: 'lasso' | 'doc';
   noteContext?: NoteContext | null;
+  capturedAt?: number;
 };
 
-export default function TaskAdd({nav, projects, defaultProjectId, initialContent, initialDescription, captureMode, noteContext}: Props) {
+export default function TaskAdd({nav, projects, defaultProjectId, initialContent, initialDescription, captureMode, noteContext, capturedAt}: Props) {
+  const saveRequest = useRef({});
+  const captureTime = useRef(capturedAt || Date.now());
   const scale = useFontScale();
   const [content, setContent] = useState(initialContent || '');
   const [description, setDescription] = useState(initialDescription || '');
@@ -96,7 +99,7 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
       if (config.markAsTextFontSize) setMarkAsTextFontSize(config.markAsTextFontSize);
       if (config.debugMode) setDebugMode(true);
     });
-  }, []);
+  }, [captureMode, defaultProjectId, initialContent, projects?.length]);
 
   const handleSubmit = async () => {
     log('TaskAdd', `SUBMIT pressed content="${content.slice(0, 30)}" priority=${priority} dueString="${dueString}" projectId=${projectId}`);
@@ -106,7 +109,7 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
     }
 
     setSubmitting(true);
-    setStatus('Adding to Todoist...');
+    setStatus('Saving on device...');
 
     try {
       // Build description with note context back-reference
@@ -122,6 +125,9 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
         projectId: projectId || undefined,
         priority,
         dueString: dueString.trim() || undefined,
+        source: noteContext,
+        request: saveRequest.current,
+        capturedAt: captureTime.current,
       });
       log('TaskAdd', `Created task: ${content.trim()} id=${task?.id} postCreateAction=${postCreateAction}`);
       invalidateCache();
@@ -157,10 +163,10 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
       }
 
       if (postCreateAction === 'auto-back') {
-        setStatus('Task added!');
+        setStatus('Saved on device — pending sync');
         setTimeout(() => nav.pop(), 500);
       } else {
-        setStatus('Task added!');
+        setStatus('Saved on device — pending sync');
         setJustCreated(true);
       }
     } catch (err: any) {
@@ -172,6 +178,7 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
   };
 
   const handleAddAnother = () => {
+    saveRequest.current = {};
     log('TaskAdd', 'ADD ANOTHER pressed');
     setContent('');
     setDescription('');

@@ -1,3 +1,67 @@
+# Offline task workflow progress
+
+## Current workflow handoff — 3 October 2026
+
+The offline/batch implementation is integrated. SuperDashboard is deferred; optional OpenAI/Vercel structured refinement was added. InkToClipboard and the recognition-enhancer experiment remain unchanged.
+
+- Private settings/credentials, fetched task/project/history cache, durable queue and account isolation are wired into existing screens. Legacy tokens are redacted only after private migration succeeds.
+- Ordinary create/complete/reopen works offline. Open/resume, Refresh and foreground reconnection trigger safe sync with stable UUIDs, frozen uncertain payloads and individual acknowledgements/mappings.
+- Lasso Capture opens editable multi-row review. Manual + Batch shares atomic saving. Merge/split/select/remove/per-row metadata, capture-time dates and private stable note/page references are implemented. Capture does not programmatically change handwriting.
+- AI refinement uses its own private key and the buffered Responses adapter with locally validated structured suggestions. Failure/cancellation retains edits; Undo restores previous review. No paid call was made.
+- Native preview cleanup, account-switch cache races and uncertain local saves are handled. Full TypeScript passes, including explicit weak SDK boundaries in retained upstream screens.
+- **32 tests passed**, changed-file lint has no errors (style warnings remain), complete native/JS build and actual nested package inspection passed.
+- Nomad beta.2 proved offline ten-row manual save, restart retention, cached projects, ten unique synced tasks, offline complete/reopen and automatic open/resume sync. Test tasks removed; original eight active tasks and zero queue restored, Wi-Fi on.
+- Final workflow artifact: beta.4/code 9. Hash and installation evidence are in VALIDATION.md. No destructive recovery/release/upstream PR was performed.
+
+**Pending:** handwritten line fidelity, landscape/edge crops, source-note navigation and paid AI scratch-note checks. Real lost-response injection is a dedicated-test-account follow-up; deterministic replay passes. Sections/subtask hierarchy UI, recurring offline changes and token-rotation queue transfer are unavailable. Inherited advisories need compatible remediation.
+
+The user additionally requested a **separate overview UI branch/PR**, with inline expandable projects and a native Tasks-inspired broad overview, plus a combined testing branch. This is a new goal phase; the workflow milestone alone does not complete the enlarged goal.
+
+See [WORKFLOW.md](WORKFLOW.md) and [VALIDATION.md](VALIDATION.md).
+
+## Historical foundation checkpoint
+
+3 October 2026. Branch `feature/offline-task-workflow`.
+
+## Implemented foundation
+
+- Host-independent versioned task/outbox model, serialized transaction store and foreground sync worker.
+- Stable command UUIDs, frozen payloads after sending, partial acknowledgement handling and temporary-ID mapping.
+- Offline create/complete/reopen reducers, safe unsent correction/cancellation and pending task overlays.
+- Capture-time calendar date resolution, device/account partitioning and pre-upload user identity checks.
+- Strict private native storage with checksums, file/directory synchronization, atomic replacement, prior generation, writer lock and stale-writer rejection.
+- Runtime adapter and one-request timed Sync API transport. Existing screens still use their original paths; wiring them is next.
+
+## Evidence
+
+- `npm run test:offline`: 21 passed.
+- Targeted ESLint on `src/offline`: passed without warnings.
+- Android `:app:compileDebugKotlin`: passed.
+- Actual connected target: Nomad `SN078D10010594`, firmware `Chauvet.E103.2609111001.2505_beta`, PluginHost `1.00.26009090`.
+- No new workflow package installed. Native behavior in PluginHost is unverified.
+
+## Next implementation work
+
+1. Integrate private cached data and mutation services with all existing create/complete/reopen screens, status display, lifecycle/reconnection and registry/source navigation.
+2. Migrate credential/settings persistence privately without losing existing configuration; legacy shared credentials must not continue being silently written.
+3. Implement batch review from Capture/QuickAdd, preserve on-device line breaks and atomic saving; keep source handwriting intact.
+4. Implement opt-in sanitized snapshot publication/revocation and the distinct read-only Dashboard module with shared filter/date contract and tests.
+5. Review inherited dependency advisories compatibly, build and inspect both complete packages, back up target settings and run scratch-note/device checks.
+
+## Known items needing follow-up
+
+- The SDK/native private-directory agreement is deliberately strict and must be tested on this exact host.
+- Real Todoist repeated-command ID mappings need validation; a missing mapping leaves the original command queued rather than creating a replacement task.
+- Errors before command upload (identity lookup) and after upload (snapshot refresh) need visible status integration.
+- Token rotation retains previous queues separately; it must have a visible retained-data notice and documented recovery behavior.
+- Task identity and lifecycle races, source metadata migration, remote deletion handling and uncertain local commit acknowledgement need review during runtime integration.
+- No full workflow, package, e-ink UI, OCR line fidelity or Dashboard integration result has been claimed.
+
+See `WORKFLOW.md` for the storage decision, authoritative sources and dependency baseline.
+
+
+## Upstream progress history (preserved)
+
 # SuperTask
 
 Lasso-to-Todoist plugin for Supernote. Design doc: `docs/plugin-taskharvest-v2.md`

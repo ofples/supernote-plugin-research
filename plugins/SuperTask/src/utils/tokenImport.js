@@ -60,6 +60,7 @@ export async function findTokenFile() {
  */
 export async function importTokenFromFile() {
   try {
+    if (!(await ensurePermissionGroup('folder', {force: true}))) return {ok: false, message: 'Shared-folder access is required to import a token file.'};
     if (!FileUtils?.listFiles) {
       return {ok: false, message: 'File access unavailable'};
     }
@@ -113,6 +114,7 @@ export async function importTokenFromFile() {
 
     // 4. Save (config layer obfuscates on disk)
     const saved = await saveConfig({apiToken: token});
+    if (!saved) return {ok: false, message: 'Private token save failed. The source file was left intact; retry after checking storage.'};
     log('TokenImport', `Token imported (${token.length} chars, saved=${saved})`);
 
     // 5. Delete the plaintext file -- never leave a bare token lying around.

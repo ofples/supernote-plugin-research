@@ -6,7 +6,8 @@
  */
 
 import {ensurePermissionGroup} from '../utils/permissions';
-import {log, logError} from '../utils/debug';
+import {log} from '../utils/debug';
+import {offlineData, saveOfflineBatch, completeOffline, cachedTask, rememberRemoteTask, editOfflineTask, cancelOfflineTask, completedData, rememberCompleted, forgetRemoteTask, syncOffline} from '../offline/service';
 
 const TODOIST_API = 'https://api.todoist.com/api/v1';
 
@@ -174,45 +175,41 @@ async function fetchAllPages(path, params = '') {
 }
 
 export async function getTask(taskId) {
-  const task = await todoistFetch(`/tasks/${taskId}`);
-  log('API', `getTask(${taskId}): "${task?.content}"`);
+  const cached = await cachedTask(taskId);
+  if (cached) return cached;
+  if (taskId.startsWith('local:')) throw new Error('This local task is not in the current account queue.');
+  const task = await todoistFetch(`/tasks/${encodeURIComponent(taskId)}`);
+  await rememberRemoteTask(task);
   return task;
 }
 
 export async function getTasks(filter) {
-  const params = filter ? `filter=${encodeURIComponent(filter)}` : '';
-  const tasks = await fetchAllPages('/tasks', params);
-  log('API', `getTasks: ${tasks.length} total tasks`);
-  return tasks;
+  if (filter) throw new Error('Arbitrary Todoist filters are not supported offline. Use the local views.');
+  return (await offlineData()).tasks;
 }
 
 export async function getTasksByProject(projectId) {
-  const tasks = await fetchAllPages('/tasks', `project_id=${projectId}`);
-  log('API', `getTasksByProject(${projectId}): ${tasks.length} tasks`);
-  return tasks;
+  return (await offlineData()).tasks.filter(task => task.project_id === projectId);
 }
 
-export async function getProjects() {
-  const projects = await fetchAllPages('/projects');
-  log('API', `getProjects: ${projects.length} projects`);
-  return projects;
-}
+export async function getProjects() { return (await offlineData()).projects; }
 
-export async function createTask({content, description, projectId, priority, dueString}) {
-  const body = {content};
-  if (description) body.description = description;
-  if (projectId) body.project_id = projectId;
-  if (priority) body.priority = priority;
-  if (dueString) body.due_string = dueString;
-
-  log('API', `Creating task: ${content}`);
-  return todoistFetch('/tasks', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+/** @param {Object} parameters */
+export async function createTask(parameters) {
+  const {source = null, capturedAt = Date.now(), request = {}, ...draft} = parameters;
+  return (await saveOfflineBatch([draft], source, capturedAt, request))[0];
 }
 
 export async function updateTask(taskId, {content, description, priority, dueString, projectId}) {
+  const task = await getTask(taskId);
+  if (!task.remoteId && taskId.startsWith('local:')) {
+    await editOfflineTask(taskId, {content: content ?? task.content, description: description ?? task.description,
+      priority: priority ?? task.priority, dueString: dueString ?? task.due?.date,
+      projectId: projectId !== undefined ? projectId : task.project_id, labels: task.labels});
+    return;
+  }
+  if (task.syncState && task.syncState !== 'synced') throw new Error('Resolve pending sync before editing a task already sent to Todoist.');
+  taskId = task.remoteId || taskId;
   const body = {};
   if (content !== undefined) body.content = content;
   if (description !== undefined) body.description = description;
@@ -221,25 +218,38 @@ export async function updateTask(taskId, {content, description, priority, dueStr
   if (projectId !== undefined) body.project_id = projectId;
 
   log('API', `Updating task ${taskId}: ${JSON.stringify(body)}`);
-  return todoistFetch(`/tasks/${taskId}`, {
+  const updated = await todoistFetch(`/tasks/${taskId}`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
+  if (updated?.id) await rememberRemoteTask(updated);
+  await syncOffline().catch(() => {});
+  return updated;
 }
 
 export async function completeTask(taskId) {
-  return todoistFetch(`/tasks/${taskId}/close`, {method: 'POST'});
+  const task = await getTask(taskId);
+  if (task.due?.is_recurring) {
+    await todoistFetch(`/tasks/${encodeURIComponent(task.remoteId || taskId)}/close`, {method: 'POST'});
+    await syncOffline();
+    return;
+  }
+  await completeOffline(taskId, true);
 }
 
 export async function reopenTask(taskId) {
-  return todoistFetch(`/tasks/${taskId}/reopen`, {method: 'POST'});
+  const task = await getTask(taskId);
+  if (!task.id.startsWith('local:') && !task.id.startsWith('remote:')) {
+    await rememberRemoteTask({...task, is_completed: true, completed: true});
+  }
+  await completeOffline(taskId, false);
 }
 
 /**
  * Completed tasks from the last N days (v1 unified API, paginated).
  * Items carry completed_at plus the usual task fields.
  */
-export async function getCompletedTasks(days = 30) {
+async function fetchCompletedTasks(days = 30) {
   const until = new Date();
   const since = new Date(until.getTime() - days * 86400000);
   const params =
@@ -250,14 +260,28 @@ export async function getCompletedTasks(days = 30) {
   return items;
 }
 
+export async function getCompletedTasks(days = 30) {
+  const cached = await completedData();
+  return cached;
+}
+export async function refreshCompletedTasks(days = 30) {
+  const tasks = await fetchCompletedTasks(days);
+  await rememberCompleted(tasks);
+  return completedData();
+}
+
 export async function deleteTask(taskId) {
-  return todoistFetch(`/tasks/${taskId}`, {method: 'DELETE'});
+  const task = await getTask(taskId);
+  if (!task.remoteId && taskId.startsWith('local:')) return cancelOfflineTask(taskId);
+  if (task.syncState && task.syncState !== 'synced') throw new Error('Resolve pending sync before deleting a task already sent to Todoist.');
+  await todoistFetch(`/tasks/${encodeURIComponent(task.remoteId || taskId)}`, {method: 'DELETE'});
+  await forgetRemoteTask(taskId);
 }
 
 export async function testConnection() {
   log('API', 'Testing connection...');
-  const projects = await getProjects();
-  const tasks = await getTasks();
+  const projects = await fetchAllPages('/projects');
+  const tasks = await fetchAllPages('/tasks');
   return {
     ok: true,
     projectCount: projects?.length ?? 0,

@@ -5,7 +5,7 @@
  * Results shown on screen and sent to dev log server.
  */
 
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useEffect} from 'react';
 import {View, Text, Pressable, StyleSheet, ScrollView, Linking} from 'react-native';
 import {
   PluginCommAPI,
@@ -181,9 +181,9 @@ export default function Diagnostics({nav}: Props) {
     let filePath = '';
     let pageNum = 0;
     try {
-      const fp = await withTimeout(PluginCommAPI.getCurrentFilePath(), 5000, 'getCurrentFilePath');
+      const fp: any = await withTimeout(PluginCommAPI.getCurrentFilePath(), 5000, 'getCurrentFilePath');
       filePath = fp?.result || '';
-      const pn = await withTimeout(PluginCommAPI.getCurrentPageNum(), 5000, 'getCurrentPageNum');
+      const pn: any = await withTimeout(PluginCommAPI.getCurrentPageNum(), 5000, 'getCurrentPageNum');
       pageNum = pn?.result ?? 0;
       update('noteContext', 'pass', `file=${filePath} page=${pageNum}`);
     } catch (e: any) {
@@ -219,7 +219,7 @@ export default function Diagnostics({nav}: Props) {
     const name = 'getNoteSystemTemplates';
     update(name, 'running', '');
     try {
-      const result = await withTimeout(
+      const result: any = await withTimeout(
         PluginCommAPI.getNoteSystemTemplates(),
         8000,
         name,
@@ -263,7 +263,7 @@ export default function Diagnostics({nav}: Props) {
     for (const attempt of attempts) {
       try {
         log('Diag', `createNote: path=${testPath} template[${attempt.label}]=${attempt.value}`);
-        const result = await withTimeout(
+        const result: any = await withTimeout(
           PluginFileAPI.createNote({
             notePath: testPath,
             template: attempt.value,
@@ -302,7 +302,7 @@ export default function Diagnostics({nav}: Props) {
       return;
     }
     try {
-      const result = await withTimeout(
+      const result: any = await withTimeout(
         PluginNoteAPI.insertTextLink({
           destPath: 'https://todoist.com',
           destPage: 0,
@@ -343,7 +343,7 @@ export default function Diagnostics({nav}: Props) {
     const templateName = typeof t === 'string' ? t : t?.name;
 
     try {
-      const totalRes = await withTimeout(
+      const totalRes: any = await withTimeout(
         PluginFileAPI.getNoteTotalPageNum(filePath),
         5000,
         'getNoteTotalPageNum',
@@ -351,7 +351,7 @@ export default function Diagnostics({nav}: Props) {
       const total = totalRes?.result ?? 1;
 
       log('Diag', `insertNotePage: path=${filePath} page=${total} template=${templateName}`);
-      const result = await withTimeout(
+      const result: any = await withTimeout(
         PluginFileAPI.insertNotePage({
           notePath: filePath,
           page: total,
@@ -374,13 +374,15 @@ export default function Diagnostics({nav}: Props) {
     }
   };
 
+  // Retained upstream characterization helper, intentionally not a UI action.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const testOpenFilePath = async (basePath: string) => {
     const name = 'openFilePath';
     update(name, 'running', '');
     try {
       const dir = basePath ? `${basePath}Note/` : '/storage/emulated/0/Note/';
       log('Diag', `openFilePath: ${dir}`);
-      const result = await withTimeout(
+      const result: any = await withTimeout(
         FileUtils.openFilePath(dir),
         8000,
         name,
@@ -396,7 +398,7 @@ export default function Diagnostics({nav}: Props) {
   const getNotePath = async (): Promise<string> => {
     if (navNotePath) return navNotePath;
     try {
-      const fp = await withTimeout(PluginCommAPI.getCurrentFilePath(), 5000, 'getCurrentFilePath');
+      const fp: any = await withTimeout(PluginCommAPI.getCurrentFilePath(), 5000, 'getCurrentFilePath');
       const path = fp?.result || '';
       if (path) {
         setNavNotePath(path);
@@ -415,7 +417,7 @@ export default function Diagnostics({nav}: Props) {
     setNavResult(`openFilePath: trying ${path}...`);
     log('NavTest', `openFilePath(${path})`);
     try {
-      const result = await withTimeout(FileUtils.openFilePath(path), 8000, 'openFilePath');
+      const result: any = await withTimeout(FileUtils.openFilePath(path), 8000, 'openFilePath');
       const msg = `openFilePath: result=${result} path=${path}`;
       log('NavTest', msg);
       setNavResult(msg);
@@ -451,7 +453,7 @@ export default function Diagnostics({nav}: Props) {
     setNavResult('showRattaDialog: showing...');
     log('NavTest', 'showRattaDialog test');
     try {
-      const result = await withTimeout(
+      const result: any = await withTimeout(
         NativeUIUtils.showRattaDialog(
           'Navigate to MyNotes/Meeting.note page 3',
           'Cancel',
@@ -480,9 +482,9 @@ export default function Diagnostics({nav}: Props) {
     setNavResult('Element bounds: scanning...');
     log('NavTest', `Scanning elements for link bounds on ${path}`);
     try {
-      const pn = await withTimeout(PluginCommAPI.getCurrentPageNum(), 5000, 'getCurrentPageNum');
+      const pn: any = await withTimeout(PluginCommAPI.getCurrentPageNum(), 5000, 'getCurrentPageNum');
       const pageNum = pn?.result ?? 0;
-      const elemResult = await withTimeout(PluginFileAPI.getElements(pageNum, path), 8000, 'getElements');
+      const elemResult: any = await withTimeout(PluginFileAPI.getElements(pageNum, path), 8000, 'getElements');
       if (!elemResult?.success) {
         setNavResult(`Element bounds: getElements failed: ${JSON.stringify(elemResult)}`);
         return;
@@ -536,7 +538,7 @@ export default function Diagnostics({nav}: Props) {
     try {
       await withTimeout(PluginNoteAPI.saveCurrentNote(), 5000, 'saveCurrentNote');
 
-      const getResult = await withTimeout(
+      const getResult: any = await withTimeout(
         PluginFileAPI.getElements(page, currentPath),
         8000,
         'getElements',
@@ -548,7 +550,7 @@ export default function Diagnostics({nav}: Props) {
       const elements = getResult.result || [];
       const count = Array.isArray(elements) ? elements.length : 0;
 
-      const replaceResult = await withTimeout(
+      const replaceResult: any = await withTimeout(
         PluginFileAPI.replaceElements(currentPath, page, Array.isArray(elements) ? elements : []),
         10000,
         'replaceElements',

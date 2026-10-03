@@ -15,7 +15,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import {PluginManager, PluginCommAPI, PluginNoteAPI} from 'sn-plugin-lib';
+import {PluginCommAPI, PluginNoteAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
 import {setConfigLoader, createTask, getProjects} from '../api/todoist';
@@ -92,6 +92,8 @@ export default function QuickAdd({nav}: {nav: Nav}) {
       if (config.markAsTextFontSize) setMarkAsTextFontSize(config.markAsTextFontSize);
     });
     runCapture();
+    // Legacy screen captures once per mount; retries are explicit below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const runCapture = async () => {
@@ -134,7 +136,7 @@ export default function QuickAdd({nav}: {nav: Nav}) {
   const captureLasso = async (): Promise<{content: string; description: string; noteContext: NoteContext | null} | null> => {
     log('QuickAdd', 'captureLasso: calling getLassoElements...');
 
-    const elements = await withTimeout(
+    const elements: any = await withTimeout(
       PluginCommAPI.getLassoElements(),
       10000,
       'getLassoElements',
@@ -156,22 +158,22 @@ export default function QuickAdd({nav}: {nav: Nav}) {
       setStatusText('Recognizing handwriting...');
       const ocr = await recognizeLassoElements(els, qaLog);
 
-      if (!ocr.success) {
+      if (!ocr.success || !ocr.text || !ocr.pageContext) {
         setErrorText('Could not recognize handwriting. Try selecting clearer text.');
         setPhase('error');
         return null;
       }
 
       const capturedContent = ocr.text;
-      const {filePath, pageNum, pageSize} = ocr.pageContext;
+      const {filePath, pageNum, pageSize} = ocr.pageContext as {filePath: string; pageNum: number; pageSize: any};
       log('QuickAdd', `Recognized: "${capturedContent.slice(0, 60)}"`);
 
       // Get exact lasso bounds in pixel coordinates from the active selection
-      let bounds = null;
+      let bounds: NoteContext['bounds'] | null = null;
       try {
-        const lassoRect = await withTimeout(PluginCommAPI.getLassoRect(), 3000, 'getLassoRect');
+        const lassoRect: any = await withTimeout(PluginCommAPI.getLassoRect(), 3000, 'getLassoRect');
         if (lassoRect?.success && lassoRect.result) {
-          bounds = lassoRect.result;
+          bounds = lassoRect.result as NonNullable<NoteContext['bounds']>;
           log('QuickAdd', `getLassoRect: l=${bounds.left} t=${bounds.top} r=${bounds.right} b=${bounds.bottom}`);
         } else {
           log('QuickAdd', `getLassoRect failed: ${JSON.stringify(lassoRect)}`);
