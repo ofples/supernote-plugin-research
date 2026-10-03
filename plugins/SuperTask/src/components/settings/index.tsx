@@ -129,11 +129,11 @@ export function Segmented<T extends string | number | null>({
 // ── Check (the ONLY boolean) ───────────────────────────────
 // Drawn box, identical bounding box in both states. Checked = solid inner fill.
 
-export function Check({checked, size = 28}: {checked: boolean; size?: number}) {
+export function Check({checked, size = 28, round = false}: {checked: boolean; size?: number; round?: boolean}) {
   const inner = Math.round(size / 2);
   return (
-    <View style={[st.checkBox, {width: size, height: size}]}>
-      {checked ? <View style={[st.checkFill, {width: inner, height: inner}]} /> : null}
+    <View style={[st.checkBox, {width: size, height: size}, round && {borderRadius: size / 2}]}>
+      {checked ? <View style={[st.checkFill, {width: inner, height: inner}, round && {borderRadius: inner / 2}]} /> : null}
     </View>
   );
 }

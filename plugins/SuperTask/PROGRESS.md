@@ -1,5 +1,11 @@
 # SuperTask
 
+## Fork overview feature — 3 October 2026
+
+Branch `feature/project-overview` adds inline project expansion, Expand/Collapse all, task counts and Compact/Comfortable density. Multiple projects stay expanded; tasks and project drill-down remain reachable. Thin rules and circular selection marks follow the native Tasks app inspected read-only before the user took the Nomad.
+
+Seven model/React interaction tests pass. Changed-file lint has no errors; the original main baseline's full TypeScript errors remain outside the new overview code. The separate offline PR fixes that baseline, and the combined testing branch must pass full checks/package inspection. Device overview validation is pending; do not mark it device-verified. See OVERVIEW.md for exact steps and scope. Upstream progress history below is retained. No Jira or maintainer account was touched.
+
 Lasso-to-Todoist plugin for Supernote. Design doc: `docs/plugin-taskharvest-v2.md`
 
 > **Issues are tracked in Jira: [SNDEV](https://alexpnw.atlassian.net/browse/SNDEV), epic `SNDEV-6`.**
