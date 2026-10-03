@@ -36,7 +36,7 @@ Version `0.4.0-beta.4`, code `8`, 7,511,522 bytes.
 
 SHA-256 `5fc00cbcb64695843a91f8f334f88251bfd6a18d222b7e24dfb4fa8f60412a73`.
 
-Outer archive contains bundle/icon/config/`app.npk`. ReactPackages: custom NoteOpenerPackage, RNFS, RNGetRandomValues. Nested DEX contains TaskStorage, NoteOpener and random-values modules. Only `lib/arm64-v8a/libnative-lib.so` is retained; host-owned libraries are excluded. `config.local` is absent. Final beta.4 adds interrupted-capture/late-element cleanup, migration warning display and stricter recovery validation and account-switch cache isolation to tested beta.2 behavior.
+Outer archive contains bundle/icon/config/`app.npk`. ReactPackages: custom NoteOpenerPackage, RNFS, RNGetRandomValues. Nested DEX contains TaskStorage, NoteOpener and random-values modules. Only `lib/arm64-v8a/libnative-lib.so` is retained; host-owned libraries are excluded. `config.local` is absent. Plugin Manager confirmed beta.4 enabled; its startup retained eight active tasks and an empty queue. Final beta.4 adds interrupted-capture/late-element cleanup, migration warning display and stricter recovery validation and account-switch cache isolation to tested beta.2 behavior.
 
 ## Pending manual checks
 
