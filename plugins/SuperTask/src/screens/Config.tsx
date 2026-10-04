@@ -29,6 +29,7 @@ import {reloadGestureConfig} from '../utils/gestureDetector';
 import {importTokenFromFile, findTokenFile, TOKEN_DIR_LABEL} from '../utils/tokenImport';
 import {PERMISSION_GROUPS, getPermissionStates, ensurePermissionGroup} from '../utils/permissions';
 import ProjectPicker from '../components/ProjectPicker';
+const {isProjectVisible, toggleProjectVisibility} = require('../utils/projectVisibility');
 import {useLocations} from '../collections/useLocations';
 import {FONT_SCALE_STEPS} from '../utils/fontScale';
 import {
@@ -49,9 +50,13 @@ type Props = {
 const TAB_OPTIONS = [
   {key: 'last', label: 'Last opened'}, // F-038: default -- reopen where the user left off
   {key: 'today', label: 'Today'},
+  {key: 'tomorrow', label: 'Tomorrow'},
   {key: 'upcoming', label: 'Upcoming'},
-  {key: 'projects', label: 'Projects'},
+  {key: 'projects', label: 'All projects'},
+  {key: 'inbox', label: 'Inbox'},
+  {key: 'note', label: 'This Note'},
   {key: 'device', label: 'On Device'},
+  {key: 'done', label: 'Done'},
 ];
 
 const GESTURE_OPTIONS = [
@@ -119,6 +124,7 @@ export default function Config({nav}: Props) {
   const [postCreateAction, setPostCreateAction] = useState(cfg0?.postCreateAction || 'prompt');
   const [markAsTextFontSize, setMarkAsTextFontSize] = useState(cfg0?.markAsTextFontSize || 32);
   const [enabledProjectIds, setEnabledProjectIds] = useState<string[]>(cfg0?.enabledProjectIds || []);
+  const [projectVisibility, setProjectVisibility] = useState(cfg0?.projectVisibility);
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(cfg0?.defaultProjectId || null);
   const [defaultSectionId, setDefaultSectionId] = useState<string | null>(cfg0?.defaultSectionId || null);
   const locations = useLocations(projects);
@@ -172,6 +178,7 @@ export default function Config({nav}: Props) {
             : config.enabledProjectIds,
         );
       }
+      setProjectVisibility(config.projectVisibility);
       if (config.defaultTab) setDefaultTab(config.defaultTab);
       if (config.defaultProjectId) setDefaultProjectId(config.defaultProjectId);
       setDefaultSectionId(config.defaultSectionId || null);
@@ -320,11 +327,11 @@ export default function Config({nav}: Props) {
   // ── Projects handlers ────────────────────────────────────
 
   const toggleProject = (projectId: string) => {
-    const next = enabledProjectIds.includes(projectId)
-      ? enabledProjectIds.filter(id => id !== projectId)
-      : [...enabledProjectIds, projectId];
-    setEnabledProjectIds(next);
-    applyChange('showProjects', {enabledProjectIds: next});
+    const next = toggleProjectVisibility({enabledProjectIds, projectVisibility}, projectId, projects);
+    if (!Array.isArray(next.enabledProjectIds)) return;
+    setEnabledProjectIds(next.enabledProjectIds);
+    setProjectVisibility(next.projectVisibility);
+    applyChange('showProjects', next);
   };
 
   // ── Debug server handlers ────────────────────────────────
@@ -393,8 +400,7 @@ export default function Config({nav}: Props) {
   // nothing is filtered.
   const defaultProjectHidden =
     !!defaultProjectId &&
-    enabledProjectIds.length > 0 &&
-    !enabledProjectIds.includes(defaultProjectId);
+    !isProjectVisible({enabledProjectIds, projectVisibility}, defaultProjectId, projects);
   const defaultProjectName = projects.find(p => p.id === defaultProjectId)?.name;
 
   // ── Render ───────────────────────────────────────────────
@@ -705,7 +711,7 @@ export default function Config({nav}: Props) {
                 {projects.map(p => (
                   <CheckItem
                     key={p.id}
-                    checked={enabledProjectIds.includes(p.id)}
+                    checked={isProjectVisible({enabledProjectIds, projectVisibility}, p.id, projects)}
                     onToggle={() => toggleProject(p.id)}
                     label={p.name}
                   />

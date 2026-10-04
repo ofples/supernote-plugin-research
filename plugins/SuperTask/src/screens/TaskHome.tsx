@@ -1,7 +1,5 @@
 /**
- * TaskHome - Tabbed task viewer (Today / Upcoming / Projects)
- *
- * Replaces the old flat TaskList screen with grouped, navigable views.
+ * TaskHome - shared task workspace with sidebar navigation and sync summary.
  */
 
 import React, {useState, useEffect, useCallback, useRef} from 'react';
@@ -11,24 +9,28 @@ import {
   Pressable,
   FlatList,
   StyleSheet,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
-import {getTasksForNote, getAllTasks as getAllRegistryTasks, markCompleted, getTask as getRegistryTask} from '../utils/taskRegistry';
+import {getTasksForNote, getAllTasks as getAllRegistryTasks, getTask as getRegistryTask} from '../utils/taskRegistry';
 import {openNote, jumpWithinNote} from '../utils/noteOpener';
 import {healRenamedNotes} from '../utils/noteHeal';
 import {noteLabel} from '../utils/noteLabel';
 import {saveConfig} from '../utils/config';
 import {useFontScale} from '../utils/useFontScale';
-import {Check} from '../components/settings';
 import {loadConfig, getCachedConfig, resolveDefaultTab} from '../utils/config';
 import {getSessionTab, setSessionTab} from '../utils/viewState';
 import {reopenTask, getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
 import {getCache, fetchTaskData, invalidateCache, initTaskCache, subscribeCache} from '../cache/taskCache';
-import {completedData} from '../offline/service';
+import {completedData, offlineData, retryOffline} from '../offline/service';
+const {syncStatusMessage} = require('../offline/status');
+const {visibleProjectIds, isProjectVisible} = require('../utils/projectVisibility');
+const {collectionGroups} = require('../collections/model');
 const {localDate} = require('../offline/model');
 import {log, logError} from '../utils/debug';
-import TabBar from '../components/TabBar';
+import TaskSidebar from '../components/TaskSidebar';
 import TaskRow from '../components/TaskRow';
 import ProjectOverview from '../components/ProjectOverview';
 import SelectionBar from '../components/SelectionBar';
@@ -45,23 +47,24 @@ type Nav = {
 
 type Props = {
   nav: Nav;
+  initialView?: string;
   focusTab?: string; // deep-link target tab; overrides the config default
 };
 
-const TABS = [
-  {key: 'today', label: 'Today'},
-  {key: 'upcoming', label: 'Upcoming'},
-  {key: 'projects', label: 'Projects'},
-  {key: 'device', label: 'On Device'},
-  {key: 'done', label: 'Done'},
-  {key: 'pending', label: 'Pending'},
-];
-
-const TAB_KEYS = TABS.map(t => t.key);
+const VIEW_KEYS = ['today', 'tomorrow', 'upcoming', 'inbox', 'note', 'projects', 'device', 'done'];
+export function normalizeTaskView(value?: string): string {
+  if (value === 'pending') return 'today';
+  if (value === 'this-note') return 'note';
+  return value && (VIEW_KEYS.includes(value) || /^project:.+/.test(value)) ? value : 'today';
+}
+export function syncChangeLabel(kind: string): string {
+  return ({create: 'Create task', complete: 'Complete task', recurring_complete: 'Complete recurring occurrence',
+    reopen: 'Reopen task', update: 'Edit task', move: 'Move task', delete: 'Delete task', collection_create: 'Create collection'} as Record<string, string>)[kind] || 'Saved change';
+}
 
 type ProjectMap = Record<string, string>;
 
-export default function TaskHome({nav, focusTab}: Props) {
+export default function TaskHome({nav, focusTab, initialView}: Props) {
   const scale = useFontScale();
   // Saved-config snapshot for the FIRST render. On any warm open the config
   // cache is populated, so the tab, filters, and Log button paint correctly
@@ -82,16 +85,10 @@ export default function TaskHome({nav, focusTab}: Props) {
   // focusTab param across pop-remounts, and a mid-session tab switch must
   // survive viewing a task. Fresh deep-link opens are unaffected: the session
   // tab is cleared whenever the plugin view closes.
-  const [activeTab, setActiveTab] = useState(() => {
-    const sessionTab = getSessionTab();
-    const resolved =
-      sessionTab && TAB_KEYS.includes(sessionTab)
-        ? sessionTab
-        : focusTab && TAB_KEYS.includes(focusTab)
-          ? focusTab
-          : resolveDefaultTab(cfg0);
-    return TAB_KEYS.includes(resolved) ? resolved : 'today';
-  });
+  const [activeTab, setActiveTab] = useState(() => normalizeTaskView(initialView || getSessionTab() || focusTab || resolveDefaultTab(cfg0)));
+  const [syncSheetOpen, setSyncSheetOpen] = useState(() => (getSessionTab() || focusTab || resolveDefaultTab(cfg0)) === 'pending');
+  const [syncRetrying, setSyncRetrying] = useState(false);
+  const [syncRetryError, setSyncRetryError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [syncInfo, setSyncInfo] = useState<any>(null);
@@ -101,9 +98,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   const [registryNoteTasks, setRegistryNoteTasks] = useState<any[]>([]);
   const [deviceTasks, setDeviceTasks] = useState<any[]>([]);
   const [deviceLoaded, setDeviceLoaded] = useState(false);
-  const [enabledProjectIds, setEnabledProjectIds] = useState<string[]>(
-    cfg0?.enabledProjectIds?.length ? cfg0.enabledProjectIds : [],
-  );
+  const [visibilityConfig, setVisibilityConfig] = useState<any>(cfg0 || {});
   const [debugMode, setDebugModeOn] = useState(cfg0?.debugMode === true);
 
   // Done tab: fetched lazily on first visit (separate endpoint, not part of
@@ -156,17 +151,10 @@ export default function TaskHome({nav, focusTab}: Props) {
     loadConfig().then(config => {
       // Cold-start default-tab corrector. A deep-link focusTab or live
       // session tab wins over the config default (F-038).
-      if (!focusTab && !getSessionTab()) {
-        const resolved = resolveDefaultTab(config);
-        if (TAB_KEYS.includes(resolved)) setActiveTab(resolved);
+      if (!initialView && !focusTab && !getSessionTab()) {
+        setActiveTab(normalizeTaskView(resolveDefaultTab(config)));
       }
-      if (config.enabledProjectIds?.length > 0) {
-        setEnabledProjectIds(prev =>
-          JSON.stringify(prev) === JSON.stringify(config.enabledProjectIds)
-            ? prev
-            : config.enabledProjectIds,
-        );
-      }
+      setVisibilityConfig(config);
       setShowDone(config.showDoneTasks === true);
       setDebugModeOn(config.debugMode === true);
     });
@@ -194,10 +182,10 @@ export default function TaskHome({nav, focusTab}: Props) {
         const pn: any = await PluginCommAPI.getCurrentPageNum();
         const filePath = fp?.result || '';
         const pageNum = pn?.result ?? 0;
-        if (!filePath) return;
+        if (!fp?.success || !pn?.success || !filePath.toLowerCase().endsWith('.note')) return;
 
         const fileName = filePath.split('/').pop()?.replace('.note', '') || '';
-        log('TaskHome', `Note context: ${fileName} p.${pageNum}`);
+        log('TaskHome', 'Note context available');
 
         // B-033 mitigation A: read the (fast, local) registry FIRST and
         // commit it together with the note context in one synchronous block,
@@ -239,7 +227,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         log('TaskHome', `Page context detection failed: ${e.message}`);
       }
     })();
-  }, [focusTab]);
+  }, [focusTab, initialView]);
 
   // Apply fetched data to component state. Skips the update entirely when
   // the data matches what is already rendered: the background revalidate
@@ -261,14 +249,15 @@ export default function TaskHome({nav, focusTab}: Props) {
     setProjectMap(pMap);
     setProjectList(fetchedProjects || []);
     setCollectionList(fetchedSections || []);
-    setTasks(fetchedTasks || []);
+    setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted && !task.remoteMissing));
   }, []);
   useEffect(() => subscribeCache((data: any) => {
     setSyncInfo(data); setError(''); setLoading(false);
     applyData(data.tasks, data.projects, data.sections);
     getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
     completedData().then(setDoneTasks).catch(() => {});
-  }), [applyData]);
+    if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
+  }), [applyData, noteCtx?.filePath]);
 
   // Reconcile registry: remove entries for tasks no longer in Todoist,
   // then heal any note renames (B-005, once per session, fire-and-forget)
@@ -378,6 +367,12 @@ export default function TaskHome({nav, focusTab}: Props) {
         setDoneTasks(items || []);
         setDoneFetched(true);
         log('TaskHome', `Done tab: ${items?.length ?? 0} completed tasks (30d)`);
+        // Render durable history first, then refresh its remote cache. A fresh
+        // installation's active snapshot cannot contain completed history.
+        setDoneLoading(false);
+        refreshCompletedTasks(30).then(setDoneTasks).catch(() => {
+          setDoneError('Showing saved completed history. Todoist history could not be refreshed right now.');
+        });
       } catch (err: any) {
         logError('TaskHome', err);
         setDoneError(`Could not load completed tasks: ${err.message}`);
@@ -404,46 +399,35 @@ export default function TaskHome({nav, focusTab}: Props) {
       fetchData(true); // pull the reopened task back into the active lists
     } catch (err: any) {
       logError('TaskHome', err);
-      setDoneError(`Reopen failed: ${err.message}`);
+      const message = err?.code === 'RECURRING_UNDO_UNSUPPORTED'
+        ? 'This recurring completion has already synced. Undo it in Todoist; the next occurrence stays active.'
+        : 'Could not reopen this task. Your task state is preserved; retry when sync is available.';
+      setDoneError(message); setError(message);
     }
   };
 
-  // F-025 v2 / F-043: checkbox taps SELECT; completion commits from the
-  // contextual header (SelectionBar swaps into the header band -- fixed
-  // geometry). Selection clears on tab switch and refresh.
   const sel = useTaskSelection('TaskHome', {
-    onCompleted: ids => {
-      // Local mutation: reset the repaint fingerprint, or a later fetch
-      // returning byte-identical data would be skipped and never restore
-      // the pruned rows (applyData's "safe direction" assumption breaks
-      // the moment a mutation is undone).
+    onCompleted: async ids => {
       dataFp.current = '';
-      // Completed rows leave EVERY surface immediately -- active lists AND
-      // the registry-backed Device tab / This Note band. The undo bar is
-      // the only remaining trace of the action.
-      setTasks(prev => prev.filter(t => !ids.includes(t.id)));
-      setDeviceTasks(prev => prev.filter(t => !ids.includes(t.id)));
-      setRegistryNoteTasks(prev => prev.filter(t => !ids.includes(t.id)));
-      // Flag (not remove) in the registry, so the note back-reference
-      // survives an immediate Undo; reconcile prunes at the next fetch.
-      ids.forEach(id => markCompleted(id).catch(() => {}));
-      invalidateCache();
-    },
-    onUndone: async ids => {
-      dataFp.current = '';
-      // Un-flag BEFORE re-reading: registry writes are serialized, and a
-      // parallel read returns the still-flagged entry, which the renders
-      // now filter out -- the undone task never reappeared on the Device
-      // tab / This Note band (seen on device 2026-08-15).
-      await Promise.all(ids.map(id => markCompleted(id, false).catch(() => {})));
-      // Restore the registry-backed surfaces from storage (entries were
-      // only flagged, not removed), then pull active lists back in.
+      setTasks(prev => prev.filter(task => !ids.includes(task.id)));
+      setDeviceTasks(prev => prev.filter(task => !ids.includes(task.id)));
+      setRegistryNoteTasks(prev => prev.filter(task => !ids.includes(task.id)));
+      // The authoritative state retains note references and recurring series.
+      // Read it again after persistence so a server-provided next occurrence
+      // can reappear immediately, even if the completion callback ran last.
+      const data = await offlineData().catch(() => null);
+      if (data) {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}
+      completedData().then(setDoneTasks).catch(() => {});
       getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
-      if (noteCtx?.fileName) {
-        getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
-      }
-      invalidateCache();
-      fetchData(true); // pull the reopened tasks back into the active lists
+      if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
+    },
+    onUndone: async () => {
+      dataFp.current = '';
+      const data = await offlineData().catch(() => null);
+      if (data) {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}
+      completedData().then(setDoneTasks).catch(() => {});
+      getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
+      if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
     },
     onError: msg => setError(msg),
   });
@@ -453,7 +437,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   const handleOpenNote = async (path: string, pageNum0?: number, taskId?: string) => {
     const intentPage = (pageNum0 ?? -1) + 1; // unknown page -> 0 = last-used
     const sameNote = noteCtx?.filePath === path;
-    log('TaskHome', `OPEN NOTE: ${path} page0=${pageNum0 ?? 'unknown'} intent=${intentPage} sameNote=${sameNote} currentPage=${noteCtx?.pageNum ?? 'n/a'}`);
+    log('TaskHome', `OPEN NOTE page0=${pageNum0 ?? 'unknown'} intent=${intentPage} sameNote=${sameNote}`);
     setJumpError('');
     // 0.1.65 (SNDEV-70): same-note jumps use jumpToPage -- purpose-built,
     // no activity churn, and the case intent re-targeting never handled
@@ -495,7 +479,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   };
 
   const handleTaskPress = (task: any) => {
-    log('TaskHome', `TASK pressed id=${task.id} content="${task.content?.slice(0, 30)}"`);
+    log('TaskHome', `TASK pressed id=${task.id}`);
     nav.push('task-detail', {task, projects: projectList});
   };
 
@@ -506,6 +490,12 @@ export default function TaskHome({nav, focusTab}: Props) {
   };
 
   const today = localDate(new Date());
+
+  const isActiveRegistryTask = (reference: any) => {
+    const authoritative = (syncInfo?.allTasks || tasks).find((task: any) => task.id === reference.id);
+    const task = authoritative || reference;
+    return !task.completed && !task.deleted && !task.awaitingRecurrence && !task.occurrencePending && !task.remoteMissing;
+  };
 
   // Tasks linked to the current NOTE (any page), each with the page it lives
   // on so the band tells you where you'd jump in a long note (design-home-v2).
@@ -541,12 +531,12 @@ export default function TaskHome({nav, focusTab}: Props) {
 
     // 3. Registry entries for this note (carry pageNum; cover pending-sync tasks)
     for (const rt of registryNoteTasks) {
-      if (rt.completed) continue; // flagged done, awaiting reconcile prune
+      if (!isActiveRegistryTask(rt)) continue;
       if (!seen.has(rt.id)) {
         seen.add(rt.id);
         const full = tasks.find(t => t.id === rt.id);
         result.push({
-          task: full || {id: rt.id, content: rt.content, _registryOnly: true},
+          task: full || {...rt, _registryOnly: !rt.syncState},
           pageNum: rt.pageNum,
         });
       }
@@ -556,7 +546,8 @@ export default function TaskHome({nav, focusTab}: Props) {
   })();
 
   const renderThisNote = () => {
-    if (noteTasks.length === 0 || loading) return null;
+    if (!noteCtx) return <View style={styles.centered}><Text style={styles.emptyText}>Open a note to see its tasks</Text></View>;
+    if (!noteTasks.length) return <View style={styles.centered}><Text style={styles.emptyText}>No active tasks in this note</Text></View>;
 
     return (
       <View style={styles.thisPage}>
@@ -571,7 +562,9 @@ export default function TaskHome({nav, focusTab}: Props) {
             <TaskRow
               task={task}
               selected={sel.selectedIds.includes(task.id)}
-              onCheckPress={sel.toggleSelect}
+              onCheckPress={sel.completeOne}
+              disabled={sel.busy}
+              onSyncPress={() => setSyncSheetOpen(true)}
               onPress={handleTaskPress}
               showProject={projectMap[task.project_id]} showCollection={collectionName(task)}
               pageNum={pageNum}
@@ -607,12 +600,12 @@ export default function TaskHome({nav, focusTab}: Props) {
       );
     }
 
-    if (activeTab === 'pending') {
-      const pending = (syncInfo?.allTasks || tasks).filter((task: any) => task.syncState !== 'synced');
-      if (!pending.length) return <View style={styles.centered}><Text style={styles.emptyText}>No tasks waiting to sync</Text></View>;
-      return <FlatList data={pending} keyExtractor={(task: any) => task.id} renderItem={({item}) =>
-        <TaskRow task={item} showCollection={collectionName(item)} onCheckPress={() => nav.push('task-detail', {task: item, projects: projectList})}
-          onPress={task => nav.push('task-detail', {task, projects: projectList})} checked={item.completed} />}/>;
+    if (activeTab === 'note') return <ScrollView>{renderThisNote()}</ScrollView>;
+    if (activeTab === 'tomorrow') return renderSimpleTasks(projectFiltered(tasks).filter(task => (task.due?.date || '').slice(0, 10) === tomorrow), 'No tasks due tomorrow');
+    if (activeTab === 'inbox') return renderProjectTasks(inboxProject?.id, 'Inbox');
+    if (activeTab.startsWith('project:')) {
+      const id = activeTab.slice('project:'.length);
+      return renderProjectTasks(id, projectMap[id] || 'Unavailable project');
     }
     if (activeTab === 'today') return renderTodayTab();
     if (activeTab === 'upcoming') return renderUpcomingTab();
@@ -636,7 +629,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         </View>
       );
     }
-    const visibleDone = projectFiltered(doneTasks);
+    const visibleDone = projectFiltered(doneTasks).filter(task => !task.deleted);
     if (visibleDone.length === 0) {
       return (
         <View style={styles.centered}>
@@ -662,6 +655,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               checked
               completedAt={item.task.completed_at}
               onCheckPress={handleReopen}
+              onSyncPress={() => setSyncSheetOpen(true)}
               onPress={handleTaskPress}
               showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
             />
@@ -677,7 +671,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   const renderTodayTab = () => {
     // Tasks due today or overdue, grouped by project
     const todayTasks = projectFiltered(tasks).filter(t => {
-      const due = t.due?.date;
+      const due = (t.due?.date || '').slice(0, 10);
       return due && due <= today;
     });
 
@@ -716,10 +710,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               <SectionHeader
                 title={item.title}
                 count={item.count}
-                onPress={item.projectId ? () => nav.push('project-view', {
-                  projectId: item.projectId,
-                  projectName: item.title,
-                }) : undefined}
+                onPress={item.projectId ? () => changeView(`project:${item.projectId}`) : undefined}
               />
             );
           }
@@ -730,6 +721,7 @@ export default function TaskHome({nav, focusTab}: Props) {
                 checked
                 completedAt={item.task.completed_at}
                 onCheckPress={handleReopen}
+                onSyncPress={() => setSyncSheetOpen(true)}
                 onPress={handleTaskPress}
                 showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
               />
@@ -739,8 +731,11 @@ export default function TaskHome({nav, focusTab}: Props) {
             <TaskRow
               task={item.task}
               selected={sel.selectedIds.includes(item.task.id)}
-              onCheckPress={sel.toggleSelect}
+              onCheckPress={sel.completeOne}
+              disabled={sel.busy}
+              onSyncPress={() => setSyncSheetOpen(true)}
               onPress={handleTaskPress}
+              showCollection={collectionName(item.task)}
             />
           );
         }}
@@ -756,7 +751,7 @@ export default function TaskHome({nav, focusTab}: Props) {
     const visible = projectFiltered(tasks);
     const upcoming = visible
       .filter(t => {
-        const due = t.due?.date;
+        const due = (t.due?.date || '').slice(0, 10);
         return due && due > today;
       })
       .sort((a, b) => (a.due?.date || '').localeCompare(b.due?.date || ''));
@@ -789,7 +784,9 @@ export default function TaskHome({nav, focusTab}: Props) {
             <TaskRow
               task={item.task}
               selected={sel.selectedIds.includes(item.task.id)}
-              onCheckPress={sel.toggleSelect}
+              onCheckPress={sel.completeOne}
+              disabled={sel.busy}
+              onSyncPress={() => setSyncSheetOpen(true)}
               onPress={handleTaskPress}
               showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
             />
@@ -803,16 +800,10 @@ export default function TaskHome({nav, focusTab}: Props) {
   };
 
   const renderProjectsTab = () => {
-    // If user selected specific projects in settings, show only those (even if empty)
-    // Otherwise show all projects (even if empty)
-    const filtered = enabledProjectIds.length > 0
-      ? projectList.filter(p => enabledProjectIds.includes(p.id))
-      : projectList;
-    return (
-      <ProjectOverview projects={filtered} tasks={tasks} sections={collectionList} selectedIds={sel.selectedIds}
-        onSelect={sel.toggleSelect} onTask={handleTaskPress}
-        onProject={project => nav.push('project-view', {projectId: project.id, projectName: project.name})} />
-    );
+    const filtered = projectList.filter(project => shownProjectIds.includes(String(project.id)));
+    return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={[]}
+      onSelect={sel.completeOne} onTask={handleTaskPress} busy={sel.busy} onSyncPress={() => setSyncSheetOpen(true)}
+      onProject={project => changeView(`project:${project.id}`)} />;
   };
 
   const renderDeviceTab = () => {
@@ -835,7 +826,7 @@ export default function TaskHome({nav, focusTab}: Props) {
     // WHERE the note lives, not just its name.
     const byNote: Record<string, {label: string; entries: any[]}> = {};
     for (const dt of deviceTasks) {
-      if (dt.completed) continue; // flagged done, awaiting reconcile prune
+      if (!isActiveRegistryTask(dt)) continue;
       const key = dt.notePath || dt.noteFile || 'Unknown';
       if (!byNote[key]) {
         byNote[key] = {label: noteLabel(dt.notePath, dt.noteFile), entries: []};
@@ -859,7 +850,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         items.push({
           type: 'task',
           key: dt.id,
-          task: fullTask || {id: dt.id, content: dt.content, _registryOnly: true},
+          task: fullTask || {...dt, _registryOnly: !dt.syncState},
           pageNum: dt.pageNum,
           openPath,
         });
@@ -880,7 +871,9 @@ export default function TaskHome({nav, focusTab}: Props) {
             <TaskRow
               task={item.task}
               selected={sel.selectedIds.includes(item.task.id)}
-              onCheckPress={sel.toggleSelect}
+              onCheckPress={sel.completeOne}
+              disabled={sel.busy}
+              onSyncPress={() => setSyncSheetOpen(true)}
               onPress={handleTaskPress}
               showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
               pageNum={item.pageNum}
@@ -899,26 +892,70 @@ export default function TaskHome({nav, focusTab}: Props) {
     );
   };
 
-  const taskCount = tasks.length;
-
-  // B-004: honor the Settings project filter in the time-based views too
-  // (Projects tab already did). Device/This Note stay unfiltered -- they
-  // reflect physical captures, not project preference.
-  const projectFiltered = (list: any[]) =>
-    enabledProjectIds.length > 0
-      ? list.filter(t => !t.project_id || enabledProjectIds.includes(t.project_id))
-      : list;
+  const shownProjectIds: string[] = visibleProjectIds(visibilityConfig, projectList);
+  const projectFiltered = (list: any[]) => list.filter(task => !task.deleted &&
+    (!task.project_id || isProjectVisible(visibilityConfig, task.project_id, projectList)));
+  const taskCount = projectFiltered(tasks).length;
+  const inboxProject = projectList.find(project => project.is_inbox_project || project.inbox_project || project.isInbox || String(project.name).toLowerCase() === 'inbox');
+  const nextDay = new Date(); nextDay.setDate(nextDay.getDate() + 1);
+  const tomorrow = localDate(nextDay);
+  const changeView = (view: string) => {
+    const next = normalizeTaskView(view);
+    sel.clearSelection(); setActiveTab(next); setSessionTab(next);
+    saveConfig({lastOpenedTab: next}).catch(() => {});
+  };
+  const counts: Record<string, number> = {today: 0, tomorrow: 0, upcoming: 0, inbox: 0, note: noteTasks.length,
+    device: deviceTasks.filter(isActiveRegistryTask).length, done: projectFiltered(doneTasks).length};
+  for (const task of projectFiltered(tasks)) {
+    const due = (task.due?.date || '').slice(0, 10);
+    if (due && due <= today) counts.today++;
+    if (due === tomorrow) counts.tomorrow++;
+    if (due > today || !due) counts.upcoming++;
+    if (String(task.project_id) === String(inboxProject?.id) || !task.project_id) counts.inbox++;
+    counts[task.project_id] = (counts[task.project_id] || 0) + 1;
+  }
+  const syncMessage = syncStatusMessage(syncInfo || {});
+  const refreshSyncSheet = async () => {
+    const data = await offlineData(); setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);
+  };
+  const retryChange = async (id: string) => {
+    if (syncRetrying) return;
+    setSyncRetrying(true); setSyncRetryError('');
+    try {await retryOffline(id); await refreshSyncSheet();}
+    catch {setSyncRetryError('Could not retry this change. It remains saved on your device.');}
+    finally {setSyncRetrying(false);}
+  };
+  const renderSimpleTasks = (items: any[], empty: string) => items.length ?
+    <FlatList data={items} keyExtractor={task => task.id} renderItem={({item}) =>
+      <TaskRow task={item} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress}
+        onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[item.project_id]} showCollection={collectionName(item)} />} /> :
+    <View style={styles.centered}><Text style={styles.emptyText}>{empty}</Text></View>;
+  const renderProjectTasks = (id: string | undefined, name: string) => {
+    if (id && !isProjectVisible(visibilityConfig, id, projectList)) {
+      return <View style={styles.centered}><Text style={styles.emptyText}>This project is hidden in Settings. Choose a visible project from the sidebar.</Text></View>;
+    }
+    const projectTasks = tasks.filter(task => String(task.project_id) === String(id) || ((!id || name === 'Inbox') && !task.project_id));
+    const groups = collectionGroups(id || '', projectTasks, collectionList);
+    const rows = groups.flatMap((group: any) => [
+      {key: `collection:${group.id}`, type: 'collection', group},
+      ...(group.tasks.length ? group.tasks.map((task: any) => ({key: task.id, type: 'task', task})) : [{key: `empty:${group.id}`, type: 'empty'}]),
+    ]);
+    return <View style={styles.body}>
+      <View style={styles.projectHeading}><Text style={styles.projectTitle}>{name}</Text>
+        <Pressable style={styles.headerButton} accessibilityLabel={`Add task to ${name}`} onPress={() => nav.push('task-add', {projects: projectList, defaultProjectId: id})}><Text style={styles.headerButtonText}>+ Task</Text></Pressable></View>
+      <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
+        <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
+          <Pressable style={styles.headerButton} accessibilityLabel={`Add task to ${item.group.name}`} onPress={() => nav.push('task-add', {projects: projectList, defaultProjectId: id, defaultSectionId: item.group.id || null})}><Text style={styles.headerButtonText}>+ Task</Text></Pressable>} /> :
+        item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
+        <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />} />
+    </View>;
+  };
 
   return (
     <View style={styles.container}>
-      {/* minHeight = title line box (22px * 1.3 line-height) + 16px padding
-          each side, so the band cannot change height when its content swaps
-          to the SelectionBar (F-043 no-shift rule; device 2026-09-06). */}
+      {/* Keep the header height stable when the undo action replaces its controls. */}
       <View style={[styles.header, {minHeight: Math.round(22 * scale * 1.3) + 32}]}>
-        {/* F-025 v2 / F-043: while selecting (or offering undo), the header
-            band keeps its geometry and only its CONTENT swaps to the
-            contextual action bar -- confirmation lives up here, never in
-            the rows, so the list never shifts. */}
+        {/* Undo remains available until dismissed or the view changes. */}
         {sel.active ? (
           <SelectionBar
             count={sel.selectedIds.length}
@@ -962,63 +999,71 @@ export default function TaskHome({nav, focusTab}: Props) {
         )}
       </View>
 
-      <TabBar tabs={TABS} activeTab={activeTab} onTabChange={(tab) => {
-        log('TaskHome', `TAB changed: ${tab}`);
-        sel.clearSelection(); // selection and undo are per-view
-        setActiveTab(tab);
-        // F-038: remember within the session (survives push/pop remounts)
-        // and persist for the 'last' default across close/reopen.
-        setSessionTab(tab);
-        saveConfig({lastOpenedTab: tab}).catch(() => {});
-      }} />
-
       {jumpError ? (
         <View style={styles.jumpError}>
           <Text style={styles.jumpErrorText}>{jumpError}</Text>
         </View>
       ) : null}
 
-      {renderThisNote()}
-      {(error || syncInfo?.syncError || syncInfo?.warning || syncInfo?.otherAccountStores > 0) &&
-        <View style={styles.jumpError}><Text style={styles.jumpErrorText}>
-          {error || syncInfo?.syncError || syncInfo?.warning || 'Tasks for another configured token are retained separately. Switch back to that token to resume them.'}
-        </Text></View>}
-
-      <View style={styles.body}>
-        {renderContent()}
+      {error ? <View style={styles.jumpError}><Text style={styles.jumpErrorText}>{error}</Text></View> : null}
+      <View style={styles.workspace}>
+        <TaskSidebar activeView={activeTab} projects={projectList} visibleProjectIds={shownProjectIds}
+          noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView} />
+        <View style={styles.body}>{renderContent()}</View>
       </View>
 
       <View style={styles.footer}>
-        <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>
-          {taskCount} task{taskCount !== 1 ? 's' : ''}
-          {` · ${syncInfo?.pendingCount || 0} queued · ${syncInfo?.timestamp ? 'Last sync ' + new Date(syncInfo.timestamp).toLocaleString() : 'Never synced'}`}
-        </Text>
+        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
+          <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · Sync details</Text>
+          {syncMessage ? <Text style={styles.footerText}>{syncMessage}</Text> : null}
+        </Pressable>
         <View style={styles.footerRight}>
-          <Pressable style={styles.footerToggle} onPress={toggleShowDone} hitSlop={8}>
-            <Check checked={showDone} size={20} />
-            <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>Show done</Text>
+          <Pressable style={[styles.headerButton, showDone && styles.headerButtonPrimary]}
+            accessibilityRole="button" accessibilityLabel="Show done" accessibilityState={{selected: showDone}}
+            onPress={toggleShowDone}>
+            <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}, showDone && styles.headerButtonPrimaryText]}>Show done</Text>
           </Pressable>
-          <Pressable onPress={() => {
+          <Pressable style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
             sel.clearSelection();
             fetchData(true);
             if (activeTab === 'done' || showDone) {
               refreshCompletedTasks(30).then(setDoneTasks).catch((err: any) => setDoneError(`History refresh failed: ${err.message}`));
             }
-          }} hitSlop={8}>
-            <Text style={[styles.footerRefresh, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
+          }}>
+            <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
           </Pressable>
         </View>
       </View>
+      <Modal visible={syncSheetOpen} transparent onRequestClose={() => setSyncSheetOpen(false)}>
+        <View style={styles.sheetBackdrop}><View style={styles.sheet}>
+          <View style={styles.projectHeading}><Text style={styles.projectTitle}>Sync summary</Text>
+            <Pressable style={styles.headerButton} onPress={() => setSyncSheetOpen(false)} accessibilityLabel="Close sync summary"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
+          <ScrollView contentContainerStyle={styles.sheetContent}>
+            <Text style={styles.sheetText}>{syncMessage || 'No saved changes are waiting to sync.'}</Text>
+            <Text style={styles.sheetText}>{syncInfo?.timestamp ? `Last successful sync: ${new Date(syncInfo.timestamp).toLocaleString()}` : 'No successful sync yet.'}</Text>
+            {syncInfo?.warning ? <Text style={styles.sheetText}>{syncInfo.warning}</Text> : null}
+            {syncInfo?.otherAccountStores > 0 ? <Text style={styles.sheetText}>Tasks for another configured token are retained separately. Switch back to that token to resume them.</Text> : null}
+            {(syncInfo?.syncNotices || []).map((notice: any, index: number) => <Text style={styles.sheetText} key={notice.id || index}>{typeof notice === 'string' ? notice : notice.message || 'Sync needs attention. Review this task in Todoist.'}</Text>)}
+            {(syncInfo?.pendingChanges || []).map((change: any) => <View style={styles.queuedChange} key={change.uuid || `${change.kind}:${change.id}`}>
+              <Text style={styles.sheetText}>{syncChangeLabel(change.kind)} · {change.task?.content || change.collection?.name || 'Saved change'}</Text>
+              <Text style={styles.sheetText}>{change.state === 'attention' ? syncStatusMessage({syncError: change.error}) || 'Needs attention' : change.state === 'sending' ? 'Syncing or waiting for acknowledgement' : 'Waiting to sync'}</Text>
+              {change.error && /^(This task|This project|This collection|This older queued|A collection|Todoist acknowledged|No command)/.test(change.error) ? <Text style={styles.sheetText}>{change.error}</Text> : null}
+              {change.task && !change.task.deleted ? <Pressable style={styles.headerButton} onPress={() => {setSyncSheetOpen(false); nav.push('task-detail', {task: change.task, projects: projectList});}}><Text style={styles.headerButtonText}>Task details</Text></Pressable> : null}
+              {change.error ? <Pressable style={styles.headerButton} disabled={syncRetrying} accessibilityLabel="Retry saved change" onPress={() => retryChange(change.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable> : null}
+            </View>)}
+            {syncRetryError ? <Text style={styles.sheetText}>{syncRetryError}</Text> : null}
+          </ScrollView>
+        </View></View>
+      </Modal>
+
     </View>
   );
 }
 
 // Group completed tasks into recency buckets (newest first)
 function groupDoneByBucket(doneTasks: any[], today: string): any[] {
-  const yesterday = new Date(new Date(today + 'T00:00:00').getTime() - 86400000)
-    .toISOString().slice(0, 10);
-  const weekAgo = new Date(new Date(today + 'T00:00:00').getTime() - 7 * 86400000)
-    .toISOString().slice(0, 10);
+  const yesterday = localDate(new Date(new Date(today + 'T00:00:00').getTime() - 86400000));
+  const weekAgo = localDate(new Date(new Date(today + 'T00:00:00').getTime() - 7 * 86400000));
 
   const sorted = [...doneTasks].sort((a, b) =>
     (b.completed_at || '').localeCompare(a.completed_at || ''));
@@ -1079,12 +1124,12 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
   const todayDate = new Date(today + 'T00:00:00');
   const tomorrow = new Date(todayDate);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = localDate(tomorrow);
 
   // End of this week (Sunday)
   const endOfWeek = new Date(todayDate);
   endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
-  const endOfWeekStr = endOfWeek.toISOString().slice(0, 10);
+  const endOfWeekStr = localDate(endOfWeek);
 
   const buckets: {tomorrow: any[]; thisWeek: any[]; later: any[]} = {
     tomorrow: [],
@@ -1093,7 +1138,7 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
   };
 
   tasks.forEach(t => {
-    const due = t.due?.date;
+    const due = (t.due?.date || '').slice(0, 10);
     if (due === tomorrowStr) {
       buckets.tomorrow.push(t);
     } else if (due <= endOfWeekStr) {
@@ -1121,6 +1166,16 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
 }
 
 const styles = StyleSheet.create({
+  workspace: {flex: 1, flexDirection: 'row'},
+  projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
+  projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
+  emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
+  syncSummary: {flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
+  sheetBackdrop: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end'},
+  sheet: {backgroundColor: '#fff', maxHeight: '80%', borderWidth: 2, borderColor: '#000'},
+  sheetContent: {padding: 16, gap: 12},
+  sheetText: {fontSize: 16, color: '#000'},
+  queuedChange: {paddingVertical: 12, borderTopWidth: 1, borderColor: '#000', gap: 8},
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
@@ -1268,20 +1323,10 @@ const styles = StyleSheet.create({
   footerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
-  },
-  footerToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
   footerText: {
     fontSize: 13,
     color: '#555555',
-  },
-  footerRefresh: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
   },
 });

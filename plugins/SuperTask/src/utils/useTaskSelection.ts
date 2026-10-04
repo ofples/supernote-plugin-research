@@ -1,93 +1,45 @@
-/**
- * useTaskSelection - select-then-commit completion state (F-025 v2 / F-043).
- *
- * Checkbox taps SELECT tasks; completion commits from the screen's
- * contextual header (SelectionBar), and Undo reopens via the same
- * endpoint the Done tab uses. Deliberateness comes from the labeled
- * Complete button instead of a double-tap window.
- *
- * NO TIMERS anywhere: selection has no expiry, and the undo bar persists
- * until an explicit dismiss or the next interaction. JS timers suspend when
- * the plugin view closes, and time pressure is hostile on e-ink anyway.
- */
-import {useState} from 'react';
+/** Shared immediate completion with persistent undo and an in-flight guard. */
+import {useRef, useState} from 'react';
 import {completeTask, reopenTask} from '../api/todoist';
-import {log, logError} from './debug';
-
-type Opts = {
-  onCompleted?: (ids: string[]) => void; // prune lists / invalidate cache
-  onUndone?: (ids: string[]) => void; // restore reopened tasks
-  onError?: (msg: string) => void;
-};
-
-export function useTaskSelection(tag: string, opts: Opts) {
+type Opts = {onCompleted?: (ids: string[]) => void; onUndone?: (ids: string[]) => void; onError?: (msg: string) => void};
+export function useTaskSelection(_tag: string, opts: Opts) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [undoIds, setUndoIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-
-  const toggleSelect = (taskId: string) => {
-    setUndoIds([]); // any new selection dismisses a lingering undo bar
-    setSelectedIds(prev => {
-      const next = prev.includes(taskId)
-        ? prev.filter(id => id !== taskId)
-        : [...prev, taskId];
-      log(tag, `SELECT toggle id=${taskId} -> ${next.length} selected`);
-      return next;
-    });
+  const inFlight = useRef(false);
+  const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(value => value !== id) : [...prev, id]);
+  const clearSelection = () => {setSelectedIds([]); setUndoIds([]);};
+  const complete = async (ids: string[]) => {
+    if (inFlight.current || !ids.length) return;
+    inFlight.current = true; setBusy(true);
+    const done: string[] = []; const failed: string[] = [];
+    try {
+      for (const id of ids) {try {await completeTask(id); done.push(id);} catch {failed.push(id);}}
+      setSelectedIds([]);
+      if (done.length) {setUndoIds(done); opts.onCompleted?.(done);}
+      if (failed.length) opts.onError?.(`Could not complete ${failed.length} task${failed.length === 1 ? '' : 's'}. Tap its checkbox to retry.`);
+    } finally {inFlight.current = false; setBusy(false);}
   };
-
-  const clearSelection = () => {
-    setSelectedIds([]);
-    setUndoIds([]);
-  };
-
-  const completeSelected = async () => {
-    if (busy || selectedIds.length === 0) return;
-    setBusy(true);
-    log(tag, `COMPLETE commit: ${selectedIds.length} selected`);
-    const done: string[] = [];
-    const failed: string[] = [];
-    for (const id of selectedIds) {
-      try {
-        await completeTask(id);
-        done.push(id);
-      } catch (err: any) {
-        logError(tag, err);
-        failed.push(id);
-      }
-    }
-    setBusy(false);
-    setSelectedIds(failed); // failures stay selected for retry
-    if (done.length) {
-      setUndoIds(done);
-      opts.onCompleted?.(done);
-    }
-    if (failed.length) {
-      opts.onError?.(`Complete failed for ${failed.length} task${failed.length !== 1 ? 's' : ''}`);
-    }
-  };
-
+  const completeOne = (id: string) => complete([id]);
+  const completeSelected = () => complete(selectedIds);
   const undo = async () => {
-    if (busy || undoIds.length === 0) return;
-    setBusy(true);
-    log(tag, `UNDO: reopening ${undoIds.length}`);
-    const back: string[] = [];
-    for (const id of undoIds) {
-      try {
-        await reopenTask(id);
-        back.push(id);
-      } catch (err: any) {
-        logError(tag, err);
+    if (inFlight.current || !undoIds.length) return;
+    inFlight.current = true; setBusy(true);
+    const back: string[] = []; const failed: string[] = [];
+    try {
+      for (const id of undoIds) {
+        try {await reopenTask(id); back.push(id);} catch (error: any) {
+          failed.push(id);
+          opts.onError?.(error?.code === 'RECURRING_UNDO_UNSUPPORTED'
+            ? 'This recurring completion has already synced. Undo it in Todoist; the next occurrence stays active.'
+            : 'Could not undo this completion. Your task state is preserved; retry when sync is available.');
+        }
       }
-    }
-    setBusy(false);
-    setUndoIds([]);
-    if (back.length) opts.onUndone?.(back);
+      setUndoIds(failed);
+      if (back.length) opts.onUndone?.(back);
+    } finally {inFlight.current = false; setBusy(false);}
   };
-
   const dismissUndo = () => setUndoIds([]);
-
-  const active = selectedIds.length > 0 || undoIds.length > 0;
-
-  return {selectedIds, undoIds, busy, active, toggleSelect, clearSelection, completeSelected, undo, dismissUndo};
+  return {selectedIds, undoIds, busy, active: selectedIds.length > 0 || undoIds.length > 0,
+    toggleSelect, clearSelection, completeSelected, completeOne, undo, dismissUndo};
 }
