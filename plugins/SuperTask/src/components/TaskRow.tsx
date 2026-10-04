@@ -1,18 +1,4 @@
-/**
- * TaskRow - task row with drawn checkbox and chip metadata (F-024/F-025).
- *
- * Metadata is rendered as bordered chips (the ONE idiom -- see Chip.tsx):
- * [P1] [Jul 28] [Work] [p.4] [pending sync]. Overdue inverts. The checkbox
- * is the shared drawn Check box, never a text glyph.
- *
- * Completion is SELECT-THEN-COMMIT (F-025 v2 / F-043): tapping the box
- * SELECTS the task -- the box fills and nothing else in the row changes,
- * so there is zero layout shift. The parent screen's contextual header
- * (SelectionBar) carries the labeled Complete action and the post-commit
- * Undo. The row holds no completion state and no timers. In `checked` mode
- * (Done tab) a single tap reopens -- that action is inherently recoverable,
- * so it needs no confirmation.
- */
+/** Shared task row: checkbox completes, body opens details, sync symbol opens status. */
 
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
@@ -31,7 +17,7 @@ const PRIORITY_LABELS: Record<number, string> = {
 
 type Props = {
   task: any;
-  onCheckPress: (taskId: string) => void; // active rows: toggle select; checked rows: reopen
+  onCheckPress: (taskId: string) => void; // complete active task or reopen checked task
   onPress: (task: any) => void;
   showProject?: string;
   showCollection?: string;
@@ -42,12 +28,15 @@ type Props = {
   onOpenNote?: () => void; // renders a right-aligned "Note >" jump button
   compact?: boolean;
   roundCheck?: boolean;
+  onSyncPress?: () => void;
+  disabled?: boolean;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false}: Props) {
   const scale = useFontScale();
 
-  const handleCheckPress = () => {
+  const handleCheckPress = (event?: any) => {
+    event?.stopPropagation?.();
     log('TaskRow', `CHECK pressed id=${task.id} checked=${!!checked} selected=${!!selected}`);
     onCheckPress(task.id);
   };
@@ -67,13 +56,10 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   if (showProject) chips.push({label: showProject});
   if (showCollection) chips.push({label: showCollection});
   if (pageNum !== undefined) chips.push({label: `p.${pageNum}`});
-  if (task.syncState === 'attention') chips.push({label: 'Needs attention', inverted: true});
-  else if (task.syncState === 'pending' || task._registryOnly) chips.push({label: 'Pending sync'});
+  const syncPending = task.syncState === 'pending' || task._registryOnly || task.awaitingRecurrence || task.occurrencePending;
+  const syncAttention = task.syncState === 'attention';
 
-  // Layout responds to PERSISTENT metadata: with chips the row top-aligns
-  // (title pairs with the checkbox, chips wrap below); without chips the
-  // single title line centers against the checkbox target. Selection adds
-  // no elements, so the decision never flips mid-interaction.
+  // Keep the title aligned with its checkbox as metadata wraps.
   const hasMeta = chips.length > 0;
 
   return (
@@ -83,6 +69,10 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
       <Pressable
         style={[styles.checkTarget, !hasMeta && styles.checkTargetCentered]}
         onPress={handleCheckPress}
+        disabled={disabled}
+        accessibilityRole="checkbox"
+        accessibilityLabel={`${checked ? 'Reopen' : 'Complete'} ${task.content}`}
+        accessibilityState={{checked: !!checked || !!selected, disabled}}
         hitSlop={6}>
         <Check checked={!!checked || !!selected} round={roundCheck} />
       </Pressable>
@@ -96,10 +86,15 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
           </View>
         )}
       </View>
+      {syncPending || syncAttention ? <Pressable style={styles.syncTarget} accessibilityRole="button"
+        accessibilityLabel={syncAttention ? 'Sync needs attention' : task.awaitingRecurrence ? 'Waiting for next recurring occurrence' : 'Waiting to sync'}
+        onPress={event => {event.stopPropagation(); onSyncPress ? onSyncPress() : onPress(task);}}>
+        <Text style={styles.syncSymbol}>{syncAttention ? '!' : '↥'}</Text>
+      </Pressable> : null}
       {onOpenNote ? (
         <Pressable
           style={styles.noteBtn}
-          onPress={() => { log('TaskRow', `OPEN NOTE pressed id=${task.id}`); onOpenNote(); }}
+          onPress={event => { event.stopPropagation(); log('TaskRow', `OPEN NOTE pressed id=${task.id}`); onOpenNote(); }}
           hitSlop={6}>
           <Text style={[styles.noteBtnText, {fontSize: Math.round(13 * scale)}]}>{'Note >'}</Text>
         </Pressable>
@@ -115,6 +110,8 @@ function formatDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
+  syncTarget: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 4},
+  syncSymbol: {fontSize: 23, fontWeight: '700', color: '#000'},
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
