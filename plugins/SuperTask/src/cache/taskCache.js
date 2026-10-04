@@ -12,9 +12,9 @@ function publish(data) {
   return data;
 }
 subscribeOffline(state => {
-  const allTasks = model.mergedTasks(state);
+  const allTasks = model.privateTasks(state);
   const sections = model.mergedSections?.(state) || state.sections || [];
-  publish({tasks: allTasks.filter(t => !t.completed && !t.deleted), allTasks, projects: state.projects, sections,
+  publish({tasks: model.mergedTasks(state).filter(t => !t.completed && !t.deleted), allTasks, projects: state.projects, sections,
     timestamp: state.lastSync, pendingCount: state.outbox.length,
     pendingTaskCount: new Set(state.outbox.filter(op => op.kind !== 'collection_create').map(op => op.localId)).size,
     pendingCollectionCount: state.outbox.filter(op => op.kind === 'collection_create').length,
