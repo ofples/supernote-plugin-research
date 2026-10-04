@@ -1,6 +1,6 @@
 # SuperTask workflow follow-up preparation
 
-Prepared 4 October 2026 from the user's feedback and current beta.8 source. This is the preparation for a subsequent unattended implementation session, not an activated goal or a claim that these changes are implemented. SuperDashboard, InkToClipboard and the parked recognition-enhancer remain outside this work.
+Prepared 4 October 2026 from the user's feedback and current beta.8 source. The user activated this goal on 4 October; implementation evidence is maintained in PROGRESS.md. This plan describes the approved scope, not a claim that every change is implemented. SuperDashboard, InkToClipboard and the parked recognition-enhancer remain outside this work.
 
 ## Confirmed decisions
 
@@ -16,7 +16,7 @@ Prepared 4 October 2026 from the user's feedback and current beta.8 source. This
 - Use Luna agents for bounded implementation tasks and Sol for orchestration, reviews and difficult coding, as specified in [FEEDBACK_GOAL.md](FEEDBACK_GOAL.md).
 - If the device is unavailable, continue all independent implementation, review, tests and packaging, with an exact deferred device checklist. Avoid idle waits, repeated device polling, redundant exploration and unnecessary test/agent work.
 
-All preparation questions are resolved. [FEEDBACK_GOAL.md](FEEDBACK_GOAL.md) is the ready-to-run goal prompt for the subsequent unattended session. Preparation is complete; runtime implementation has not started.
+All preparation questions are resolved. [FEEDBACK_GOAL.md](FEEDBACK_GOAL.md) is the ready-to-run goal prompt for the subsequent unattended session. Preparation is complete; runtime implementation is active.
 
 ## Current baseline and device handoff
 

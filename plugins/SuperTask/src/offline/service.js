@@ -65,8 +65,13 @@ export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
   const allTasks = model.mergedTasks(state);
-  return {tasks: allTasks.filter(task => !task.completed), allTasks, projects: state.projects, sections: state.sections || [], timestamp: state.lastSync,
+  const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state,
+    error: op.error, task: state.tasks[op.localId], collection: (model.mergedSections?.(state) || state.sections || []).find(section => section.id === op.localId)}));
+  return {tasks: allTasks.filter(task => !task.completed && !task.deleted), allTasks, projects: state.projects, sections: model.mergedSections?.(state) || state.sections || [], timestamp: state.lastSync,
     pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
+    pendingTaskCount: new Set(state.outbox.filter(op => op.kind !== 'collection_create').map(op => op.localId)).size,
+    pendingCollectionCount: state.outbox.filter(op => op.kind === 'collection_create').length,
+    pendingChanges, syncNotices: state.syncNotices || [],
     syncError: state.syncError, warning: current.store.getWarning(),
     otherAccountStores: current.identity.otherAccountStores};
 }
@@ -103,8 +108,30 @@ export async function completeOffline(id, completed = true) {
 
 export async function editOfflineTask(id, draft) {
   const current = await offlineSession();
-  await current.store.transaction(state => model.editUnsent(state, id, draft));
+  const ids = await idGenerator(12);
+  await current.store.transaction(state => model.editTask(state, id, draft, ids));
   requestActiveSync();
+  return cachedTask(id);
+}
+
+export async function deleteOfflineTask(id) {
+  const current = await offlineSession();
+  const ids = await idGenerator(12);
+  await current.store.transaction(state => model.deleteTask(state, id, ids));
+  requestActiveSync();
+}
+
+export async function createOfflineCollection(projectId, name) {
+  const current = await offlineSession();
+  const ids = await idGenerator(12);
+  let collection;
+  await current.store.transaction(state => {
+    const result = model.addCollection(state, projectId, name, ids);
+    collection = result.collection;
+    return result.next;
+  });
+  requestActiveSync();
+  return collection;
 }
 
 export async function cancelOfflineTask(id) {
@@ -127,22 +154,12 @@ export async function syncOffline() {
 export async function cachedTask(id) {
   const current = await offlineSession();
   const state = await current.store.load();
-  const task = model.mergedTasks(state).find(t => t.id === id || t.remoteId === id) ||
-    (state.completedRemote || []).find(t => t.id === id);
-  return task || null;
+  return model.cachedView(state, id);
 }
 
 export async function rememberRemoteTask(task) {
   const current = await offlineSession();
-  await current.store.transaction(state => {
-    const owned = Object.values(state.tasks).find(t => t.remoteId === task.id);
-    if (owned && !state.outbox.some(op => op.localId === owned.id)) {
-      const {id, remoteId, source, batchId, capturedAt} = owned;
-      Object.assign(owned, task, {id, remoteId, source, batchId, capturedAt, remoteMissing: false});
-    }
-    state.remote = [...state.remote.filter(t => t.id !== task.id), task];
-    return state;
-  });
+  await current.store.transaction(state => model.rememberTask(state, task));
 }
 export async function retryOffline(id) {
   const current = await offlineSession();
@@ -159,14 +176,12 @@ export async function retryOffline(id) {
 export async function completedData() {
   const current = await offlineSession();
   const state = await current.store.load();
-  const owned = model.mergedTasks(state);
-  const remoteIds = new Set(owned.map(t => t.remoteId || t.id));
-  return [...(state.completedRemote || []).filter(t => !remoteIds.has(t.id)), ...owned.filter(t => t.completed)];
+  return model.completedView(state);
 }
 
 export async function rememberCompleted(tasks) {
   const current = await offlineSession();
-  await current.store.transaction(state => ({...state, completedRemote: tasks}));
+  await current.store.transaction(state => ({...state, completedRemote: tasks.map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true}))}));
 }
 
 export async function forgetRemoteTask(id) {
