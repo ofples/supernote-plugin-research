@@ -44,6 +44,9 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
         // Migration must pass the original disk bytes as previous, not schema 2.
         await adapter.commit(JSON.stringify(next), committedPayload);
       } catch (error) {
+        // A failed native reply may follow a committed rename. Retain identity
+        // until an authoritative reread proves this write was not committed.
+        error.uncertainCommit = true;
         // The native write may have renamed successfully before returning an
         // error. Re-read authoritative disk state before allowing another save.
         try {

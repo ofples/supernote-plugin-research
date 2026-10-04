@@ -120,8 +120,10 @@ function addBatch(store, drafts, source, ids, capturedAt = Date.now()) {
   return {next, tasks};
 }
 function findTask(store, id) {
-  return store.tasks[id] || Object.values(store.tasks).find(t => t.remoteId === id) ||
-    store.remote.find(t => t.id === id) || (store.completedRemote || []).find(t => t.id === id);
+  const active = store.tasks[id] || Object.values(store.tasks).find(t => t.remoteId === id) || store.remote.find(t => t.id === id);
+  if (active) {return active;}
+  const history = (store.completedRemote || []).find(t => t.id === id);
+  return history ? {...history, completed: true, is_completed: true, occurrenceHistory: true} : null;
 }
 function ownTask(store, id) {
   let task = findTask(store, id);
