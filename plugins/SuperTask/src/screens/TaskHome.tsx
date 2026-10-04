@@ -20,7 +20,6 @@ import {healRenamedNotes} from '../utils/noteHeal';
 import {noteLabel} from '../utils/noteLabel';
 import {saveConfig} from '../utils/config';
 import {useFontScale} from '../utils/useFontScale';
-import {Check} from '../components/settings';
 import {loadConfig, getCachedConfig, resolveDefaultTab} from '../utils/config';
 import {getSessionTab, setSessionTab} from '../utils/viewState';
 import {reopenTask, getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
@@ -1019,18 +1018,19 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
           {syncMessage ? <Text style={styles.footerText}>{syncMessage}</Text> : null}
         </Pressable>
         <View style={styles.footerRight}>
-          <Pressable style={styles.footerToggle} onPress={toggleShowDone} hitSlop={8}>
-            <Check checked={showDone} size={20} />
-            <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>Show done</Text>
+          <Pressable style={[styles.headerButton, showDone && styles.headerButtonPrimary]}
+            accessibilityRole="button" accessibilityLabel="Show done" accessibilityState={{selected: showDone}}
+            onPress={toggleShowDone}>
+            <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}, showDone && styles.headerButtonPrimaryText]}>Show done</Text>
           </Pressable>
-          <Pressable onPress={() => {
+          <Pressable style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
             sel.clearSelection();
             fetchData(true);
             if (activeTab === 'done' || showDone) {
               refreshCompletedTasks(30).then(setDoneTasks).catch((err: any) => setDoneError(`History refresh failed: ${err.message}`));
             }
-          }} hitSlop={8}>
-            <Text style={[styles.footerRefresh, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
+          }}>
+            <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
           </Pressable>
         </View>
       </View>
@@ -1323,20 +1323,10 @@ const styles = StyleSheet.create({
   footerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
-  },
-  footerToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
   footerText: {
     fontSize: 13,
     color: '#555555',
-  },
-  footerRefresh: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
   },
 });
