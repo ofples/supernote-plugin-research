@@ -103,6 +103,8 @@ test('explicit all-hidden project mode filters time views but leaves Inbox and p
   assert.deepEqual(tree.root.findByType('Sidebar').props.visibleProjectIds, ['i']);
   await switchTo(tree, 'note'); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
   await switchTo(tree, 'inbox'); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
+  await switchTo(tree, 'project:p'); assert.equal(tree.root.findAllByType('TaskRow').length, 0);
+  assert.match(JSON.stringify(tree.toJSON()), /This project is hidden/);
   await act(async () => tree.unmount());
 });
 test('sync summary includes collection and task queue work and retries a saved failure', async () => {

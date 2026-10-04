@@ -328,6 +328,7 @@ export default function Config({nav}: Props) {
 
   const toggleProject = (projectId: string) => {
     const next = toggleProjectVisibility({enabledProjectIds, projectVisibility}, projectId, projects);
+    if (!Array.isArray(next.enabledProjectIds)) return;
     setEnabledProjectIds(next.enabledProjectIds);
     setProjectVisibility(next.projectVisibility);
     applyChange('showProjects', next);
