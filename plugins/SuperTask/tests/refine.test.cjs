@@ -24,7 +24,7 @@ const {refineBatch, refinementError} = compiled('../src/batch/refine.ts', {
   '../utils/config': {loadConfig: async () => ({aiApiKey: 'test-only-key', aiModel: 'gpt-4.1-mini'})},
   '../utils/permissions': {ensurePermissionGroup: async () => true},
 });
-const proposal = {tasks: [{content: 'Call Ofer', description: '', priority: 1, sectionId: null, projectId: null, dueDate: null, labels: []}]};
+const proposal = {tasks: [{content: 'Call Ofer', description: '', priority: 1, sectionId: null, projectId: null, dueDate: null, labels: [], explicitFields: [], sourceRowIds: ['1'], sourceText: 'Call Ofer'}]};
 function bufferedResponse(text, status = 200) {
   return {ok: status < 400, status, statusText: 'test', headers: new Headers({'content-type': 'application/json'}),
     body: null, text: async () => text};
@@ -39,7 +39,7 @@ test('same Responses model path parses HTTP 200 buffered response and requests s
       usage: {input_tokens: 20, output_tokens: 40, total_tokens: 60}, incomplete_details: null}));
   };
   try {
-    const rows = [{...proposal.tasks[0], dueString: ''}];
+    const rows = [{...proposal.tasks[0], rowId: 1, dueString: ''}];
     const result = await refineBatch(rows, [], new Date(2026, 9, 3).getTime(), 'aGVsbG8=', new AbortController().signal);
     assert.equal(result[0].content, 'Call Ofer'); assert.equal(result[0].selected, true);
     assert.equal(requests.length, 1);

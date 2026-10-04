@@ -14,9 +14,9 @@ test('merge and split preserve metadata and never mutate the previous review', (
   assert.deepEqual(split.map(row => row.content), ['Call Ofer', 'Book train']);
   assert.ok(split.every(row => row.priority === 4 && row.dueString === '2026-10-03'));
 });
-const validTask = () => ({content: 'Call Ofer', description: '', dueDate: '2026-10-04', priority: 1, sectionId: null, projectId: 'p', labels: []});
+const validTask = () => ({content: 'Call Ofer', description: '', dueDate: '2026-10-04', priority: 1, sectionId: null, projectId: 'p', labels: [], explicitFields: ['location', 'dueString'], sourceRowIds: [], sourceText: 'Call Ofer in House tomorrow'});
 test('structured proposals reject invented project IDs, dates and malformed details', () => {
-  assert.equal(validateProposal({tasks: [validTask()]}, [{id: 'p'}])[0].dueString, '2026-10-04');
+  assert.equal(validateProposal({tasks: [validTask()]}, [{id: 'p', name: 'House'}])[0].dueString, '2026-10-04');
   for (const changes of [{sectionId: null, projectId: 'invented'}, {dueDate: 'tomorrow'}, {dueDate: '2026-02-30'},
     {priority: 0}, {content: ''}, {labels: [1]}, {unknown: 'extra'}]) {
     assert.throws(() => validateProposal({tasks: [{...validTask(), ...changes}]}, [{id: 'p'}]));
