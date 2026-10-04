@@ -214,10 +214,7 @@ export async function completeTask(taskId) {
 }
 
 export async function reopenTask(taskId) {
-  const task = await getTask(taskId);
-  if (!task.id.startsWith('local:') && !task.id.startsWith('remote:')) {
-    await rememberRemoteTask({...task, is_completed: true, completed: true});
-  }
+  await getTask(taskId);
   await completeOffline(taskId, false);
 }
 
