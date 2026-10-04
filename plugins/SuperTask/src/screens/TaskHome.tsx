@@ -368,6 +368,12 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
         setDoneTasks(items || []);
         setDoneFetched(true);
         log('TaskHome', `Done tab: ${items?.length ?? 0} completed tasks (30d)`);
+        // Render durable history first, then refresh its remote cache. A fresh
+        // installation's active snapshot cannot contain completed history.
+        setDoneLoading(false);
+        refreshCompletedTasks(30).then(setDoneTasks).catch(() => {
+          setDoneError('Showing saved completed history. Todoist history could not be refreshed right now.');
+        });
       } catch (err: any) {
         logError('TaskHome', err);
         setDoneError(`Could not load completed tasks: ${err.message}`);
