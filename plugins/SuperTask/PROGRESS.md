@@ -1,5 +1,9 @@
 # Offline task workflow progress
 
+## Feedback preparation — 4 October 2026
+
+[FEEDBACK_PLAN.md](FEEDBACK_PLAN.md) records the user's next-session requirements, confirmed decisions, implementation order, Git/PR dependencies and acceptance checks. This covers sidebar navigation with plain project entries and All projects retained; compact project/collection choices; immediate checkbox completion; full offline mutations and new collections; remote-wins actual conflicts; batch defaults/overrides/dates/post-create flows; concurrent OCR/AI capture; main AI Settings; and the confirmed legacy project-visibility bug. The user authorizes up to 100 scratch AI requests for validation, using only calls justified by results. Recurring offline completion scope is the one outstanding question. No follow-up runtime implementation or goal activation has occurred.
+
 ## Collections extension — 4 October 2026
 
 `feature/project-collections` adds cached Todoist sections, collection grouping in both project views, inline project/collection choices in create/edit/batch/default settings, collection metadata in other views and validated structured AI section suggestions. Full-width collection rules include the user's visual correction. See COLLECTIONS.md for the review base, package hash, exact behavior and device evidence.
