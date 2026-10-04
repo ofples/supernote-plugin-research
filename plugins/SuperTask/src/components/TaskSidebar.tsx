@@ -20,7 +20,6 @@ const NAV_ITEMS = [
 const LOWER_ITEMS = [
   {key: 'device', label: 'On Device'},
   {key: 'done', label: 'Done'},
-  {key: 'projects', label: 'All projects'},
 ];
 
 function countLabel(value?: number) {
@@ -62,6 +61,7 @@ export default function TaskSidebar({activeView, projects, onViewChange, noteAva
       <View accessibilityRole="header" style={styles.projectsHeader}>
         <Text style={[styles.headerLabel, {fontSize: Math.round(14 * scale)}]}>Projects</Text>
       </View>
+      {renderItem('projects', 'All projects')}
       {shownProjects.map(project => renderItem(`project:${String(project.id)}`, String(project.name || 'Untitled project'), String(project.id)))}
     </ScrollView>
   );
@@ -77,6 +77,6 @@ const styles = StyleSheet.create({
   labelSelected: {color: '#ffffff', fontWeight: '700'},
   count: {marginLeft: 8, fontWeight: '700', color: '#000000'},
   countSelected: {color: '#ffffff'},
-  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, borderBottomWidth: 2, borderBottomColor: '#000000'},
+  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 2, borderBottomColor: '#000000'},
   headerLabel: {fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.4, textTransform: 'uppercase'},
 });
