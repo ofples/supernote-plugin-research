@@ -93,7 +93,7 @@ function normalizeDraft(draft, capturedAt) {
 }
 function mergedSections(store) {
   const local = Object.values(store.collections || {}), owned = new Set(local.map(s => s.remoteId).filter(Boolean));
-  return [...(store.sections || []).filter(s => !owned.has(s.id)), ...local.map(s => ({...clone(s), id: s.remoteId || s.id,
+  return [...(store.sections || []).filter(s => !owned.has(s.id)), ...local.map(s => ({...clone(s), id: s.remoteId || s.id, localId: s.id,
     is_deleted: !!s.remoteUnavailable,
     syncState: store.outbox.find(op => op.localId === s.id)?.state === 'attention' ? 'attention' : s.remoteId ? 'synced' : 'pending'}))];
 }

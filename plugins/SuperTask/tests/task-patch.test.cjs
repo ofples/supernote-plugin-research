@@ -14,3 +14,7 @@ test('explicit date clear and Inbox move are distinct from omitted fields', () =
   assert.deepEqual(taskPatch(task, {projectId: null}, projects, sections), {project_id: 'i', section_id: null});
   assert.deepEqual(taskPatch(task, {}, projects, sections), {});
 });
+test('a stale form collection alias resolves before form move validation', () => {
+  assert.deepEqual(taskPatch(task, {sectionId: 'section:local'}, projects,
+    [...sections, {id: 'real', localId: 'section:local', project_id: 'p'}]), {project_id: 'p', section_id: 'real'});
+});
