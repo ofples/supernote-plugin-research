@@ -166,6 +166,7 @@ function editTask(store, id, patch, ids, capturedAt = Date.now()) {
   if ((own(values, 'project_id') || own(values, 'section_id')) && !projectId && (task.project_id || sectionId)) {throw new Error('Refresh projects before choosing Inbox.');}
   const changed = Object.fromEntries(Object.entries(values).filter(([k, v]) => !same(task[k] ?? null, v ?? null)));
   if (!Object.keys(changed).length) {return next;}
+  task.remoteMissing = false;
   Object.assign(task, changed);
   const create = next.outbox.find(op => op.localId === task.id && op.kind === 'create');
   if (create && create.attempts === 0) {return next;}
@@ -233,6 +234,7 @@ function setCompleted(store, id, done, ids, capturedAt = Date.now()) {
   if (done && (task.occurrencePending || task.awaitingRecurrence)) {return next;}
   const unsent = completions.filter(op => op.attempts === 0), preceding = completions.filter(op => op.attempts > 0);
   if (Boolean(task.completed) === done && !unsent.length) {return next;}
+  task.remoteMissing = false;
   next.outbox = next.outbox.filter(op => !unsent.includes(op));
   const create = ops.find(op => op.kind === 'create');
   const known = preceding.length ? preceding[preceding.length - 1].kind !== 'reopen' : create ? false : Boolean(task.serverCompleted ?? task.completed);
@@ -357,6 +359,7 @@ function acknowledge(store, operations, response, now = Date.now()) {
         task.baseRemote = base;
       }
       task.acknowledgedAt = now; accepted.add(op.uuid);
+      if (op.kind !== 'collection_create') {task.remoteMissing = false;}
       if (op.kind !== 'collection_create' && op.kind !== 'delete') {task.ackPendingRefresh = true;}
     } else if (status && typeof status === 'object') {
       op.state = status.http_code === 429 || status.http_code >= 500 ? 'pending' : 'attention';
@@ -369,6 +372,7 @@ function reconcileAcknowledged(store, localId, result) {
   const next = clone(store), task = next.tasks[localId];
   if (!task || task.deleted || !result || result.status === 'missing' || result.status === 'unavailable') {return next;}
   const remote = result.task || result;
+  task.remoteMissing = false;
   const oldBase = task.baseRemote, latest = remoteState(remote);
   // Do not roll the expected state back to a stale post-write read. The next
   // preflight compares against the acknowledged command, not an older cache.
@@ -401,6 +405,7 @@ function rememberTask(store, remote) {
   let next = clone(store);
   const owned = Object.values(next.tasks).find(task => task.remoteId === remote.id);
   next.remote = [...next.remote.filter(task => task.id !== remote.id), remote];
+  if (owned) {owned.remoteMissing = false;}
   if (owned && !owned.deleted && !next.outbox.some(op => op.localId === owned.id)) {
     if (owned.ackPendingRefresh || owned.acknowledgedCreate || owned.awaitingRecurrence) {
       next = reconcileAcknowledged(next, owned.id, {status: 'found', task: remote});
@@ -409,6 +414,8 @@ function rememberTask(store, remote) {
   return next;
 }
 function replaceRemote(store, remote, projects, now = Date.now(), sections = store.sections || []) {
+  // This replaces a complete active snapshot. Transport rejects partial Sync
+  // responses before the worker calls it; individual reads use rememberTask.
   if (!Array.isArray(remote) || !Array.isArray(projects) || !Array.isArray(sections)) {throw new Error('Invalid remote snapshot.');}
   const next = clone(store); next.remote = remote; next.projects = projects; next.sections = sections; next.lastSync = now; next.syncError = null;
   for (const collection of Object.values(next.collections || {})) {
@@ -418,23 +425,44 @@ function replaceRemote(store, remote, projects, now = Date.now(), sections = sto
     if (latest) {collection.name = latest.name; collection.project_id = latest.project_id;}
   }
   for (const task of Object.values(next.tasks)) {
-    if (task.deleted || next.outbox.some(op => op.localId === task.id)) {continue;}
     const latest = remote.find(t => t.id === task.remoteId);
+    const pending = next.outbox.some(op => op.localId === task.id);
+    if (latest || pending || !task.remoteId || task.acknowledgedCreate || task.ackPendingRefresh || task.awaitingRecurrence) {
+      task.remoteMissing = false;
+    } else if (!task.deleted) {
+      // Absence cannot distinguish completed, deleted or inaccessible. Keep
+      // the record and baseline, but stop advertising it as a known active task.
+      task.remoteMissing = true;
+    }
+    if (task.deleted || pending) {continue;}
     if (latest) {
-      if (task.ackPendingRefresh && !same(remoteState(latest), task.baseRemote) && !task.awaitingRecurrence) {continue;}
+      if (task.ackPendingRefresh && !task.acknowledgedCreate && !same(remoteState(latest), task.baseRemote) && !task.awaitingRecurrence) {continue;}
       if (task.awaitingRecurrence && same(remoteState(latest).due, task.baseRemote?.due)) {continue;}
       applyRemote(task, latest);
+      task.acknowledgedCreate = false;
       task.ackPendingRefresh = false;
     }
-    // An active snapshot omits completed, inaccessible and deleted tasks alike.
-    // Retain their cached state until a per-task read or acknowledgement resolves it.
   }
   return next;
 }
-function mergedTasks(store) {
+function rememberCompleted(store, history) {
+  const next = clone(store);
+  next.completedRemote = history.map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true}));
+  for (const task of Object.values(next.tasks)) {
+    if (task.deleted || task.acknowledgedCreate || task.ackPendingRefresh || task.awaitingRecurrence ||
+        next.outbox.some(op => op.localId === task.id) ||
+        next.remote.some(remote => remote.id === task.remoteId && !completed(remote) && !remote.is_deleted)) {continue;}
+    const found = next.completedRemote.find(remote => remote.id === task.remoteId);
+    if (found) {applyRemote(task, found);}
+  }
+  return next;
+}
+function mergedTasks(store, {includeRemoteMissing = false} = {}) {
   const owned = new Set(Object.values(store.tasks).map(t => t.remoteId).filter(Boolean));
   return [...store.remote.filter(t => !owned.has(t.id) && !t.is_deleted).map(t => ({...t, completed: completed(t), syncState: 'synced'})),
-    ...Object.values(store.tasks).filter(t => !t.deleted && !t.is_deleted).map(t => {
+    ...Object.values(store.tasks).filter(t => !t.deleted && !t.is_deleted &&
+      (includeRemoteMissing || !t.remoteMissing || completed(t) || t.acknowledgedCreate || t.ackPendingRefresh || t.awaitingRecurrence ||
+        store.outbox.some(op => op.localId === t.id))).map(t => {
       const ops = store.outbox.filter(op => op.localId === t.id);
       return {...clone(t), syncState: ops.some(op => op.state === 'attention') ? 'attention' : ops.length || t.awaitingRecurrence ? 'pending' : 'synced', syncError: ops.find(op => op.error)?.error || null};
     })];
@@ -442,8 +470,14 @@ function mergedTasks(store) {
 function cachedView(store, id) {
   const owned = Object.values(store.tasks).find(task => task.id === id || task.remoteId === id);
   if (owned?.deleted || owned?.is_deleted) {return null;}
-  return mergedTasks(store).find(task => task.id === id || task.remoteId === id) ||
+  return mergedTasks(store, {includeRemoteMissing: true}).find(task => task.id === id || task.remoteId === id) ||
     (store.completedRemote || []).map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true})).find(task => task.id === id) || null;
+}
+function privateTasks(store) {
+  const tasks = mergedTasks(store, {includeRemoteMissing: true});
+  const ids = new Set(tasks.map(task => task.id));
+  // Registry recovery must see missing records and deletion tombstones too.
+  return [...tasks, ...Object.values(store.tasks).filter(task => !ids.has(task.id)).map(clone)];
 }
 function completedView(store) {
   const owned = mergedTasks(store);
@@ -461,4 +495,4 @@ function snapshot(store) {
 }
 module.exports = {SCHEMA, clone, emptyStore, validateStore, migrateStore, resolveDue, localDate, remoteState,
   addBatch, findTask, setCompleted, editTask, deleteTask, addCollection, mergedSections, editUnsent, cancelUnsent,
-  readyOperations, commandFor, markSending, preflight, checkDestinations, acknowledge, reconcileAcknowledged, rememberTask, failOperations, replaceRemote, mergedTasks, cachedView, completedView, snapshot};
+  readyOperations, commandFor, markSending, preflight, checkDestinations, acknowledge, reconcileAcknowledged, rememberTask, rememberCompleted, failOperations, replaceRemote, mergedTasks, privateTasks, cachedView, completedView, snapshot};
