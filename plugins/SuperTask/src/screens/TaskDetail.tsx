@@ -74,6 +74,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
   } : parseNoteContext(rawDescription));
   const [description, setDescription] = useState(noteContext ? noteContext.userDescription : rawDescription);
   const [priority, setPriority] = useState(task?.priority || 1);
+  const [labels, setLabels] = useState((task?.labels || []).join(', '));
   const [dueString, setDueString] = useState(task?.due?.string || task?.due?.date || '');
   const [projectId, setProjectId] = useState(task?.project_id || null);
   const [sectionId, setSectionId] = useState(task?.section_id || null);
@@ -122,7 +123,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
   };
 
   useEffect(() => {
-    log('TaskDetail', `MOUNT task=${task?.id} content="${task?.content}" projects=${projects?.length}`);
+    log('TaskDetail', 'Task details opened');
     log('TaskDetail', `noteContext: ${noteContext ? `${noteContext.noteFile} p.${noteContext.pageNum}` : 'none'}`);
     setConfigLoader(loadConfig);
   }, [noteContext, projects?.length, task?.content, task?.id]);
@@ -131,11 +132,12 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
     content !== (task.content || '') ||
     description !== (task.description || '') ||
     priority !== (task.priority || 1) ||
+    labels !== (task.labels || []).join(', ') ||
     dueString !== (task.due?.string || task.due?.date || '') ||
     projectId !== (task.project_id || null) || sectionId !== (task.section_id || null);
 
   const handleSave = async () => {
-    log('TaskDetail', `SAVE pressed. isDirty=${isDirty} saving=${saving} content="${content}"`);
+    log('TaskDetail', `SAVE pressed. isDirty=${isDirty} saving=${saving}`);
     if (!content.trim()) {
       setStatus('Task title cannot be empty');
       return;
@@ -153,23 +155,20 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         fullDescription = fullDescription ? fullDescription + noteRef : noteRef.trim();
       }
 
-      await updateTask(task.id, {
+      const updated = await updateTask(task.id, {
         content: content.trim(),
         description: fullDescription,
         priority,
+        labels: labels.split(',').map((label: string) => label.trim()).filter(Boolean),
         dueString: dueString.trim(),
         projectId: projectId || null,
         sectionId,
       });
       log('TaskDetail', `Updated task ${task.id}`);
       // Update the task reference so isDirty resets
-      task.content = content.trim();
-      task.description = fullDescription;
-      task.priority = priority;
-      task.due = dueString.trim() ? {...(task.due || {}), date: dueString.trim(), string: dueString.trim()} : null;
-      task.project_id = projectId;
-      task.section_id = sectionId;
-      setStatus('');
+      if (updated) Object.assign(task, updated);
+      invalidateCache();
+      setStatus('Saved on this device. Changes sync when connected.');
       setLastSaved(new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
     } catch (err: any) {
       logError('TaskDetail', err);
@@ -268,7 +267,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
 
       {task.syncState !== 'synced' && <View style={styles.noteContext}>
         <Text style={styles.noteContextValue}>{task.syncState === 'attention' ? 'Needs attention' : 'Pending sync'}{task.syncError ? `: ${task.syncError}` : ''}</Text>
-        <Text style={styles.noteContextLabel}>Editing and removal are available only before a task has been sent. A retry preserves its identity.</Text>
+        <Text style={styles.noteContextLabel}>Changes are saved on this device. A retry preserves the original sync identity.</Text>
         <Pressable style={styles.headerBtn} disabled={saving} onPress={async () => {
           try {await retryOffline(task.id); setStatus('Same operation queued for retry.');}
           catch (error: any) {setStatus(error.message);}
@@ -298,7 +297,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         <TextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
-          onChangeText={(t) => { log('TaskDetail', `content changed: "${t.slice(0, 30)}"`); setContent(t); }}
+          onChangeText={(t) => { log('TaskDetail', 'Task title edited'); setContent(t); }}
           onFocus={() => log('TaskDetail', 'content FOCUSED')}
           placeholder="Task title"
           multiline
@@ -340,6 +339,12 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Priority</Text>
         <PriorityPicker value={priority} onChange={(p) => { log('TaskDetail', `priority changed: ${p}`); setPriority(p); }} />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Labels</Text>
+        <TextInput style={[styles.input, {fontSize: Math.round(16 * scale)}]} value={labels}
+          onChangeText={setLabels} placeholder="Labels, separated by commas" />
       </View>
 
       {projects.length > 0 && (

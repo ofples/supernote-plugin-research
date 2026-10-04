@@ -7,7 +7,7 @@
 
 import {ensurePermissionGroup} from '../utils/permissions';
 import {log} from '../utils/debug';
-import {offlineData, saveOfflineBatch, completeOffline, cachedTask, rememberRemoteTask, editOfflineTask, cancelOfflineTask, completedData, rememberCompleted, forgetRemoteTask, syncOffline} from '../offline/service';
+import {offlineData, saveOfflineBatch, completeOffline, cachedTask, rememberRemoteTask, editOfflineTask, deleteOfflineTask, completedData, rememberCompleted} from '../offline/service';
 
 const TODOIST_API = 'https://api.todoist.com/api/v1';
 
@@ -95,16 +95,16 @@ async function todoistFetch(path, options = {}) {
 
     // Retry on 5xx server errors
     if (response.status >= 500) {
-      const text = await response.text();
-      lastError = new Error(`Todoist ${response.status}: ${text}`);
+      lastError = new Error(`Todoist request failed (HTTP ${response.status}).`);
+      lastError.status = response.status;
       if (attempt < maxRetries) continue;
       throw lastError;
     }
 
     // 429: honor Retry-After (capped) instead of failing outright
     if (response.status === 429) {
-      const text = await response.text();
-      lastError = new Error(`Todoist rate limited (429): ${text}`);
+      lastError = new Error('Todoist request failed (HTTP 429).');
+      lastError.status = 429;
       if (attempt < maxRetries) {
         const retryAfter = parseInt(response.headers?.get?.('retry-after') || '0', 10) || 0;
         const wait = Math.min(Math.max(retryAfter * 1000, 2000), 15000);
@@ -116,8 +116,9 @@ async function todoistFetch(path, options = {}) {
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Todoist ${response.status}: ${text}`);
+      const error = new Error(`Todoist request failed (HTTP ${response.status}).`);
+      error.status = response.status;
+      throw error;
     }
 
     if (response.status === 204) return null;
@@ -200,62 +201,20 @@ export async function createTask(parameters) {
   return (await saveOfflineBatch([draft], source, capturedAt, request))[0];
 }
 
-export async function updateTask(taskId, {content, description, priority, dueString, projectId, sectionId}) {
+export async function updateTask(taskId, changes) {
   const task = await getTask(taskId);
   const data = await offlineData();
-  const {locationChange} = require('../collections/model');
-  const location = locationChange(task, {projectId, sectionId}, data.projects, data.sections);
-  if (!task.remoteId && taskId.startsWith('local:')) {
-    await editOfflineTask(taskId, {content: content ?? task.content, description: description ?? task.description,
-      priority: priority ?? task.priority, dueString: dueString ?? task.due?.date,
-      projectId: location.projectId, sectionId: location.sectionId, labels: task.labels});
-    return;
-  }
-  if (task.syncState && task.syncState !== 'synced') throw new Error('Resolve pending sync before editing a task already sent to Todoist.');
-  taskId = task.remoteId || taskId;
-  const body = {};
-  if (content !== undefined) body.content = content;
-  if (description !== undefined) body.description = description;
-  if (priority !== undefined) body.priority = priority;
-  if (dueString !== undefined) body.due_string = dueString;
-
-  log('API', `Updating task ${taskId}: ${JSON.stringify(body)}`);
-  let updated = Object.keys(body).length ? await todoistFetch(`/tasks/${encodeURIComponent(taskId)}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }) : task;
-  if (Object.keys(body).length && updated?.id) await rememberRemoteTask(updated);
-  if (location.changed) {
-    try {
-      const moved = await todoistFetch(`/tasks/${encodeURIComponent(taskId)}/move`, {
-        method: 'POST', body: JSON.stringify(location.body),
-      });
-      updated = moved?.id ? moved : await todoistFetch(`/tasks/${encodeURIComponent(taskId)}`);
-      await rememberRemoteTask(updated);
-    } catch (error) {
-      await syncOffline().catch(() => {});
-      throw new Error(`Task details were saved, but its location could not be confirmed. Refresh before retrying. ${error.message}`);
-    }
-  }
-  await syncOffline().catch(() => {});
-  return updated;
+  const patch = require('../offline/taskPatch').taskPatch(task, changes, data.projects, data.sections);
+  return Object.keys(patch).length ? editOfflineTask(taskId, patch) : task;
 }
 
 export async function completeTask(taskId) {
-  const task = await getTask(taskId);
-  if (task.due?.is_recurring) {
-    await todoistFetch(`/tasks/${encodeURIComponent(task.remoteId || taskId)}/close`, {method: 'POST'});
-    await syncOffline();
-    return;
-  }
+  await getTask(taskId);
   await completeOffline(taskId, true);
 }
 
 export async function reopenTask(taskId) {
-  const task = await getTask(taskId);
-  if (!task.id.startsWith('local:') && !task.id.startsWith('remote:')) {
-    await rememberRemoteTask({...task, is_completed: true, completed: true});
-  }
+  await getTask(taskId);
   await completeOffline(taskId, false);
 }
 
@@ -285,11 +244,8 @@ export async function refreshCompletedTasks(days = 30) {
 }
 
 export async function deleteTask(taskId) {
-  const task = await getTask(taskId);
-  if (!task.remoteId && taskId.startsWith('local:')) return cancelOfflineTask(taskId);
-  if (task.syncState && task.syncState !== 'synced') throw new Error('Resolve pending sync before deleting a task already sent to Todoist.');
-  await todoistFetch(`/tasks/${encodeURIComponent(task.remoteId || taskId)}`, {method: 'DELETE'});
-  await forgetRemoteTask(taskId);
+  await getTask(taskId);
+  await deleteOfflineTask(taskId);
 }
 
 export async function testConnection() {
