@@ -88,11 +88,12 @@ export default function Capture({mode, nav}: {mode: 'lasso' | 'doc'; nav: any}) 
   const startRef = useRef(start); startRef.current = start;
   useEffect(() => {
     startRef.current();
+    const invalidate = () => {++run.current; controller.current?.abort(); choice.current?.close();};
     const sub = PluginManager.registerPluginLifeListener({onMsg: (message: any) => {
-      if (message.state >= 3) {++run.current; controller.current?.abort(); choice.current?.close();
+      if (message.state >= 3) {invalidate();
         if (alive.current) {setAIBusy(false); setFailed(true); setStatus('Capture interrupted. Select the handwriting again and retry.');}}
     }});
-    return () => {alive.current = false; ++run.current; controller.current?.abort(); choice.current?.close(); sub?.remove();};
+    return () => {alive.current = false; invalidate(); sub?.remove();};
   }, []);
   const useAI = async () => {
     if (controller.current || !input.current || !choice.current) return;
