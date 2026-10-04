@@ -14,10 +14,10 @@ const {localDate} = require('../offline/model');
 const {makeDefaults, inheritDefaults, initializeProposalRow, changeDefault, editRow, resetRowField,
   replaceSplitParts, mergeOverrides, reconcileRefinement} = require('../batch/assignments');
 
-type Props = {nav: any; initialContent?: string; initialDescription?: string; initialRows?: any[]; captureMode?: 'lasso' | 'doc';
+type Props = {nav: any; active?: boolean; initialContent?: string; initialDescription?: string; initialRows?: any[]; captureMode?: 'lasso' | 'doc';
   projects: any[]; defaultProjectId?: string; defaultSectionId?: string; noteContext?: any; capturedAt?: number; preview?: string};
 
-export default function BatchAdd({nav, initialContent = '', initialDescription = '', initialRows, captureMode,
+export default function BatchAdd({nav, active = true, initialContent = '', initialDescription = '', initialRows, captureMode,
   projects: initialProjects, defaultProjectId, defaultSectionId, noteContext, capturedAt = Date.now(), preview}: Props) {
   const {projects, sections} = useLocations(initialProjects);
   const scale = useFontScale();
@@ -65,24 +65,30 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
   const selected = rows.filter(row => row.selected);
   const locked = busy || attempted || saved;
   const cancelRefinement = (message = 'AI refinement stopped. Original rows were kept.') => {
-    const active = controller.current;
-    if (!active) return;
-    active.abort();
-    if (controller.current === active) {
+    const activeController = controller.current;
+    if (!activeController) return;
+    activeController.abort();
+    if (controller.current === activeController) {
       controller.current = null;
       working.current = false;
       if (alive.current) {setBusy(false); setStatus(message);}
     }
   };
   useEffect(() => {
+    if (!active) {return;}
+    let current = true;
+    setConfigLoaded(false);
     import('../utils/config').then(async configModule => {
       const config = await configModule.loadConfig();
-      if (alive.current) {
+      if (alive.current && current) {
         if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
         setShowAiSetupHint(!config.aiApiKey?.trim() && config.aiSetupHintDismissed !== true);
         setConfigLoaded(true);
       }
-    }).catch(() => {if (alive.current) setConfigLoaded(true);});
+    }).catch(() => {if (alive.current && current) setConfigLoaded(true);});
+    return () => {current = false;};
+  }, [active]);
+  useEffect(() => {
     const sub = PluginManager.registerPluginLifeListener({onMsg: (message: any) => {
       if (message.state >= 3) cancelRefinement();
     }});
