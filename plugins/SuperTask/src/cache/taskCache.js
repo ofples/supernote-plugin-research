@@ -13,7 +13,7 @@ function publish(data) {
 }
 subscribeOffline(state => {
   const allTasks = mergedTasks(state);
-  publish({tasks: allTasks.filter(t => !t.completed), allTasks, projects: state.projects,
+  publish({tasks: allTasks.filter(t => !t.completed), allTasks, projects: state.projects, sections: state.sections || [],
     timestamp: state.lastSync, pendingCount: state.outbox.length,
     errorCount: state.outbox.filter(op => op.state === 'attention').length, syncError: state.syncError,
     warning: cache?.warning, otherAccountStores: cache?.otherAccountStores});

@@ -24,7 +24,7 @@ const {refineBatch, refinementError} = compiled('../src/batch/refine.ts', {
   '../utils/config': {loadConfig: async () => ({aiApiKey: 'test-only-key', aiModel: 'gpt-4.1-mini'})},
   '../utils/permissions': {ensurePermissionGroup: async () => true},
 });
-const proposal = {tasks: [{content: 'Call Ofer', description: '', priority: 1, projectId: null, dueDate: null, labels: []}]};
+const proposal = {tasks: [{content: 'Call Ofer', description: '', priority: 1, sectionId: null, projectId: null, dueDate: null, labels: []}]};
 function bufferedResponse(text, status = 200) {
   return {ok: status < 400, status, statusText: 'test', headers: new Headers({'content-type': 'application/json'}),
     body: null, text: async () => text};
@@ -47,6 +47,7 @@ test('same Responses model path parses HTTP 200 buffered response and requests s
     assert.equal(requests[0].body.store, false);
     assert.equal(requests[0].body.text.format.type, 'json_schema');
     assert.equal(requests[0].body.text.format.strict, true);
+    assert.ok(requests[0].body.text.format.schema.properties.tasks.items.required.includes('sectionId'));
     assert.match(JSON.stringify(requests[0].body.input), /input_image/);
   } finally {global.fetch = originalFetch;}
 });

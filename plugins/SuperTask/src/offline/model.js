@@ -4,7 +4,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 
 function emptyStore(accountKey, deviceId) {
   return {schema: SCHEMA, accountKey, deviceId, revision: 0, userId: null,
-    lastSync: null, projects: [], remote: [], completedRemote: [], tasks: {}, outbox: [], syncError: null};
+    lastSync: null, projects: [], sections: [], remote: [], completedRemote: [], tasks: {}, outbox: [], syncError: null};
 }
 
 function validateStore(store, accountKey, deviceId) {
@@ -13,6 +13,7 @@ function validateStore(store, accountKey, deviceId) {
       store.revision < 0 || !Array.isArray(store.remote) ||
       !Array.isArray(store.projects) || !Array.isArray(store.outbox) ||
       (store.completedRemote !== undefined && !Array.isArray(store.completedRemote)) ||
+      (store.sections !== undefined && !Array.isArray(store.sections)) ||
       !store.tasks || Array.isArray(store.tasks) || typeof store.tasks !== 'object') {
     throw new Error('Unsupported, damaged, or differently bound task store. Existing data was not overwritten.');
   }
@@ -74,6 +75,8 @@ function addBatch(store, drafts, source, ids, capturedAt = Date.now()) {
   if (!drafts.length) {throw new Error('Select at least one task.');}
   // Validate the complete batch before changing anything.
   const values = drafts.map(draft => normalizeDraft(draft, capturedAt));
+  const {validateLocation} = require('../collections/model');
+  values.forEach(value => validateLocation(value.project_id, value.section_id, store.sections));
   const next = clone(store);
   const batchId = ids();
   const tasks = values.map(value => {
@@ -132,7 +135,9 @@ function editUnsent(store, id, draft, capturedAt = Date.now()) {
   if (!create || create.attempts !== 0) {
     throw new Error('This task may already be on Todoist. Resolve its sync before editing.');
   }
-  Object.assign(next.tasks[id], normalizeDraft(draft, capturedAt));
+  const value = normalizeDraft(draft, capturedAt);
+  require('../collections/model').validateLocation(value.project_id, value.section_id, store.sections);
+  Object.assign(next.tasks[id], value);
   return next;
 }
 
@@ -237,11 +242,12 @@ function failOperations(store, operations, error, now = Date.now()) {
   return next;
 }
 
-function replaceRemote(store, remote, projects, now = Date.now()) {
-  if (!Array.isArray(remote) || !Array.isArray(projects)) {throw new Error('Invalid remote snapshot.');}
+function replaceRemote(store, remote, projects, now = Date.now(), sections = store.sections || []) {
+  if (!Array.isArray(remote) || !Array.isArray(projects) || !Array.isArray(sections)) {throw new Error('Invalid remote snapshot.');}
   const next = clone(store);
   next.remote = remote;
   next.projects = projects;
+  next.sections = sections;
   next.lastSync = now;
   next.syncError = null;
   // Retain source references and recently acknowledged tasks even when REST

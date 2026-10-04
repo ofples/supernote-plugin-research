@@ -5,17 +5,19 @@ import {closePlugin} from '../utils/closePlugin';
 import {saveOfflineBatch} from '../offline/service';
 import {refineBatch, refinementError} from '../batch/refine';
 import ProjectPicker from '../components/ProjectPicker';
+import {useLocations} from '../collections/useLocations';
 import PriorityPicker from '../components/PriorityPicker';
 import DatePicker from '../components/DatePicker';
 const {fromText, mergeNext, splitRow, MAX_TASKS} = require('../batch/model');
 const {localDate} = require('../offline/model');
 type Props = {nav: any; initialContent?: string; initialDescription?: string; projects: any[];
-  defaultProjectId?: string; noteContext?: any; capturedAt?: number; preview?: string};
-export default function BatchAdd({nav, initialContent = '', initialDescription = '', projects,
-  defaultProjectId, noteContext, capturedAt = Date.now(), preview}: Props) {
+  defaultProjectId?: string; defaultSectionId?: string; noteContext?: any; capturedAt?: number; preview?: string};
+export default function BatchAdd({nav, initialContent = '', initialDescription = '', projects: initialProjects,
+  defaultProjectId, defaultSectionId, noteContext, capturedAt = Date.now(), preview}: Props) {
+  const {projects, sections} = useLocations(initialProjects);
   const nextId = useRef(0);
   const decorate = (values: any[]) => values.map(row => ({...row, rowId: ++nextId.current}));
-  const [rows, setRows] = useState<any[]>(() => decorate(fromText(initialContent, {projectId: defaultProjectId || null, description: initialDescription})));
+  const [rows, setRows] = useState<any[]>(() => decorate(fromText(initialContent, {projectId: defaultProjectId || null, sectionId: defaultSectionId || null, description: initialDescription})));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -52,7 +54,7 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
       // Sending the complete crop could reintroduce deselected writing. Text-only
       // refinement is used when any row is excluded.
       const proposals = await refineBatch(selected, projects, captureTime,
-        selected.length === rows.length ? preview : undefined, abort.signal);
+        selected.length === rows.length ? preview : undefined, abort.signal, sections);
       if (!alive.current || abort.signal.aborted) return;
       setUndo(previous);
       setRows(decorate([...proposals, ...previous.filter(row => !row.selected)]));
@@ -85,13 +87,13 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
       {!locked && <View style={s.actions}>
         <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={s.label}>Select all</Text></Pressable>
         <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={s.label}>Select none</Text></Pressable>
-        <Pressable style={s.button} onPress={() => {if (rows.length < MAX_TASKS) setRows(prev => [...prev, ...decorate(fromText('New task'))]);}}><Text style={s.label}>Add row</Text></Pressable>
+        <Pressable style={s.button} onPress={() => {if (rows.length < MAX_TASKS) setRows(prev => [...prev, ...decorate(fromText('New task', {projectId: defaultProjectId || null, sectionId: defaultSectionId || null}))]);}}><Text style={s.label}>Add row</Text></Pressable>
       </View>}
       {rows.map((row, index) => <View key={row.rowId} style={s.card}>
         <View style={s.actions}><Pressable style={s.button} disabled={locked} onPress={() => update(index, {selected: !row.selected})}><Text style={s.label}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
           <TextInput style={s.input} multiline value={row.content} onChangeText={content => update(index, {content})} editable={!locked} />
         </View>
-        <Text style={s.text}>{projects.find(p => p.id === row.projectId)?.name || 'Inbox'} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
+        <Text style={s.text}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
         {!locked && <View style={s.actions}>
           <Pressable style={s.button} onPress={() => setExpanded(expanded === row.rowId ? null : row.rowId)}><Text style={s.label}>Details</Text></Pressable>
           {index < rows.length - 1 && <Pressable style={s.button} onPress={() => safely(() => mergeNext(rows, index))}><Text style={s.label}>Merge next</Text></Pressable>}
@@ -99,8 +101,9 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
           <Pressable style={s.button} onPress={() => setRows(prev => prev.filter(item => item.rowId !== row.rowId))}><Text style={s.label}>Remove</Text></Pressable>
         </View>}
         {!locked && expanded === row.rowId && <View style={s.details}>
-          <Text style={s.label}>Project</Text><Pressable style={s.button} onPress={() => update(index, {projectId: null})}><Text style={s.label}>Inbox</Text></Pressable>
-          <ProjectPicker projects={projects} selectedId={row.projectId} onChange={projectId => update(index, {projectId})} />
+          <Text style={s.label}>Project and collection</Text>
+          <ProjectPicker projects={projects} selectedId={row.projectId} onChange={projectId => update(index, {projectId, sectionId: projectId === row.projectId ? row.sectionId : null})}
+            sections={sections} selectedSectionId={row.sectionId} onSectionChange={sectionId => update(index, {sectionId})} />
           <PriorityPicker value={row.priority} onChange={priority => update(index, {priority})} />
           <View style={s.actions}><Pressable style={s.button} onPress={() => setDateRow(row.rowId)}><Text style={s.label}>Date</Text></Pressable>
             <Pressable style={s.button} onPress={() => update(index, {dueString: localDate(new Date(captureTime))})}><Text style={s.label}>Captured today</Text></Pressable>

@@ -39,11 +39,12 @@ function createTransport(token, request, allowNetwork, timeoutMs = 20000) {
     },
     commands: commands => syncRequest(commands),
     async fetchSnapshot() {
-      const result = await syncRequest([], ['items', 'projects']);
-      if (result.full_sync !== true || !Array.isArray(result.items) || !Array.isArray(result.projects)) {
+      const result = await syncRequest([], ['items', 'projects', 'sections']);
+      if (result.full_sync !== true || !Array.isArray(result.items) || !Array.isArray(result.projects) || !Array.isArray(result.sections)) {
         throw new Error('Todoist returned an incomplete task snapshot; cached tasks were retained.');
       }
-      return {tasks: result.items.filter(t => !t.is_deleted), projects: result.projects.filter(p => !p.is_deleted && !p.is_archived)};
+      return {tasks: result.items.filter(t => !t.is_deleted), projects: result.projects.filter(p => !p.is_deleted && !p.is_archived),
+        sections: result.sections.filter(s => !s.is_deleted && !s.is_archived)};
     },
   };
 }

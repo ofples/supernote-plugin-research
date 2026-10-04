@@ -34,6 +34,7 @@ type Props = {
   onCheckPress: (taskId: string) => void; // active rows: toggle select; checked rows: reopen
   onPress: (task: any) => void;
   showProject?: string;
+  showCollection?: string;
   pageNum?: number;
   checked?: boolean;      // Done-tab mode: box filled, tap = reopen
   selected?: boolean;     // selection mode: box filled while selected
@@ -43,7 +44,7 @@ type Props = {
   roundCheck?: boolean;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false}: Props) {
   const scale = useFontScale();
 
   const handleCheckPress = () => {
@@ -64,6 +65,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, pageN
   else if (dueDate) chips.push({label: formatDate(dueDate)});
   if (priorityLabel) chips.push({label: priorityLabel});
   if (showProject) chips.push({label: showProject});
+  if (showCollection) chips.push({label: showCollection});
   if (pageNum !== undefined) chips.push({label: `p.${pageNum}`});
   if (task.syncState === 'attention') chips.push({label: 'Needs attention', inverted: true});
   else if (task.syncState === 'pending' || task._registryOnly) chips.push({label: 'Pending sync'});

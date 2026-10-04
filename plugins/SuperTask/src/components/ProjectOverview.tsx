@@ -7,13 +7,13 @@ const {projectGroups, overviewRows, collapsingSelection} = require('../overview/
 // View preferences only: no tasks, titles or credentials are retained here.
 let sessionExpanded: Record<string, boolean> = {};
 let sessionCompact = true;
-type Props = {projects: any[]; tasks: any[]; selectedIds: string[];
+type Props = {projects: any[]; tasks: any[]; sections?: any[]; selectedIds: string[];
   onSelect: (id: string) => void; onTask: (task: any) => void; onProject: (project: any) => void};
-export default function ProjectOverview({projects, tasks, selectedIds, onSelect, onTask, onProject}: Props) {
+export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject}: Props) {
   const scale = useFontScale();
   const [expanded, setExpanded] = useState(sessionExpanded);
   const [compact, setCompact] = useState(sessionCompact);
-  const groups = projectGroups(projects, tasks);
+  const groups = projectGroups(projects, tasks, sections);
   const rows = overviewRows(groups, expanded);
   const total = groups.reduce((count: number, group: any) => count + group.tasks.length, 0);
   const changeExpanded = (value: Record<string, boolean>) => {sessionExpanded = value; setExpanded(value);};
@@ -46,7 +46,8 @@ export default function ProjectOverview({projects, tasks, selectedIds, onSelect,
               <Text style={[s.count, {fontSize: Math.round(15 * scale)}]}>{item.tasks.length}</Text>
             </Pressable>
             <Pressable style={s.open} accessibilityLabel={`Open ${item.project.name} project view`} onPress={() => onProject(item.project)}><Text style={s.action}>Open</Text></Pressable>
-          </View> : item.type === 'empty' ? <Text style={s.emptyProject}>No active tasks</Text> :
+          </View> : item.type === 'collection' ? <View style={s.collection}><Text style={{fontSize: Math.round(16 * scale), fontWeight: '600', color: '#000'}}>{item.name} · {item.tasks.length}</Text></View> :
+            item.type === 'empty' ? <Text style={s.emptyProject}>No active tasks{item.collection ? ' in this collection' : ''}</Text> :
             <View style={s.task}><TaskRow task={item.task} selected={selectedIds.includes(item.task.id)} onCheckPress={onSelect}
               onPress={onTask} compact={compact} roundCheck /></View>}
       />}
@@ -62,4 +63,5 @@ const s = StyleSheet.create({page: {flex: 1}, controls: {padding: 12, gap: 8, bo
   count: {color: '#000'}, open: {paddingHorizontal: 16, minHeight: 48, justifyContent: 'center'},
   task: {marginLeft: 20, borderBottomWidth: 1, borderStyle: 'dotted', borderColor: '#777'},
   emptyProject: {padding: 16, marginLeft: 38, fontSize: 15, color: '#000'},
+  collection: {padding: 12, paddingLeft: 50, alignSelf: 'stretch', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#000'},
   empty: {flex: 1, justifyContent: 'center', alignItems: 'center'}, emptyText: {fontSize: 18, color: '#000'}});
