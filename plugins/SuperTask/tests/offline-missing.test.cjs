@@ -138,6 +138,24 @@ test('explicit completed history resolves a missing owned task and provides the 
   assert.deepEqual(verified.syncNotices, []);
 });
 
+test('reopened history becomes active without retaining stale completion aliases or occurrence history', () => {
+  let state = m.rememberCompleted(missing(), [remote({completed_at: '2026-10-04T12:00:00Z'})]);
+  assert.equal(m.cachedView(state, 'r').is_completed, true);
+  assert.equal(m.cachedView(state, 'r').occurrenceHistory, true);
+  state = m.setCompleted(state, 'r', false, ids);
+  state = m.markSending(state, state.outbox);
+  state = m.acknowledge(state, state.outbox, {sync_status: {[state.outbox[0].uuid]: 'ok'}});
+  const active = remote(); delete active.checked;
+  state = m.rememberTask(state, active);
+  const view = m.cachedView(state, 'r');
+  assert.equal(view.completed, false);
+  assert.equal(view.is_completed, false);
+  assert.equal(view.checked, false);
+  assert.equal(view.occurrenceHistory, false);
+  assert.equal(view.baseRemote.completed, false);
+  assert.deepEqual(m.completedView(state), []);
+});
+
 test('completed history never closes an active recurring series, pending edit or unrefreshed acknowledgement', () => {
   const due = {date: '2026-10-05', is_recurring: true, string: 'every day'};
   let active = m.rememberTask(acknowledged(), remote({content: 'Accepted', due}));

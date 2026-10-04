@@ -312,7 +312,9 @@ function markSending(store, operations) {
 }
 function applyRemote(task, remote) {
   const {id, remoteId, source, batchId, capturedAt} = task;
-  Object.assign(task, remote, {id, remoteId, source, batchId, capturedAt, completed: completed(remote), serverCompleted: completed(remote),
+  const done = completed(remote);
+  Object.assign(task, remote, {id, remoteId, source, batchId, capturedAt, completed: done, is_completed: done, checked: done, serverCompleted: done,
+    occurrenceHistory: !!remote.occurrenceHistory,
     baseRemote: remoteState(remote), remoteMissing: false, deleted: !!remote.is_deleted, occurrencePending: false, awaitingRecurrence: false});
 }
 function preflight(store, operationId, result, now = Date.now()) {
