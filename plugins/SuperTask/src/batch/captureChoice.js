@@ -2,7 +2,7 @@
 // explicitly requested AI result has priority; stale results cannot navigate.
 function captureChoice({review, status}) {
   let closed = false, requested = false, ocr, ocrError, token = 0;
-  function useOCR() {
+  function selectOCR() {
     if (closed) return;
     requested = false; token++;
     if (ocr) {closed = true; review({kind: 'ocr', value: ocr});}
@@ -10,11 +10,11 @@ function captureChoice({review, status}) {
   }
   return {
     requestAI() {if (closed) return null; requested = true; return ++token;},
-    ocrReady(value) {if (closed) return; ocr = value; if (!requested) useOCR();},
+    ocrReady(value) {if (closed) return; ocr = value; if (!requested) selectOCR();},
     ocrFailed(message) {if (closed) return; ocrError = message; if (!requested) status(message);},
     aiReady(id, value) {if (closed || !requested || id !== token) return; closed = true; review({kind: 'ai', value});},
-    aiFailed(id, message) {if (closed || !requested || id !== token) return; status(message); useOCR();},
-    useOCR,
+    aiFailed(id, message) {if (closed || !requested || id !== token) return; status(message); selectOCR();},
+    useOCR: selectOCR,
     close() {closed = true; token++;},
   };
 }
