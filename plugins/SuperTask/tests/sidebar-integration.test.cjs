@@ -20,13 +20,13 @@ const native = {View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 
   Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null,
   StyleSheet: {create: value => value}, FlatList: ({data, renderItem}) => React.createElement('List', {}, data.map(item =>
     React.createElement('ListItem', {key: item.key || item.id}, renderItem({item}))))};
-function workspace(config = {}, note = false) {
+function workspace(config = {}, note = false, extraTasks = []) {
   const today = require('../src/offline/model').localDate(new Date());
   const next = new Date(); next.setDate(next.getDate() + 1);
   const tomorrow = require('../src/offline/model').localDate(next);
   const tasks = [{id: 'one', content: 'Due task', project_id: 'p', section_id: 's', due: {date: today}, source: {filePath: '/note/Test.note', pageNum: 2}, syncState: 'synced'},
     {id: 'two', content: 'Tomorrow task', project_id: 'p', due: {date: tomorrow}, syncState: 'synced'},
-    {id: 'inbox', content: 'Inbox task', project_id: 'i', syncState: 'pending'}];
+    {id: 'inbox', content: 'Inbox task', project_id: 'i', syncState: 'pending'}, ...extraTasks];
   let data = {tasks, allTasks: tasks, projects: [{id: 'p', name: 'Work'}, {id: 'i', name: 'Inbox', is_inbox_project: true}],
     sections: [{id: 's', name: 'Writing', project_id: 'p'}], pendingCount: 2, pendingTaskCount: 1, pendingCollectionCount: 1,
     pendingChanges: [{id: 'inbox', uuid: 'a', kind: 'create', state: 'attention', error: {status: 401}, task: tasks[2]},
@@ -39,7 +39,8 @@ function workspace(config = {}, note = false) {
     data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted);
   }, getCompletedTasks: async () => [], refreshCompletedTasks: async () => []};
   const hook = load('../src/utils/useTaskSelection.ts', {'../api/todoist': api}).useTaskSelection;
-  const references = () => data.allTasks.filter(task => task.source).map(task => ({...task, notePath: task.source.filePath, pageNum: task.source.pageNum}));
+  let frozenReferences;
+  const references = () => frozenReferences || data.allTasks.filter(task => task.source).map(task => ({...task, notePath: task.source.filePath, pageNum: task.source.pageNum}));
   const view = load('../src/screens/TaskHome.tsx', {
     'react-native': native, 'sn-plugin-lib': {PluginCommAPI: {getCurrentFilePath: async () => ({success: true, result: note ? '/note/Test.note' : ''}),
       getCurrentPageNum: async () => ({success: true, result: 0})}, PluginFileAPI: {getElements: async () => ({success: true, result: []})}},
@@ -57,6 +58,11 @@ function workspace(config = {}, note = false) {
   });
   const nav = {push: (...args) => navCalls.push(args)};
   return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls,
+    freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
+    markMissing: (id, leakIntoActive = false) => {
+      data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
+      data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted && (leakIntoActive || !task.remoteMissing));
+    },
     tombstone: id => {data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, deleted: true} : task), tasks: data.tasks.filter(task => task.id !== id)};},
     awaiting: id => {data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false, awaitingRecurrence: true, occurrencePending: true} : task), tasks: data.tasks.filter(task => task.id !== id)};},
     nextOccurrence: id => {data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false, awaitingRecurrence: false, occurrencePending: false, due: {date: tomorrow, is_recurring: true}} : task)}; data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted);} };
@@ -150,6 +156,33 @@ test('shared row checkbox and sync symbol stop propagation to detail action', as
 });
 
 const pressRefresh = tree => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Refresh')).props.onPress();
+for (const leakIntoActive of [false, true]) {
+  test(`missing acknowledged tasks cannot reappear through stale note references${leakIntoActive ? ' or an old active cache' : ''}; pending task counts stay accurate`, async () => {
+    const source = {filePath: '/note/Test.note', pageNum: 3};
+    const model = workspace({}, true, [
+      {id: 'local:unsent', content: 'Unsent task', project_id: 'p', source, syncState: 'pending'},
+      {id: 'remote:pending', remoteId: 'pending-remote', ackPendingRefresh: true, content: 'Pending change', project_id: 'p', source, syncState: 'pending'},
+    ]);
+    let tree;
+    await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+    model.freezeReferences();
+    await switchTo(tree, 'note');
+    assert.equal(tree.root.findAllByType('TaskRow').length, 3);
+    model.markMissing('one', leakIntoActive);
+    await act(async () => pressRefresh(tree));
+    const expectedIds = ['local:unsent', 'remote:pending'];
+    assert.deepEqual(tree.root.findAllByType('TaskRow').map(row => row.props.task.id), expectedIds);
+    assert.equal(tree.root.findByType('Sidebar').props.counts.note, 2);
+    assert.equal(tree.root.findByType('Sidebar').props.counts.device, 2);
+    await switchTo(tree, 'device');
+    assert.deepEqual(tree.root.findAllByType('TaskRow').map(row => row.props.task.id), expectedIds);
+    assert.equal(tree.root.findByType('Sidebar').props.counts.device, tree.root.findAllByType('TaskRow').length);
+    assert.equal(tree.root.findAllByType('TaskRow').every(row => row.props.task.syncState === 'pending'), true);
+    await switchTo(tree, 'today');
+    assert.equal(tree.root.findAllByType('TaskRow').some(row => row.props.task.id === 'one'), false);
+    await act(async () => tree.unmount());
+  });
+}
 test('deleted tasks and acknowledged recurring occurrences stay absent from registry fallback; next occurrence reappears', async () => {
   const model = workspace({}, true); let tree;
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
