@@ -922,6 +922,9 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
         onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[item.project_id]} showCollection={collectionName(item)} />} /> :
     <View style={styles.centered}><Text style={styles.emptyText}>{empty}</Text></View>;
   const renderProjectTasks = (id: string | undefined, name: string) => {
+    if (id && !isProjectVisible(visibilityConfig, id, projectList)) {
+      return <View style={styles.centered}><Text style={styles.emptyText}>This project is hidden in Settings. Choose a visible project from the sidebar.</Text></View>;
+    }
     const projectTasks = tasks.filter(task => String(task.project_id) === String(id) || ((!id || name === 'Inbox') && !task.project_id));
     const groups = collectionGroups(id || '', projectTasks, collectionList);
     const rows = groups.flatMap((group: any) => [
