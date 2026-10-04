@@ -154,22 +154,12 @@ export async function syncOffline() {
 export async function cachedTask(id) {
   const current = await offlineSession();
   const state = await current.store.load();
-  const task = model.mergedTasks(state).find(t => t.id === id || t.remoteId === id) ||
-    (state.completedRemote || []).find(t => t.id === id);
-  return task || null;
+  return model.cachedView(state, id);
 }
 
 export async function rememberRemoteTask(task) {
   const current = await offlineSession();
-  await current.store.transaction(state => {
-    const owned = Object.values(state.tasks).find(t => t.remoteId === task.id);
-    if (owned && !state.outbox.some(op => op.localId === owned.id)) {
-      const {id, remoteId, source, batchId, capturedAt} = owned;
-      Object.assign(owned, task, {id, remoteId, source, batchId, capturedAt, remoteMissing: false});
-    }
-    state.remote = [...state.remote.filter(t => t.id !== task.id), task];
-    return state;
-  });
+  await current.store.transaction(state => model.rememberTask(state, task));
 }
 export async function retryOffline(id) {
   const current = await offlineSession();
@@ -186,14 +176,12 @@ export async function retryOffline(id) {
 export async function completedData() {
   const current = await offlineSession();
   const state = await current.store.load();
-  const owned = model.mergedTasks(state);
-  const remoteIds = new Set(owned.map(t => t.remoteId || t.id));
-  return [...(state.completedRemote || []).filter(t => !remoteIds.has(t.id)), ...owned.filter(t => t.completed)];
+  return model.completedView(state);
 }
 
 export async function rememberCompleted(tasks) {
   const current = await offlineSession();
-  await current.store.transaction(state => ({...state, completedRemote: tasks}));
+  await current.store.transaction(state => ({...state, completedRemote: tasks.map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true}))}));
 }
 
 export async function forgetRemoteTask(id) {

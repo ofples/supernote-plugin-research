@@ -95,16 +95,16 @@ async function todoistFetch(path, options = {}) {
 
     // Retry on 5xx server errors
     if (response.status >= 500) {
-      const text = await response.text();
-      lastError = new Error(`Todoist ${response.status}: ${text}`);
+      lastError = new Error(`Todoist request failed (HTTP ${response.status}).`);
+      lastError.status = response.status;
       if (attempt < maxRetries) continue;
       throw lastError;
     }
 
     // 429: honor Retry-After (capped) instead of failing outright
     if (response.status === 429) {
-      const text = await response.text();
-      lastError = new Error(`Todoist rate limited (429): ${text}`);
+      lastError = new Error('Todoist request failed (HTTP 429).');
+      lastError.status = 429;
       if (attempt < maxRetries) {
         const retryAfter = parseInt(response.headers?.get?.('retry-after') || '0', 10) || 0;
         const wait = Math.min(Math.max(retryAfter * 1000, 2000), 15000);
@@ -116,8 +116,9 @@ async function todoistFetch(path, options = {}) {
     }
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Todoist ${response.status}: ${text}`);
+      const error = new Error(`Todoist request failed (HTTP ${response.status}).`);
+      error.status = response.status;
+      throw error;
     }
 
     if (response.status === 204) return null;

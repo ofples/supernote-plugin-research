@@ -395,6 +395,17 @@ function failOperations(store, operations, error, now = Date.now()) {
   }}
   next.syncError = error.message || 'Cannot reach Todoist. Changes remain saved locally.'; return next;
 }
+function rememberTask(store, remote) {
+  let next = clone(store);
+  const owned = Object.values(next.tasks).find(task => task.remoteId === remote.id);
+  next.remote = [...next.remote.filter(task => task.id !== remote.id), remote];
+  if (owned && !owned.deleted && !next.outbox.some(op => op.localId === owned.id)) {
+    if (owned.ackPendingRefresh || owned.acknowledgedCreate || owned.awaitingRecurrence) {
+      next = reconcileAcknowledged(next, owned.id, {status: 'found', task: remote});
+    } else {applyRemote(owned, remote);}
+  }
+  return next;
+}
 function replaceRemote(store, remote, projects, now = Date.now(), sections = store.sections || []) {
   if (!Array.isArray(remote) || !Array.isArray(projects) || !Array.isArray(sections)) {throw new Error('Invalid remote snapshot.');}
   const next = clone(store); next.remote = remote; next.projects = projects; next.sections = sections; next.lastSync = now; next.syncError = null;
@@ -426,6 +437,19 @@ function mergedTasks(store) {
       return {...clone(t), syncState: ops.some(op => op.state === 'attention') ? 'attention' : ops.length || t.awaitingRecurrence ? 'pending' : 'synced', syncError: ops.find(op => op.error)?.error || null};
     })];
 }
+function cachedView(store, id) {
+  const owned = Object.values(store.tasks).find(task => task.id === id || task.remoteId === id);
+  if (owned?.deleted || owned?.is_deleted) {return null;}
+  return mergedTasks(store).find(task => task.id === id || task.remoteId === id) ||
+    (store.completedRemote || []).map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true})).find(task => task.id === id) || null;
+}
+function completedView(store) {
+  const owned = mergedTasks(store);
+  const suppressed = new Set([...Object.values(store.tasks).map(task => task.remoteId || task.id),
+    ...store.remote.filter(task => !completed(task) && !task.is_deleted).map(task => task.id)]);
+  return [...(store.completedRemote || []).filter(task => !suppressed.has(task.id)).map(task => ({...task, completed: true, is_completed: true, occurrenceHistory: true})),
+    ...owned.filter(task => task.completed)];
+}
 function snapshot(store) {
   return {schema: 1, revision: store.revision, publishedAt: Date.now(), lastSync: store.lastSync,
     pendingCount: store.outbox.length, errorCount: store.outbox.filter(op => op.state === 'attention').length,
@@ -435,4 +459,4 @@ function snapshot(store) {
 }
 module.exports = {SCHEMA, clone, emptyStore, validateStore, migrateStore, resolveDue, localDate, remoteState,
   addBatch, findTask, setCompleted, editTask, deleteTask, addCollection, mergedSections, editUnsent, cancelUnsent,
-  readyOperations, commandFor, markSending, preflight, checkDestinations, acknowledge, reconcileAcknowledged, failOperations, replaceRemote, mergedTasks, snapshot};
+  readyOperations, commandFor, markSending, preflight, checkDestinations, acknowledge, reconcileAcknowledged, rememberTask, failOperations, replaceRemote, mergedTasks, cachedView, completedView, snapshot};
