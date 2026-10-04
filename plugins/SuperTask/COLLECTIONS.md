@@ -9,7 +9,7 @@ Collections are Todoist's named sections inside a project. SuperTask uses the ex
 - Today, Upcoming, Done, On Device, This Note and Pending task metadata includes the collection when available. Cached sections remain usable offline and after process restart. A full sync must include items, projects and sections before replacing the snapshot.
 - Local unsent task creation/editing stores `section_id` in the durable queue. After a send begins, the command's section and identity remain frozen through retries. Editing/moving tasks already on Todoist requires an online connection, matching the existing edit workflow.
 - Optional AI refinement receives known projects/collections and returns a required nullable `sectionId`. Local validation rejects invented, archived or cross-project section IDs; suggestions remain editable before saving. No paid AI call was performed for this change.
-- Collection rules span the full list width in the overview and project view. Text and action buttons sit inside the ruled row. This final visual change awaits device inspection.
+- Collection rules span the full list width in the overview and project view. Text and action buttons sit inside the ruled row. The overview rules were visually verified on beta.8; the dedicated project view remains pending.
 
 Todoist's [current API reference](https://developer.todoist.com/api/v1/) defines sections and a separate task-move operation. Location changes use `/tasks/{id}/move`, with a section destination or explicit project destination for No collection. Detail updates and moves are separate requests; if a move fails after details were accepted, the UI reports partial success and requests a refresh.
 
@@ -36,14 +36,16 @@ Firmware: `Chauvet.E103.2609111001.2505_beta`. Device: `SN078D10010594`.
 3. Turned Wi-Fi off. Created only `Codex-collections-scratch-20261004-A` in House/Shopping, then changed the unsent task to Maintenance. Pending showed the correct collection and one queued task.
 4. Closed/restarted PluginHost non-destructively while offline; the same task, Maintenance choice and queue survived. Re-enabled Wi-Fi, refreshed, and verified the task under House/Maintenance with no pending marker.
 5. Moved that scratch task online to Cleaning, then to **No collection**, and verified the corresponding project groups. Original task/collection contents were not edited. An inadvertent Settings default-tab tap was restored to Last opened.
-6. The user took the Nomad before final installation/cleanup. ADB work stopped immediately. **The device's installed version remains beta.6**. Beta.7 was copied to MyStyle but never installed. Beta.8 is built locally and not uploaded/installed. No host data clearing/uninstallation/recovery was performed.
+6. The user took the Nomad before final installation/cleanup. ADB work stopped immediately. Beta.7 was copied to MyStyle but never installed.
+7. On reconnection, uploaded the inspected beta.8 package and installed it through explicit file selection. Plugin Manager displayed **Version: 0.4.0-beta.8**, enabled **ON**. A non-destructive PluginHost restart opened the existing private settings and tasks successfully. The account still had ten active tasks and zero queued changes; cached projects/collections and the Last opened preference remained available.
+8. Expanded House in Projects and inspected an actual device screenshot: the No collection, Cleaning, Maintenance and Shopping header rules extend across the entire list width. No task mutations were performed in this session. ADB disconnected before the dedicated project view, batch/default checks or scratch cleanup could be verified. No host data clearing/uninstallation/recovery was performed.
 
 **Remaining scratch data:** `Codex-collections-scratch-20261004-A` in House → No collection. Last observed account total: ten active tasks (nine original plus this test task), zero queued work. Wi-Fi was restored ON. Device/package backups and UI dumps are ignored private files; the package backup does not constitute a backup of private app storage.
 
 ## Next device session
 
-1. Confirm device availability, copy beta.8 and explicitly select/install that file. Do not reinstall the managed beta.6 copy or install the previously staged beta.7 file. Verify beta.8/code 13 and preserved queue/settings.
-2. Inspect full-width rules in Projects and House, scrolling and enlarged text. Check **+ Task** prefills its collection; check batch Details, per-row collection selection, manual Add row defaults, and atomic batch sync with differently assigned sections.
+1. Confirm device availability and the installed beta.8 version. Installation, enabled state, private startup and overview rules have passed; repeating installation is unnecessary unless the installed build changed.
+2. Inspect full-width rules in the dedicated House view, scrolling and enlarged text. Check **+ Task** prefills its collection; check batch Details, per-row collection selection, manual Add row defaults, and atomic batch sync with differently assigned sections.
 3. Delete only the named scratch task above and any newly labeled test tasks. Refresh Todoist and confirm the original task count/current user changes and zero queue. Preserve user-added tasks.
 4. The earlier handwriting crop/source-note navigation and paid AI checks in VALIDATION.md remain pending. Structured SDK parsing is covered by local tests, not a live paid request.
 
