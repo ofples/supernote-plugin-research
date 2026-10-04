@@ -1,9 +1,10 @@
-const {clone, emptyStore, validateStore} = require('./model');
+const {clone, emptyStore, validateStore, migrateStore} = require('./model');
 
 // Adapter is responsible for durable atomic replacement. Failed commits never
 // become the in-memory truth, and a rejected operation cannot poison the chain.
 function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
   let state;
+  let committedPayload;
   let loading;
   let chain = Promise.resolve();
   let warning = null;
@@ -12,12 +13,14 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
       const generations = await adapter.read();
       if (!generations.exists) {
         state = emptyStore(accountKey, deviceId);
+        committedPayload = JSON.stringify(state);
         return;
       }
       for (const [index, raw] of [generations.main, generations.backup].entries()) {
         if (!raw) {continue;}
         try {
-          state = validateStore(JSON.parse(raw), accountKey, deviceId);
+          state = migrateStore(validateStore(JSON.parse(raw), accountKey, deviceId));
+          committedPayload = raw;
           if (index) {warning = 'Recovered the previous saved generation. Check your most recent changes.';}
           return;
         } catch (error) {
@@ -37,7 +40,9 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
       next.revision = previous.revision + 1;
       validateStore(next, accountKey, deviceId);
       try {
-        await adapter.commit(JSON.stringify(next), JSON.stringify(previous));
+        // Native revision/CAS validation compares exact serialized generations.
+        // Migration must pass the original disk bytes as previous, not schema 2.
+        await adapter.commit(JSON.stringify(next), committedPayload);
       } catch (error) {
         // The native write may have renamed successfully before returning an
         // error. Re-read authoritative disk state before allowing another save.
@@ -45,11 +50,11 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
           const disk = await adapter.read();
           let recovered;
           for (const raw of [disk.main, disk.backup]) {
-            if (!raw) continue;
-            try { recovered = validateStore(JSON.parse(raw), accountKey, deviceId); break; }
+            if (!raw) {continue;}
+            try { recovered = migrateStore(validateStore(JSON.parse(raw), accountKey, deviceId)); committedPayload = raw; break; }
             catch { /* try the previous generation before refusing more writes */ }
           }
-          if (!recovered && disk.exists) throw new Error('Task storage could not be recovered after a failed save. Existing data was not overwritten.');
+          if (!recovered && disk.exists) {throw new Error('Task storage could not be recovered after a failed save. Existing data was not overwritten.');}
           state = recovered || previous;
           error.uncertainCommit = state.revision === next.revision;
         } catch (readError) {
@@ -59,6 +64,7 @@ function createStore(adapter, accountKey, deviceId, onChange = () => {}) {
         throw error;
       }
       state = clone(next);
+      committedPayload = JSON.stringify(next);
       try { onChange(clone(state)); } catch { /* subscriber failure cannot undo a durable save */ }
       return clone(state);
     });
