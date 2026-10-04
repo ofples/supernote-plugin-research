@@ -65,8 +65,13 @@ export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
   const allTasks = model.mergedTasks(state);
-  return {tasks: allTasks.filter(task => !task.completed), allTasks, projects: state.projects, sections: state.sections || [], timestamp: state.lastSync,
+  const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state,
+    error: op.error, task: state.tasks[op.localId], collection: (model.mergedSections?.(state) || state.sections || []).find(section => section.id === op.localId)}));
+  return {tasks: allTasks.filter(task => !task.completed && !task.deleted), allTasks, projects: state.projects, sections: model.mergedSections?.(state) || state.sections || [], timestamp: state.lastSync,
     pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
+    pendingTaskCount: new Set(state.outbox.filter(op => op.kind !== 'collection_create').map(op => op.localId)).size,
+    pendingCollectionCount: state.outbox.filter(op => op.kind === 'collection_create').length,
+    pendingChanges, syncNotices: state.syncNotices || [],
     syncError: state.syncError, warning: current.store.getWarning(),
     otherAccountStores: current.identity.otherAccountStores};
 }
@@ -103,8 +108,30 @@ export async function completeOffline(id, completed = true) {
 
 export async function editOfflineTask(id, draft) {
   const current = await offlineSession();
-  await current.store.transaction(state => model.editUnsent(state, id, draft));
+  const ids = await idGenerator(12);
+  await current.store.transaction(state => model.editTask(state, id, draft, ids));
   requestActiveSync();
+  return cachedTask(id);
+}
+
+export async function deleteOfflineTask(id) {
+  const current = await offlineSession();
+  const ids = await idGenerator(12);
+  await current.store.transaction(state => model.deleteTask(state, id, ids));
+  requestActiveSync();
+}
+
+export async function createOfflineCollection(projectId, name) {
+  const current = await offlineSession();
+  const ids = await idGenerator(12);
+  let collection;
+  await current.store.transaction(state => {
+    const result = model.addCollection(state, projectId, name, ids);
+    collection = result.collection;
+    return result.next;
+  });
+  requestActiveSync();
+  return collection;
 }
 
 export async function cancelOfflineTask(id) {

@@ -51,37 +51,33 @@ function api(task) {
     '../utils/permissions': {ensurePermissionGroup: async () => true}, '../utils/debug': {log() {}},
     '../offline/service': {cachedTask: async () => task, offlineData: async () => ({projects, sections}),
       rememberRemoteTask: async value => remembered.push(value), syncOffline: async () => {},
-      editOfflineTask: async (...args) => edited.push(args)},
+      editOfflineTask: async (...args) => {edited.push(args); return {...task, ...args[1]};}},
   });
   client.setConfigLoader(async () => ({apiToken: 'test-only-token'}));
   return {client, remembered, edited};
 }
-test('online collection changes use the move endpoint; unrelated updates preserve collection', async () => {
-  const oldFetch = global.fetch; const requests = [];
+test('cached existing task edits and moves queue locally without depending on reachability', async () => {
+  const oldFetch = global.fetch; global.fetch = () => {throw new Error('Unexpected request');};
   const task = {id: 'remote-id', content: 'Test', project_id: 'p', section_id: 'ps', syncState: 'synced'};
-  const {client, remembered} = api(task);
-  global.fetch = async (url, options) => {
-    requests.push({url, body: JSON.parse(options.body)});
-    return {ok: true, status: 200, json: async () => ({...task, section_id: url.endsWith('/move') ? null : 'ps'})};
-  };
+  const {client, edited, remembered} = api(task);
   try {
     await client.updateTask(task.id, {content: 'Changed'});
-    assert.equal(requests.length, 1); assert.deepEqual(requests[0].body, {content: 'Changed'});
+    assert.deepEqual(edited[0], [task.id, {content: 'Changed'}]);
     await client.updateTask(task.id, {sectionId: null});
-    assert.equal(requests[1].url, 'https://api.todoist.com/api/v1/tasks/remote-id/move');
-    assert.deepEqual(requests[1].body, {project_id: 'p'});
-    assert.equal(remembered.at(-1).section_id, null);
+    assert.deepEqual(edited[1], [task.id, {project_id: 'p', section_id: null}]);
+    assert.equal(remembered.length, 0);
   } finally {global.fetch = oldFetch;}
 });
-test('unsent task editing preserves collection offline and never calls the network', async () => {
+
+test('local task editing preserves omitted collection and clears it across projects', async () => {
   const oldFetch = global.fetch; global.fetch = () => {throw new Error('Unexpected request');};
   const task = {id: 'local:task', content: 'Test', project_id: 'p', section_id: 'ps'};
   const {client, edited} = api(task);
   try {
     await client.updateTask(task.id, {content: 'Changed'});
-    assert.equal(edited[0][1].sectionId, 'ps');
+    assert.equal(Object.hasOwn(edited[0][1], 'section_id'), false);
     await client.updateTask(task.id, {projectId: 'q'});
-    assert.equal(edited[1][1].sectionId, null);
+    assert.deepEqual(edited[1][1], {project_id: 'q', section_id: null});
   } finally {global.fetch = oldFetch;}
 });
 
@@ -112,28 +108,12 @@ test('batch Add row uses the configured collection; changing its project clears 
   await act(async () => tree.unmount());
 });
 
-test('a failed online move reports partial success instead of claiming the location was changed', async () => {
-  const oldFetch = global.fetch;
-  const task = {id: 'remote-id', content: 'Test', project_id: 'p', section_id: 'ps', syncState: 'synced'};
-  const {client, remembered} = api(task);
-  global.fetch = async url => url.endsWith('/move') ? {ok: false, status: 400, text: async () => 'Collection no longer available'} :
-    {ok: true, status: 200, json: async () => ({...task, content: 'Changed'})};
-  try {
-    await assert.rejects(client.updateTask(task.id, {content: 'Changed', sectionId: null}), /details were saved.*location could not be confirmed/);
-    assert.equal(remembered[0].content, 'Changed'); assert.equal(remembered[0].section_id, 'ps');
-  } finally {global.fetch = oldFetch;}
-});
-
-test('moving an acknowledged local task never stores its local ID as a remote task', async () => {
-  const oldFetch = global.fetch;
+test('acknowledged local task keeps its stable local identity when queuing a move', async () => {
+  const oldFetch = global.fetch; global.fetch = () => {throw new Error('Unexpected request');};
   const task = {id: 'local:created', remoteId: 'real-id', content: 'Test', project_id: 'p', section_id: 'ps', syncState: 'synced'};
-  const {client, remembered} = api(task);
-  global.fetch = async url => {
-    assert.equal(url, 'https://api.todoist.com/api/v1/tasks/real-id/move');
-    return {ok: true, status: 200, json: async () => ({...task, id: 'real-id', section_id: null})};
-  };
+  const {client, edited, remembered} = api(task);
   try {
     await client.updateTask(task.id, {sectionId: null});
-    assert.deepEqual(remembered.map(t => t.id), ['real-id']);
+    assert.equal(edited[0][0], 'local:created'); assert.equal(remembered.length, 0);
   } finally {global.fetch = oldFetch;}
 });

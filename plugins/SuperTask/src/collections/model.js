@@ -29,7 +29,8 @@ function locationChange(task, changes, projects, sections) {
   const projectId = changes.projectId === undefined ? task.project_id || null : changes.projectId || inbox?.id || null;
   const projectChanged = (projectId || null) !== (task.project_id || null);
   if (projectChanged && !projectId) throw new Error('Refresh projects before choosing Inbox.');
-  const sectionId = changes.sectionId === undefined ? (projectChanged ? null : task.section_id || null) : changes.sectionId || null;
+  const suppliedSection = changes.sectionId === undefined ? (projectChanged ? null : task.section_id || null) : changes.sectionId || null;
+  const sectionId = sections.find(s => s.localId === suppliedSection && !s.is_deleted && !s.is_archived)?.id || suppliedSection;
   const changed = projectChanged || sectionId !== (task.section_id || null);
   if (changed) validateLocation(projectId, sectionId, sections);
   return {projectId, sectionId, changed, body: sectionId ? {section_id: sectionId} : {project_id: projectId}};
