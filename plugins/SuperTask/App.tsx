@@ -326,7 +326,8 @@ function App(): React.JSX.Element {
         projects={current.params?.projects || []} defaultProjectId={current.params?.defaultProjectId}
         defaultSectionId={current.params?.defaultSectionId}
         initialContent={current.params?.initialContent} initialDescription={current.params?.initialDescription}
-        noteContext={current.params?.noteContext} capturedAt={current.params?.capturedAt} preview={current.params?.preview} />}
+        noteContext={current.params?.noteContext} capturedAt={current.params?.capturedAt} preview={current.params?.preview}
+        initialRows={current.params?.initialRows} captureMode={current.params?.captureMode} />}
       {current.name === 'ai-settings' && <AISettings key={current.id} nav={nav} />}
       {current.name === 'capture-doc' && (
         <Capture key={current.id} mode="doc" nav={nav} />

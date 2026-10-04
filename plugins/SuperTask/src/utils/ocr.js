@@ -38,65 +38,6 @@ export function recycleElements(elements) {
 }
 
 /**
- * Log detailed diagnostic info about elements for debugging recognition failures.
- */
-function logElementDiagnostics(elements, label) {
-  const typeCounts = {};
-  let totalElements = elements.length;
-
-  for (const el of elements) {
-    const t = el.type ?? 'undefined';
-    typeCounts[t] = (typeCounts[t] || 0) + 1;
-  }
-  log(TAG, `${label}: ${totalElements} elements, types: ${JSON.stringify(typeCounts)}`);
-
-  // Log stroke details for the first few strokes
-  const strokes = elements.filter(el => el.type === 0);
-  for (let i = 0; i < Math.min(strokes.length, 3); i++) {
-    const el = strokes[i];
-    const s = el.stroke;
-    const keys = Object.keys(el).sort().join(',');
-    log(TAG, `  stroke[${i}] keys: ${keys}`);
-    log(TAG, `  stroke[${i}] numInPage=${el.numInPage} maxX=${el.maxX} maxY=${el.maxY} thickness=${el.thickness} status=${el.status}`);
-    if (s) {
-      const sKeys = Object.keys(s).sort().join(',');
-      log(TAG, `  stroke[${i}].stroke keys: ${sKeys}`);
-      log(TAG, `  stroke[${i}].stroke penColor=${s.penColor} penType=${s.penType}`);
-
-      // Check point arrays -- these are the critical data for recognition
-      const pointInfo = [];
-      if (s.points) pointInfo.push(`points=${Array.isArray(s.points) ? s.points.length : typeof s.points}`);
-      if (s.pressures) pointInfo.push(`pressures=${Array.isArray(s.pressures) ? s.pressures.length : typeof s.pressures}`);
-      if (s.recognPoints) pointInfo.push(`recognPoints=${Array.isArray(s.recognPoints) ? s.recognPoints.length : typeof s.recognPoints}`);
-      if (s.eraseLineTrailNums) pointInfo.push(`eraseLineTrailNums=${Array.isArray(s.eraseLineTrailNums) ? s.eraseLineTrailNums.length : typeof s.eraseLineTrailNums}`);
-      if (s.flagDraw) pointInfo.push(`flagDraw=${Array.isArray(s.flagDraw) ? s.flagDraw.length : typeof s.flagDraw}`);
-      if (s.markPenDirection) pointInfo.push(`markPenDirection=${Array.isArray(s.markPenDirection) ? s.markPenDirection.length : typeof s.markPenDirection}`);
-      log(TAG, `  stroke[${i}].stroke data: ${pointInfo.length ? pointInfo.join(', ') : '(no point arrays found)'}`);
-
-      // If points exist and are arrays, log first few for coordinate reference
-      if (Array.isArray(s.points) && s.points.length > 0) {
-        const first = s.points[0];
-        const last = s.points[s.points.length - 1];
-        log(TAG, `  stroke[${i}] points[0]=${JSON.stringify(first)} points[${s.points.length - 1}]=${JSON.stringify(last)}`);
-      }
-      if (Array.isArray(s.recognPoints) && s.recognPoints.length > 0) {
-        const first = s.recognPoints[0];
-        log(TAG, `  stroke[${i}] recognPoints[0]=${JSON.stringify(first)}`);
-      }
-    } else {
-      log(TAG, `  stroke[${i}].stroke = null/undefined`);
-    }
-  }
-
-  // Log summary of non-stroke elements
-  const nonStrokes = elements.filter(el => el.type !== 0);
-  for (let i = 0; i < Math.min(nonStrokes.length, 3); i++) {
-    const el = nonStrokes[i];
-    log(TAG, `  non-stroke[${i}] type=${el.type} numInPage=${el.numInPage} keys=${Object.keys(el).sort().join(',')}`);
-  }
-}
-
-/**
  * Get page context (file path, page number, page size).
  * Returns defaults if any call fails -- recognition can still be attempted.
  */
@@ -126,7 +67,7 @@ async function getPageContext(logFn) {
   filePath = fpResult?.result || '';
   pageNum = pnResult?.result ?? 0;
   deviceType = dtResult;
-  logFn(`filePath: ${filePath}`);
+  logFn(`Note context available: ${!!filePath}`);
   logFn(`pageNum: ${pageNum}`);
   logFn(`getDeviceType: ${JSON.stringify(deviceType)}`);
 
@@ -164,7 +105,7 @@ async function getPageContext(logFn) {
  * @param {Function} logFn - logging callback (writes to screen trace + debug log)
  * @returns {{success: boolean, text: string|null, error: object|null, pageContext: object}}
  */
-export async function recognizeLassoElements(allElements, logFn) {
+export async function recognizeLassoElements(allElements, logFn, onNativeSettled = (_promise) => {}) {
   const _log = logFn || (msg => log(TAG, msg));
 
   // 1. Get page context
@@ -172,7 +113,7 @@ export async function recognizeLassoElements(allElements, logFn) {
   const {filePath, pageNum, pageSize, deviceType, fileMachineType} = await getPageContext(_log);
 
   // 2. Log full element diagnostics
-  logElementDiagnostics(allElements, 'all lasso elements');
+  _log(`Selection contains ${allElements.length} elements`);
 
   // 3. Filter to supported types (strokes=0, text boxes=500)
   // SDK docs: recognizeElements "currently supports only strokes and text boxes"
@@ -220,21 +161,21 @@ export async function recognizeLassoElements(allElements, logFn) {
 
   // 5. Call recognizeElements
   _log(`recognizeElements: ${supported.length} elements, size=${recognitionSize.width}x${recognitionSize.height}`);
+  const nativeRecognition = PluginCommAPI.recognizeElements(supported, recognitionSize);
+  // A UI timeout does not cancel native work. Owners must keep the elements
+  // alive until this promise settles, even when the visible capture has ended.
+  onNativeSettled?.(Promise.resolve(nativeRecognition).then(() => undefined, () => undefined));
   const recognized = await withTimeout(
-    PluginCommAPI.recognizeElements(supported, recognitionSize),
+    nativeRecognition,
     30000,
     'recognizeElements',
   );
 
   // 5. Log full response for diagnosis
-  const rawStr = JSON.stringify(recognized);
-  _log(`recognizeElements response (${rawStr.length} chars): ${rawStr.slice(0, 300)}`);
-  if (rawStr.length > 300) {
-    _log(`  ...continued: ${rawStr.slice(300, 600)}`);
-  }
+  _log(`Recognition response: success=${!!recognized?.success}`);
 
   if (recognized?.success && recognized?.result) {
-    _log(`OCR success: "${recognized.result.slice(0, 80)}"`);
+    _log(`OCR success: ${recognized.result.length} characters`);
     return {
       success: true,
       text: recognized.result.trim(),
@@ -246,8 +187,7 @@ export async function recognizeLassoElements(allElements, logFn) {
   // Failed -- log error details
   const errCode = recognized?.error?.code ?? 'none';
   const errMsg = recognized?.error?.message ?? 'none';
-  _log(`OCR failed: code=${errCode} message="${errMsg}"`);
-  _log(`  success=${recognized?.success} result=${recognized?.result} resultType=${typeof recognized?.result}`);
+  _log(`OCR failed: code=${errCode}`);
 
   return {
     success: false,

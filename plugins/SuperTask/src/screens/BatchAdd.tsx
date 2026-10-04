@@ -10,38 +10,107 @@ import PriorityPicker from '../components/PriorityPicker';
 import DatePicker from '../components/DatePicker';
 const {fromText, mergeNext, splitRow, MAX_TASKS} = require('../batch/model');
 const {localDate} = require('../offline/model');
-type Props = {nav: any; initialContent?: string; initialDescription?: string; projects: any[];
-  defaultProjectId?: string; defaultSectionId?: string; noteContext?: any; capturedAt?: number; preview?: string};
-export default function BatchAdd({nav, initialContent = '', initialDescription = '', projects: initialProjects,
-  defaultProjectId, defaultSectionId, noteContext, capturedAt = Date.now(), preview}: Props) {
+const {makeDefaults, inheritDefaults, initializeProposalRow, changeDefault, editRow, resetRowField,
+  replaceSplitParts, mergeOverrides, reconcileRefinement} = require('../batch/assignments');
+
+type Props = {nav: any; initialContent?: string; initialDescription?: string; initialRows?: any[]; captureMode?: 'lasso' | 'doc';
+  projects: any[]; defaultProjectId?: string; defaultSectionId?: string; noteContext?: any; capturedAt?: number; preview?: string};
+
+export default function BatchAdd({nav, initialContent = '', initialDescription = '', initialRows, captureMode,
+  projects: initialProjects, defaultProjectId, defaultSectionId, noteContext, capturedAt = Date.now(), preview}: Props) {
   const {projects, sections} = useLocations(initialProjects);
   const nextId = useRef(0);
-  const decorate = (values: any[]) => values.map(row => ({...row, rowId: ++nextId.current}));
-  const [rows, setRows] = useState<any[]>(() => decorate(fromText(initialContent, {projectId: defaultProjectId || null, sectionId: defaultSectionId || null, description: initialDescription})));
+  const defaultsRef = useRef(makeDefaults({projectId: defaultProjectId, sectionId: defaultSectionId}));
+  const [defaults, setDefaults] = useState(defaultsRef.current);
+  const decorate = (values: any[]) => values.map(row => {
+    const rowId = row.rowId ?? `batch-row-${++nextId.current}`;
+    if (typeof rowId === 'number') nextId.current = Math.max(nextId.current, rowId);
+    return {...row, rowId, overrides: {...row.overrides}, labels: [...(row.labels || [])]};
+  });
+  const [rows, setRows] = useState<any[]>(() => decorate(initialRows?.length
+    ? initialRows.map(row => initializeProposalRow({description: initialDescription, selected: true, ...row}, defaultsRef.current))
+    : fromText(initialContent, {...defaultsRef.current, description: initialDescription, overrides: {}})));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [attempted, setAttempted] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [dateRow, setDateRow] = useState<number | null>(null);
+  const [createdTasks, setCreatedTasks] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState<string | number | null>(null);
+  const [dateRow, setDateRow] = useState<string | number | null>(null);
+  const [batchDateOpen, setBatchDateOpen] = useState(false);
   const [undo, setUndo] = useState<any[] | null>(null);
+  const [postCreateAction, setPostCreateAction] = useState('prompt');
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [showBatchLocation, setShowBatchLocation] = useState(false);
+  const [showBatchPriority, setShowBatchPriority] = useState(false);
+  const [showBatchLabels, setShowBatchLabels] = useState(false);
+  const [activeNoteContext, setActiveNoteContext] = useState(noteContext);
+  const [activePreview, setActivePreview] = useState(preview);
+  const [showAiSetupHint, setShowAiSetupHint] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const working = useRef(false);
   const request = useRef({});
+  const autoBackTimer = useRef<any>(null);
   const captureTime = useRef(capturedAt).current;
   const selected = rows.filter(row => row.selected);
   const locked = busy || attempted || saved;
+  const cancelRefinement = (message = 'AI refinement stopped. Original rows were kept.') => {
+    const active = controller.current;
+    if (!active) return;
+    active.abort();
+    if (controller.current === active) {
+      controller.current = null;
+      working.current = false;
+      if (alive.current) {setBusy(false); setStatus(message);}
+    }
+  };
   useEffect(() => {
+    import('../utils/config').then(async configModule => {
+      const config = await configModule.loadConfig();
+      if (alive.current) {
+        if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
+        setShowAiSetupHint(!config.aiApiKey?.trim() && config.aiSetupHintDismissed !== true);
+        setConfigLoaded(true);
+      }
+    }).catch(() => {if (alive.current) setConfigLoaded(true);});
     const sub = PluginManager.registerPluginLifeListener({onMsg: (message: any) => {
-      if (message.state >= 3) controller.current?.abort();
+      if (message.state >= 3) cancelRefinement();
     }});
-    return () => {alive.current = false; controller.current?.abort(); sub?.remove();};
+    return () => {alive.current = false; controller.current?.abort(); if (autoBackTimer.current) clearTimeout(autoBackTimer.current); sub?.remove();};
   }, []);
+
   const update = (index: number, values: any) => setRows(prev => prev.map((row, i) => i === index ? {...row, ...values} : row));
+  const edit = (index: number, field: string, value: any) => setRows(prev => prev.map((row, i) => i === index ? editRow(row, field, value) : row));
+  const applyDefault = (field: string, value: any) => {
+    const result = changeDefault(rows, defaultsRef.current, field, value);
+    defaultsRef.current = result.defaults;
+    setDefaults(result.defaults);
+    setRows(result.rows);
+    setStatus('');
+  };
+  const resetField = (index: number, field: string) => update(index, resetRowField(rows[index], field, defaultsRef.current));
   const safely = (action: () => any[]) => {
     try {setRows(action()); setStatus('');} catch (error: any) {setStatus(error.message);}
   };
+  const merge = (index: number) => safely(() => {
+    const merged = mergeOverrides(rows[index], rows[index + 1]);
+    const result = mergeNext(rows, index);
+    return result.map((row: any, i: number) => i === index ? {...row, overrides: merged.overrides,
+      instructions: merged.instructions, description: merged.description,
+      projectId: merged.projectId, sectionId: merged.sectionId, dueString: merged.dueString, priority: merged.priority, labels: merged.labels} : row);
+  });
+  const split = (index: number) => safely(() => {
+    const parts = splitRow(rows, index);
+    if (parts.length === rows.length) return parts;
+    return decorate(replaceSplitParts(rows, index, parts));
+  });
+  const addRow = () => {
+    if (rows.length >= MAX_TASKS) return;
+    const row = inheritDefaults(fromText('New task', {description: '', selected: true, overrides: {}})[0], defaultsRef.current);
+    setRows(prev => [...prev, ...decorate([row])]);
+  };
+
   const refine = async () => {
     if (working.current || attempted || saved) return;
     if (!selected.length) {setStatus('Select at least one row to refine.'); return;}
@@ -49,89 +118,175 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
     const abort = new AbortController();
     controller.current = abort; working.current = true; setBusy(true);
     setStatus('Refining with OpenAI… Original rows are kept until a valid result arrives.');
-    const timer = setTimeout(() => abort.abort(), 90000);
+    const timer = setTimeout(() => cancelRefinement('AI timed out. Original rows were kept.'), 90000);
     try {
-      // Sending the complete crop could reintroduce deselected writing. Text-only
-      // refinement is used when any row is excluded.
-      const proposals = await refineBatch(selected, projects, captureTime,
-        selected.length === rows.length ? preview : undefined, abort.signal, sections);
-      if (!alive.current || abort.signal.aborted) return;
+      const proposals = await refineBatch(selected.map(row => ({...row, rowId: String(row.rowId)})), projects, captureTime,
+        selected.length === rows.length ? activePreview : undefined, abort.signal, sections);
+      if (!alive.current || abort.signal.aborted || controller.current !== abort) return;
+      const refined = reconcileRefinement(selected, proposals);
       setUndo(previous);
-      setRows(decorate([...proposals, ...previous.filter(row => !row.selected)]));
+      setRows(decorate([...refined, ...previous.filter(row => !row.selected)]));
       setStatus('AI suggestions ready. Check titles, dates and projects before saving.');
     } catch (error: any) {
-      if (alive.current) setStatus(abort.signal.aborted ? 'AI refinement stopped. Original rows were kept.' : refinementError(error));
+      if (alive.current && controller.current === abort) setStatus(abort.signal.aborted ? 'AI refinement stopped. Original rows were kept.' : refinementError(error));
     } finally {
-      clearTimeout(timer); controller.current = null; working.current = false;
-      if (alive.current) setBusy(false);
+      clearTimeout(timer);
+      if (controller.current === abort) {controller.current = null; working.current = false; if (alive.current) setBusy(false);}
     }
+  };
+
+  const dismissAiSetupHint = async () => {
+    try {
+      const configModule = await import('../utils/config');
+      if (!alive.current) return;
+      if (await configModule.saveConfig({aiSetupHintDismissed: true})) {if (alive.current) setShowAiSetupHint(false);}
+      else if (alive.current) setStatus('Could not save the AI setup hint preference.');
+    } catch {
+      if (alive.current) setStatus('Could not save the AI setup hint preference.');
+    }
+  };
+  const goBack = () => {
+    if (autoBackTimer.current) {clearTimeout(autoBackTimer.current); autoBackTimer.current = null;}
+    if (captureMode) closePlugin();
+    else if (nav?.canGoBack) nav.pop();
+    else nav?.resetTo?.('task-home');
+  };
+  const addAnother = () => {
+    request.current = {};
+    setCreatedTasks([]); setRows(decorate(fromText('New task', {...defaultsRef.current, description: '', overrides: {}, instructions: {}})));
+    setActivePreview(undefined); setActiveNoteContext(undefined);
+    setUndo(null); setSaved(false); setAttempted(false); setExpanded(null); setStatus('');
   };
   const save = async () => {
     if (working.current || saved) return;
+    if (!configLoaded) {setStatus('Loading saved settings…'); return;}
     if (!selected.length || selected.some(row => !row.content.trim())) {setStatus('Select at least one task; every selected title must be filled in.'); return;}
     working.current = true; setBusy(true); setAttempted(true); setStatus('Saving the batch on this device…');
     try {
-      const result = await saveOfflineBatch(selected, noteContext, captureTime, request.current);
-      if (alive.current) {setSaved(true); setStatus(`Saved ${result.length} task${result.length === 1 ? '' : 's'} on this device. Sync starts while SuperTask is open and resumes next time you open it.`);}
+      const result = await saveOfflineBatch(selected, activeNoteContext, captureTime, request.current);
+      if (alive.current) {
+        setSaved(true);
+        setCreatedTasks(result);
+        setStatus(`Saved ${result.length} task${result.length === 1 ? '' : 's'} on this device. Sync starts while SuperTask is open and resumes next time you open it.`);
+        if (postCreateAction === 'auto-back') autoBackTimer.current = setTimeout(() => {if (alive.current) goBack();}, 500);
+      }
     } catch (error: any) {
       if (alive.current) setStatus(`${error.message} Retry keeps the same task identities. Open Tasks to inspect any saved work.`);
     } finally {working.current = false; if (alive.current) setBusy(false);}
   };
+
+  const today = () => localDate(new Date());
+  const tomorrow = () => {const date = new Date(); date.setDate(date.getDate() + 1); return localDate(date);};
   return <View style={s.page}>
-    <View style={s.header}><Text style={s.title}>Review tasks</Text>
-      <Pressable style={s.button} onPress={() => {controller.current?.abort(); closePlugin();}} disabled={busy && !controller.current}><Text style={s.label}>{saved ? 'Close' : 'Cancel'}</Text></Pressable>
+    <View style={s.header}><Text style={s.title}>{saved ? 'Tasks saved' : 'Review tasks'}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={saved ? 'Done' : 'Cancel'} style={s.button} onPress={() => {cancelRefinement(); goBack();}} disabled={busy && !controller.current}><Text style={s.label}>{saved ? 'Done' : 'Cancel'}</Text></Pressable>
     </View>
-    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-      <Text style={s.text}>One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.</Text>
-      <Text style={s.text}>Captured {localDate(new Date(captureTime))}. {selected.length} of {rows.length} selected.</Text>
-      {!locked && <View style={s.actions}>
-        <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={s.label}>Select all</Text></Pressable>
-        <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={s.label}>Select none</Text></Pressable>
-        <Pressable style={s.button} onPress={() => {if (rows.length < MAX_TASKS) setRows(prev => [...prev, ...decorate(fromText('New task', {projectId: defaultProjectId || null, sectionId: defaultSectionId || null}))]);}}><Text style={s.label}>Add row</Text></Pressable>
-      </View>}
-      {rows.map((row, index) => <View key={row.rowId} style={s.card}>
-        <View style={s.actions}><Pressable style={s.button} disabled={locked} onPress={() => update(index, {selected: !row.selected})}><Text style={s.label}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
-          <TextInput style={s.input} multiline value={row.content} onChangeText={content => update(index, {content})} editable={!locked} />
-        </View>
-        <Text style={s.text}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
-        {!locked && <View style={s.actions}>
-          <Pressable style={s.button} onPress={() => setExpanded(expanded === row.rowId ? null : row.rowId)}><Text style={s.label}>Details</Text></Pressable>
-          {index < rows.length - 1 && <Pressable style={s.button} onPress={() => safely(() => mergeNext(rows, index))}><Text style={s.label}>Merge next</Text></Pressable>}
-          <Pressable style={s.button} onPress={() => safely(() => decorate(splitRow(rows, index)))}><Text style={s.label}>Split lines</Text></Pressable>
-          <Pressable style={s.button} onPress={() => setRows(prev => prev.filter(item => item.rowId !== row.rowId))}><Text style={s.label}>Remove</Text></Pressable>
-        </View>}
-        {!locked && expanded === row.rowId && <View style={s.details}>
-          <Text style={s.label}>Project and collection</Text>
-          <ProjectPicker projects={projects} selectedId={row.projectId} onChange={projectId => update(index, {projectId, sectionId: projectId === row.projectId ? row.sectionId : null})}
-            sections={sections} selectedSectionId={row.sectionId} onSectionChange={sectionId => update(index, {sectionId})} />
-          <PriorityPicker value={row.priority} onChange={priority => update(index, {priority})} />
-          <View style={s.actions}><Pressable style={s.button} onPress={() => setDateRow(row.rowId)}><Text style={s.label}>Date</Text></Pressable>
-            <Pressable style={s.button} onPress={() => update(index, {dueString: localDate(new Date(captureTime))})}><Text style={s.label}>Captured today</Text></Pressable>
-            <Pressable style={s.button} onPress={() => update(index, {dueString: ''})}><Text style={s.label}>No date</Text></Pressable></View>
-          {dateRow === row.rowId && <DatePicker value={row.dueString} onChange={dueString => update(index, {dueString})} onClose={() => setDateRow(null)} />}
-          <TextInput style={s.input} value={row.description} placeholder="Description" multiline onChangeText={description => update(index, {description})} />
-          <TextInput style={s.input} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => update(index, {labels: labels.split(',').map(value => value.trim()).filter(Boolean)})} />
-        </View>}
-      </View>)}
-      {!saved && !attempted && <View style={s.details}>
-        <Text style={s.text}>Optional AI refinement sends selected rows{preview ? ' and the handwriting image when all rows are selected' : ''} to OpenAI using your configured key. Review the structured suggestions before saving.</Text>
-        <View style={s.actions}><Pressable style={s.button} disabled={busy} onPress={refine}><Text style={s.label}>Refine with AI</Text></Pressable>
-          <Pressable style={s.button} disabled={busy} onPress={() => nav.push('ai-settings')}><Text style={s.label}>AI settings</Text></Pressable>
-          {undo && <Pressable style={s.button} disabled={busy} onPress={() => {setRows(undo); setUndo(null); setStatus('Restored the rows from before AI refinement.');}}><Text style={s.label}>Undo refinement</Text></Pressable>}
-          {busy && controller.current && <Pressable style={s.button} onPress={() => controller.current?.abort()}><Text style={s.label}>Stop AI</Text></Pressable>}
-        </View>
-      </View>}
-      {!!status && <Text style={s.status}>{status}</Text>}
-      <View style={s.actions}>{!saved && <Pressable style={s.primary} disabled={busy} onPress={save}><Text style={s.primaryText}>{attempted ? 'Retry same batch' : `Save ${selected.length} task${selected.length === 1 ? '' : 's'}`}</Text></Pressable>}
-        <Pressable style={s.button} disabled={busy} onPress={() => nav.resetTo('task-home')}><Text style={s.label}>Tasks</Text></Pressable>
+    {!saved && <>
+      <View style={s.intro}>
+        <Text style={s.text}>One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.</Text>
+        <Text style={s.text}>Captured {localDate(new Date(captureTime))}. {selected.length} of {rows.length} selected.</Text>
       </View>
-    </ScrollView>
+      {!locked && <View style={s.controls}>
+        <View style={s.actions}>
+          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={s.label}>Select all</Text></Pressable>
+          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={s.label}>Select none</Text></Pressable>
+          <Pressable style={s.button} onPress={addRow} disabled={rows.length >= MAX_TASKS}><Text style={s.label}>Add row</Text></Pressable>
+        </View>
+        <View style={s.actions}>
+          {['Today', 'Tomorrow', 'Custom date', 'No date'].map(label => <Pressable key={label} accessibilityRole="button" accessibilityLabel={`Set selected rows ${label.toLowerCase()}`} style={s.button} onPress={() => {
+            if (label === 'Custom date') setBatchDateOpen(true);
+            else applyDefault('dueString', label === 'Today' ? today() : label === 'Tomorrow' ? tomorrow() : '');
+          }}><Text style={s.label}>{label}</Text></Pressable>)}
+        </View>
+        {batchDateOpen && <DatePicker value={defaults.dueString} onChange={dueString => applyDefault('dueString', dueString)} onClose={() => setBatchDateOpen(false)} />}
+        <View style={s.actions}>
+          <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchLocation}} style={s.button} onPress={() => setShowBatchLocation(!showBatchLocation)}>
+            <Text style={s.label}>Project: {projects.find((p: any) => p.id === defaults.projectId)?.name || 'Inbox'}{defaults.sectionId ? ` / ${sections.find((section: any) => section.id === defaults.sectionId)?.name || 'Collection'}` : ''}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchPriority}} style={s.button} onPress={() => setShowBatchPriority(!showBatchPriority)}>
+            <Text style={s.label}>Priority: P{5 - defaults.priority}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchLabels}} style={s.button} onPress={() => setShowBatchLabels(!showBatchLabels)}>
+            <Text style={s.label}>Labels: {defaults.labels.length ? defaults.labels.join(', ') : 'None'}</Text>
+          </Pressable>
+        </View>
+        {showBatchLocation && <ProjectPicker projects={projects} selectedId={defaults.projectId} sections={sections} selectedSectionId={defaults.sectionId}
+          onChange={projectId => applyDefault('location', {projectId, sectionId: projectId === defaultsRef.current.projectId ? defaultsRef.current.sectionId : null})}
+          onSectionChange={sectionId => applyDefault('location', {projectId: defaultsRef.current.projectId, sectionId})} />}
+        {showBatchPriority && <PriorityPicker value={defaults.priority} onChange={priority => applyDefault('priority', priority)} />}
+        {showBatchLabels && <TextInput style={s.input} value={defaults.labels.join(', ')} placeholder="Batch labels, separated by commas" editable={!locked}
+          onChangeText={value => applyDefault('labels', value.split(',').map(label => label.trim()).filter(Boolean))} />}
+        {showAiSetupHint && <View style={s.notice}>
+          <Text style={s.text}>Set up optional AI refinement in Settings. Nothing is sent until you choose Refine with AI.</Text>
+          <View style={s.actions}>
+            <Pressable style={s.button} onPress={() => nav.push('ai-settings')}><Text style={s.label}>Set up AI</Text></Pressable>
+            <Pressable style={s.button} onPress={dismissAiSetupHint}><Text style={s.label}>Dismiss</Text></Pressable>
+          </View>
+        </View>}
+        <View style={s.details}>
+          <Text style={s.text}>Optional AI refinement sends selected rows{activePreview ? ' and the handwriting image when all rows are selected' : ''} to OpenAI using your configured key. Review the structured suggestions before saving.</Text>
+          <View style={s.actions}><Pressable style={s.button} disabled={busy} onPress={refine}><Text style={s.label}>Refine with AI</Text></Pressable>
+            <Pressable style={s.button} disabled={busy} onPress={() => nav.push('ai-settings')}><Text style={s.label}>AI settings</Text></Pressable>
+            {undo && <Pressable style={s.button} disabled={busy} onPress={() => {setRows(undo); setUndo(null); setStatus('Restored the rows from before AI refinement.');}}><Text style={s.label}>Undo refinement</Text></Pressable>}
+            {busy && controller.current && <Pressable style={s.button} onPress={() => cancelRefinement()}><Text style={s.label}>Stop AI</Text></Pressable>}
+          </View>
+        </View>
+      </View>}
+      <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent} keyboardShouldPersistTaps="handled">
+        {rows.map((row, index) => <View key={row.rowId} style={s.card}>
+          <View style={s.actions}><Pressable style={s.button} onPress={() => update(index, {selected: !row.selected})} disabled={locked}><Text style={s.label}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
+            <TextInput style={s.input} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
+          </View>
+          <Text style={s.text}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
+          {!locked && <View style={s.actions}>
+            <Pressable style={s.button} onPress={() => setExpanded(expanded === row.rowId ? null : row.rowId)}><Text style={s.label}>Details</Text></Pressable>
+            {index < rows.length - 1 && <Pressable style={s.button} onPress={() => merge(index)}><Text style={s.label}>Merge next</Text></Pressable>}
+            <Pressable style={s.button} onPress={() => split(index)}><Text style={s.label}>Split lines</Text></Pressable>
+            <Pressable style={s.button} onPress={() => setRows(prev => prev.filter(item => item.rowId !== row.rowId))}><Text style={s.label}>Remove</Text></Pressable>
+          </View>}
+          {!locked && expanded === row.rowId && <View style={s.details}>
+            <Text style={s.label}>Project and collection</Text>
+            <ProjectPicker projects={projects} selectedId={row.projectId} onChange={projectId => edit(index, 'location', {projectId, sectionId: projectId === row.projectId ? row.sectionId : null})}
+              sections={sections} selectedSectionId={row.sectionId} onSectionChange={sectionId => edit(index, 'location', {projectId: row.projectId, sectionId})} />
+            {!!(row.overrides?.location || row.instructions?.location) && <Pressable style={s.button} onPress={() => resetField(index, 'location')}><Text style={s.label}>Use batch project and collection</Text></Pressable>}
+            <Text style={s.label}>Priority</Text><PriorityPicker value={row.priority} onChange={priority => edit(index, 'priority', priority)} />
+            {!!(row.overrides?.priority || row.instructions?.priority) && <Pressable style={s.button} onPress={() => resetField(index, 'priority')}><Text style={s.label}>Use batch priority</Text></Pressable>}
+            <View style={s.actions}><Pressable style={s.button} onPress={() => setDateRow(row.rowId)}><Text style={s.label}>Custom date</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', today())}><Text style={s.label}>Today</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', tomorrow())}><Text style={s.label}>Tomorrow</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', '')}><Text style={s.label}>No date</Text></Pressable></View>
+            {!!(row.overrides?.dueString || row.instructions?.dueString) && <Pressable style={s.button} onPress={() => resetField(index, 'dueString')}><Text style={s.label}>Use batch date</Text></Pressable>}
+            {dateRow === row.rowId && <DatePicker value={row.dueString} onChange={dueString => edit(index, 'dueString', dueString)} onClose={() => setDateRow(null)} />}
+            <TextInput style={s.input} value={row.description} placeholder="Description" multiline onChangeText={description => edit(index, 'description', description)} />
+            <TextInput style={s.input} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => edit(index, 'labels', labels.split(',').map((value: string) => value.trim()).filter(Boolean))} />
+            {!!(row.overrides?.labels || row.instructions?.labels) && <Pressable style={s.button} onPress={() => resetField(index, 'labels')}><Text style={s.label}>Use batch labels</Text></Pressable>}
+          </View>}
+        </View>)}
+      </ScrollView>
+    </>}
+    {saved && postCreateAction !== 'auto-back' && <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent}>
+      <Text style={s.text}>Saved on this device. These tasks are pending sync.</Text>
+      {createdTasks.map((task, index) => <Pressable key={task.id || index} accessibilityRole="button" accessibilityLabel={`Open task ${task.content}`} style={s.createdTask}
+        onPress={() => nav.push('task-detail', {task, projects})}><Text style={s.taskTitle}>{task.content}</Text><Text style={s.text}>Open task details</Text></Pressable>)}
+      <View style={s.actions}><Pressable style={s.primary} onPress={goBack}><Text style={s.primaryText}>Done</Text></Pressable>
+        <Pressable style={s.button} onPress={addAnother}><Text style={s.label}>Add another</Text></Pressable></View>
+    </ScrollView>}
+    {!!status && <Text style={s.status}>{status}</Text>}
+    {!saved && <View style={s.footer}>
+      {!attempted && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={s.primaryText}>{`Save ${selected.length} task${selected.length === 1 ? '' : 's'}`}</Text></Pressable>}
+      {attempted && !saved && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={s.primaryText}>Retry same batch</Text></Pressable>}
+      <Pressable style={s.button} disabled={busy} onPress={() => nav.resetTo('task-home')}><Text style={s.label}>Tasks</Text></Pressable>
+    </View>}
   </View>;
 }
+
 const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {padding: 16, flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1},
-  content: {padding: 16, gap: 16}, title: {fontSize: 24, fontWeight: '700', color: '#000'}, text: {fontSize: 15, color: '#000', lineHeight: 22},
+  intro: {paddingHorizontal: 16, paddingTop: 12, gap: 8}, controls: {paddingHorizontal: 16, paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: '#000'},
+  rowsScroll: {flex: 1}, rowsContent: {padding: 16, gap: 16}, title: {fontSize: 24, fontWeight: '700', color: '#000'}, text: {fontSize: 15, color: '#000', lineHeight: 22},
   label: {fontSize: 16, color: '#000'}, actions: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center'},
   button: {padding: 12, borderWidth: 1, borderColor: '#000'}, card: {padding: 12, borderWidth: 1, borderColor: '#000', gap: 12},
-  input: {flexGrow: 1, minWidth: 180, padding: 12, borderWidth: 1, fontSize: 18, color: '#000', textAlignVertical: 'top'},
-  details: {gap: 12}, status: {fontSize: 17, color: '#000', fontWeight: '600'}, primary: {padding: 14, backgroundColor: '#000'},
-  primaryText: {fontSize: 17, color: '#fff', fontWeight: '700'}});
+  createdTask: {padding: 14, borderWidth: 1, borderColor: '#000', gap: 6}, taskTitle: {fontSize: 18, fontWeight: '700', color: '#000'},
+  input: {flexGrow: 1, minWidth: 180, minHeight: 44, padding: 12, borderWidth: 1, fontSize: 18, color: '#000', textAlignVertical: 'top'},
+  details: {gap: 12}, status: {paddingHorizontal: 16, paddingVertical: 8, fontSize: 16, color: '#000', fontWeight: '600'}, footer: {padding: 12, gap: 8, flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1},
+  notice: {padding: 10, gap: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: '#000'},
+  primary: {padding: 14, backgroundColor: '#000'}, primaryText: {fontSize: 17, color: '#fff', fontWeight: '700'}});

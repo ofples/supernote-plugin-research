@@ -55,7 +55,7 @@ test('location changes preserve collection for unrelated edits, clear it across 
   assert.equal(locationChange({project_id: null}, {}, [], []).changed, false);
 });
 test('structured AI proposals only accept active collections in the selected project', () => {
-  const task = {content: 'Water plants', description: '', dueDate: null, priority: 1, projectId: 'p', sectionId: 's2', labels: []};
+  const task = {content: 'Water plants', description: '', dueDate: null, priority: 1, projectId: 'p', sectionId: 's2', labels: [], explicitFields: ['location', 'dueString'], sourceRowIds: [], sourceText: 'Water plants in Home / Garden'};
   assert.equal(validateProposal({tasks: [task]}, projects, sections)[0].sectionId, 's2');
   for (const changes of [{sectionId: 'qs'}, {sectionId: 'invented'}, {sectionId: 'archived'}, {projectId: null}, {sectionId: 123}]) {
     assert.throws(() => validateProposal({tasks: [{...task, ...changes}]}, projects, sections), /invalid/);
