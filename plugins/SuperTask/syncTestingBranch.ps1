@@ -12,16 +12,17 @@ if ($LASTEXITCODE -ne 0 -or $workingChanges.Count -gt 0) {
 }
 & git -C $PSScriptRoot fetch origin
 if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the user fork.' }
-foreach ($featureBranch in @('feature/offline-task-workflow', 'feature/project-overview')) {
+$featureBranches = @('feature/offline-task-workflow', 'feature/project-overview', 'feature/project-collections')
+foreach ($featureBranch in $featureBranches) {
     & git -C $PSScriptRoot merge --no-ff --no-edit "origin/$featureBranch"
     if ($LASTEXITCODE -ne 0) { throw "Resolve and review the $featureBranch merge before continuing." }
 }
-& git -C $PSScriptRoot merge-base --is-ancestor origin/feature/offline-task-workflow HEAD
-if ($LASTEXITCODE -ne 0) { throw 'Offline feature is not fully integrated.' }
-& git -C $PSScriptRoot merge-base --is-ancestor origin/feature/project-overview HEAD
-if ($LASTEXITCODE -ne 0) { throw 'Overview feature is not fully integrated.' }
+foreach ($featureBranch in $featureBranches) {
+    & git -C $PSScriptRoot merge-base --is-ancestor "origin/$featureBranch" HEAD
+    if ($LASTEXITCODE -ne 0) { throw "$featureBranch is not fully integrated." }
+}
 if ($Push) {
     & git -C $PSScriptRoot push origin $testingBranch
     if ($LASTEXITCODE -ne 0) { throw 'Could not push the updated testing branch.' }
 }
-Write-Host 'Both current feature heads are included. Run tests, build, verify_package.py and update TESTING.md before installing a new package.'
+Write-Host 'All three current feature heads are included. Run tests, build, verify_package.py and update TESTING.md before installing a new package.'

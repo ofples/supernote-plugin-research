@@ -1,40 +1,43 @@
-# Combined workflow and overview testing
+# Combined SuperTask testing
 
-Current branch: `release/workflow-overview-testing`. This branch contains both independent feature heads; it is for integration/testing, not a published release. Neither PR is merged into main.
+Current branch: `release/workflow-overview-testing`. This is an integration/testing branch, not a published release. All three feature histories are included; no PR is merged into main.
 
 | Feature | Draft PR in user fork | Included source revision |
 |---|---|---|
 | Offline queue, private settings/cache, batch review and optional AI | [PR 1](https://github.com/ofples/supernote-plugin-research/pull/1) | `4298b22457b60851b30cf008b828a9e0ee7c5cc9` |
 | Expandable project overview and native-inspired density | [PR 2](https://github.com/ofples/supernote-plugin-research/pull/2) | `be97009d6973090d0440f0239ea90f77f51285ee` |
+| Project collections across cache, overview, task forms and structured AI | [PR 3](https://github.com/ofples/supernote-plugin-research/pull/3) | `8a866bd575bb6e52b09f756e64c9fab558e36776` |
 
-Integration merge: `a54d167` (both histories retained, no conflicts). Testing-only package version is `0.4.0-beta.5`, code `10`. Existing plugin ID/key are unchanged. Native host pins and AI lockfile remain intact.
+Original integration: `a54d167`. Collections integration: `c8b5ca559f173bc3237da42432e2072176dfc9d3`. Histories were retained without conflicts. Collections PR uses the fixed `review/workflow-overview-base` comparison branch at `b60df9d` to isolate its diff from the earlier two PRs.
 
 ## Current artifact and checks
 
-`C:/Users/pless/Code/Supernote/SuperTask/plugins/SuperTask/build/outputs/SuperTask-combined-beta5.snplg`
+Testing package: **0.4.0-beta.8**, code **13**, with the user's full-width collection-header correction. Existing plugin ID/key, native host pins and lockfile are unchanged.
 
-7,513,233 bytes. SHA-256: `1fded7b33b3c9db4b7aa78bfaf092305701a434af057a861dc59e08f45f18896`.
+`C:/Users/pless/Code/Supernote/SuperTask/plugins/SuperTask/build/outputs/SuperTask-collections-beta8.snplg`
 
-- **39 tests passed**: 32 workflow/AI/transport/cache cases plus 7 overview/model/React interaction cases.
-- Full TypeScript passed after integration. Changed runtime-file lint has no errors; non-blocking style warnings remain. React's existing test renderer emits its deprecation notice.
-- Complete native/JS/package build passed. `verify_package.py` checks identity/icon/config/native classes/ReactPackage registrations/ARM64 libraries and both workflow and overview JS markers.
-- Both feature heads are ancestors of the testing branch. Feature worktrees and the testing checkout are clean after commits.
-- Inherited 69 dependency advisories remain; this is not an audit-clean release.
+7,516,264 bytes. SHA-256: `d2863a59a7f5a689e8018741692287185ba1261357fe6d12d0441710cffba5f2`.
 
-The Nomad's last installed package is **beta.4**, verified enabled and starting with its original eight active tasks and zero queue. The user then took the device; no further ADB interaction was performed. **Beta.5 has not been installed or tested on the device.** Workflow hardware evidence is in [VALIDATION.md](VALIDATION.md); overview scope and exact pending UI checks are in [OVERVIEW.md](OVERVIEW.md).
+- **51 tests passed**: the previous 39 workflow/AI/cache/transport/overview tests plus 12 collection cases.
+- Full TypeScript and changed runtime-file lint have no errors. Non-blocking style warnings and the existing test-renderer deprecation notice remain.
+- Complete native/JS build and `verify_package.py` passed, including identity/icon/permissions, collection/workflow/overview JS markers, actual nested native classes/registrations and ARM64-only library content.
+- The testing branch's runtime source matches the validated collections feature head; integration changed no runtime code. All three heads are ancestors of this branch.
+- Inherited 69 dependency advisories remain. This is not an audit-clean release.
+
+The Nomad's installed package is **beta.6/code 11**. Beta.5 overview and beta.6 collection functionality were exercised on 4 October: collection display, offline create/edit, restart retention, sync into the selected collection, online move and clearing to No collection passed. **Beta.8 is built locally and not uploaded/installed.** The user took the device and ADB work stopped. Beta.7 was staged in MyStyle but never installed; replace it with beta.8 before explicit installation.
+
+**One scratch task remains:** `Codex-collections-scratch-20261004-A` in House → No collection. Last observed total was ten active tasks, including the nine pre-existing tasks; zero queued changes. Wi-Fi is ON. Remove only the labeled test task when the device returns, preserving any new user work. Details and the precise pending checks are in [COLLECTIONS.md](COLLECTIONS.md).
 
 ## Keeping this branch current
 
-After either feature PR changes, commit/push its feature branch. From a clean testing checkout run `./plugins/SuperTask/syncTestingBranch.ps1` (add `-Push` to publish the integrated branch). The helper checks branch/cleanliness, fetches the user fork, merges both feature refs without rewriting history and verifies ancestry. It stops on conflicts; resolve and review them explicitly. It neither installs to a device nor publishes releases or merges PRs into main.
+After a feature changes, commit/push its feature branch. From a clean testing checkout run `./plugins/SuperTask/syncTestingBranch.ps1` (add `-Push` to publish the integration branch). The helper checks branch/cleanliness, fetches the user fork, merges **all three** feature refs without rewriting history and verifies each head's ancestry. It stops on conflicts. It does not install to a device, publish a release or merge PRs into main. Keep the collections comparison base fixed so its PR remains reviewable.
 
-Then rerun `npm run test:offline`, full TypeScript, appropriate lint, `buildPlugin.ps1` and `verify_package.py` from the plugin directory. Increase the testing package version/code before a new device install, and update these revisions, results and hash. Preserve prior validated artifacts under distinct ignored filenames. Device installation waits for the user's device availability.
+When runtime code changes, run the appropriate tests, TypeScript, lint, full build and package verifier. Increase the package version/code before another device installation and update this hash/results. Preserve prior validated artifacts under distinct ignored filenames. Documentation-only updates do not require rebuilding the unchanged runtime.
 
 ## Next Nomad session
 
-1. Back up affected state and install the full beta.5 package after confirming availability. Verify version, native storage startup and unchanged queued work.
-2. Projects → expand two projects, Expand all/Collapse all, switch Compact/Comfortable. Check task counts and rows against cached tasks, including an offline pending Inbox task. Empty projects must explain their state.
-3. Select a labeled scratch task then collapse its project: its selection must clear. Open project/back and task detail/back; expansions/density must remain during navigation. Confirm normal/enlarged text, touch targets, scrolling and e-ink refresh.
-4. Complete/undo only a labeled scratch task offline, reconnect/open and check the overview updates with queue acknowledgement.
-5. Perform the separate handwritten batch, source-link/landscape and optional paid AI checks in VALIDATION.md. Suggested date/priority examples: “water the plants tomorrow” and “P1: call mom today”; inspect structured suggestions before saving. Ambiguous “important” priority interpretation needs human review.
+1. Confirm availability, install beta.8 through explicit file selection and verify the actual version and preserved queue/settings.
+2. Inspect full-width collection rules, enlarged text, scrolling and + Task defaults. Exercise batch Details with different collections, Add row defaults, and atomic batch sync. Clean up the named scratch task and any newly labeled test tasks.
+3. The earlier handwritten batch/crop/source navigation and optional paid AI checks remain pending in [VALIDATION.md](VALIDATION.md). Do not treat local structured-SDK tests as a live paid AI verification.
 
-SuperDashboard and Todoist section/subtask hierarchy UI remain deferred/outside this implementation. No unrelated notes/tasks should be changed during validation.
+SuperDashboard remains deferred. No unrelated notes/tasks should be changed during validation. Section creation/renaming/deletion, subtask hierarchy and recurring offline changes are outside this extension.
