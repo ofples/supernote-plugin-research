@@ -297,7 +297,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         <TextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
-          onChangeText={(t) => { log('TaskDetail', `content changed: "${t.slice(0, 30)}"`); setContent(t); }}
+          onChangeText={(t) => { log('TaskDetail', 'Task title edited'); setContent(t); }}
           onFocus={() => log('TaskDetail', 'content FOCUSED')}
           placeholder="Task title"
           multiline
