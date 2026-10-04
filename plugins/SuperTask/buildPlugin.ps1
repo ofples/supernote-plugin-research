@@ -752,12 +752,15 @@ function Build-AndroidApk {
             }
             
             # Execute gradle build
-            $process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'gradlew.bat', 'buildCustomApkDebug' -Wait -PassThru -NoNewWindow
+            # Wait for the build command, not its long-lived Gradle daemon.
+            $process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'gradlew.bat', 'buildCustomApkDebug' -PassThru -NoNewWindow
+            $process.WaitForExit()
             $buildResult = $process.ExitCode
         }
         elseif (Get-Command 'gradle' -ErrorAction SilentlyContinue) {
             Write-ColorOutput 'Using gradle to execute buildCustomApkDebug task...' 'Green'
-            $process = Start-Process -FilePath 'gradle' -ArgumentList 'buildCustomApkDebug' -Wait -PassThru -NoNewWindow
+            $process = Start-Process -FilePath 'gradle' -ArgumentList 'buildCustomApkDebug' -PassThru -NoNewWindow
+            $process.WaitForExit()
             $buildResult = $process.ExitCode
         }
         else {

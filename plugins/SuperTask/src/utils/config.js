@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
   privacyWarning: '',
   debugServerUrl: '',
   defaultProjectId: null,
+  defaultSectionId: null,
   defaultPriority: 1,
   enabledProjectIds: [],
   // 'last' resolves to lastOpenedTab (F-038). Existing installs keep their

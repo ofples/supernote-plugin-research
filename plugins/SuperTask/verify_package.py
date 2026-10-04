@@ -32,6 +32,9 @@ with zipfile.ZipFile(artifact) as plugin:
     if (root / 'src/overview/model.js').exists():
         for marker in [b'Expand all', b'Collapse all', b'Comfortable']:
             assert marker in bundle, f'Missing overview implementation: {marker}'
+    if (root / 'src/collections/model.js').exists():
+        for marker in [b'No collection', b'Unavailable collections', b'Choose collection', b'sectionId']:
+            assert marker in bundle, f'Missing collections implementation: {marker}'
     with zipfile.ZipFile(io.BytesIO(plugin.read('app.npk'))) as native:
         libs = [name for name in native.namelist() if name.startswith('lib/') and name.endswith('.so')]
         assert libs == ['lib/arm64-v8a/libnative-lib.so'], libs

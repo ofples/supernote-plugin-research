@@ -311,6 +311,7 @@ function App(): React.JSX.Element {
           nav={nav}
           projects={current.params?.projects || []}
           defaultProjectId={current.params?.defaultProjectId}
+          defaultSectionId={current.params?.defaultSectionId}
           initialContent={current.params?.initialContent}
           initialDescription={current.params?.initialDescription}
           captureMode={current.params?.captureMode}
@@ -323,6 +324,7 @@ function App(): React.JSX.Element {
       )}
       {current.name === 'task-batch' && <BatchAdd key={current.id} nav={nav}
         projects={current.params?.projects || []} defaultProjectId={current.params?.defaultProjectId}
+        defaultSectionId={current.params?.defaultSectionId}
         initialContent={current.params?.initialContent} initialDescription={current.params?.initialDescription}
         noteContext={current.params?.noteContext} capturedAt={current.params?.capturedAt} preview={current.params?.preview} />}
       {current.name === 'ai-settings' && <AISettings key={current.id} nav={nav} />}

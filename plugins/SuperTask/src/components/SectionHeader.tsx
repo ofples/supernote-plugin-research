@@ -13,9 +13,10 @@ type Props = {
   title: string;
   count?: number;
   onPress?: () => void;
+  action?: React.ReactNode;
 };
 
-export default function SectionHeader({title, count, onPress}: Props) {
+export default function SectionHeader({title, count, onPress, action}: Props) {
   const scale = useFontScale();
   const content = (
     <View style={styles.container}>
@@ -23,6 +24,7 @@ export default function SectionHeader({title, count, onPress}: Props) {
       <View style={styles.right}>
         {count !== undefined ? <Chip label={String(count)} /> : null}
         {onPress ? <Text style={styles.arrow}>{'>'}</Text> : null}
+        {action}
       </View>
     </View>
   );
@@ -47,6 +49,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   title: {
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: '700',
     color: '#000000',

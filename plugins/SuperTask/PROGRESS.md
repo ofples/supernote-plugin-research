@@ -1,5 +1,11 @@
 # Offline task workflow progress
 
+## Collections extension — 4 October 2026
+
+`feature/project-collections` adds cached Todoist sections, collection grouping in both project views, inline project/collection choices in create/edit/batch/default settings, collection metadata in other views and validated structured AI section suggestions. Full-width collection rules include the user's visual correction. See COLLECTIONS.md for the review base, package hash, exact behavior and device evidence.
+
+**51 tests**, full TypeScript, changed-code lint error checks, native/JS build and nested package inspection pass. Beta.5 and beta.6 were installed and started; beta.6 proved offline section creation/editing, restart retention, sync, online section moves and clearing to No collection. Final beta.8/code 13 is built but **not installed**, because the user took the Nomad. Device interaction stopped. One labeled scratch task remains in House → No collection for cleanup next session; Wi-Fi is ON. Batch/large-text/full-width divider and paid AI hardware checks remain pending. No main/upstream merges or releases occurred.
+
 ## Combined testing branch — 3 October 2026
 
 `release/workflow-overview-testing` contains both independently reviewable draft PRs: offline/batch/AI [PR 1](https://github.com/ofples/supernote-plugin-research/pull/1), overview [PR 2](https://github.com/ofples/supernote-plugin-research/pull/2). Both histories were merged without conflicts. Exact feature revisions, beta.5 package hash and maintenance instructions are in TESTING.md.

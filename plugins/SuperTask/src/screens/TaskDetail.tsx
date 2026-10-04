@@ -28,6 +28,7 @@ import {invalidateCache} from '../cache/taskCache';
 import {log, logError} from '../utils/debug';
 import PriorityPicker from '../components/PriorityPicker';
 import ProjectPicker from '../components/ProjectPicker';
+import {useLocations} from '../collections/useLocations';
 import DatePicker from '../components/DatePicker';
 import {useFontScale} from '../utils/useFontScale';
 import {retryOffline} from '../offline/service';
@@ -62,7 +63,8 @@ function parseNoteContext(desc: string): {notePath: string; noteFile: string; pa
   };
 }
 
-export default function TaskDetail({nav, task, projects}: Props) {
+export default function TaskDetail({nav, task, projects: initialProjects}: Props) {
+  const {projects, sections} = useLocations(initialProjects);
   const scale = useFontScale();
   const [content, setContent] = useState(task?.content || '');
   const rawDescription = task?.description || '';
@@ -74,6 +76,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
   const [priority, setPriority] = useState(task?.priority || 1);
   const [dueString, setDueString] = useState(task?.due?.string || task?.due?.date || '');
   const [projectId, setProjectId] = useState(task?.project_id || null);
+  const [sectionId, setSectionId] = useState(task?.section_id || null);
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -129,7 +132,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
     description !== (task.description || '') ||
     priority !== (task.priority || 1) ||
     dueString !== (task.due?.string || task.due?.date || '') ||
-    projectId !== (task.project_id || null);
+    projectId !== (task.project_id || null) || sectionId !== (task.section_id || null);
 
   const handleSave = async () => {
     log('TaskDetail', `SAVE pressed. isDirty=${isDirty} saving=${saving} content="${content}"`);
@@ -156,6 +159,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
         priority,
         dueString: dueString.trim(),
         projectId: projectId || null,
+        sectionId,
       });
       log('TaskDetail', `Updated task ${task.id}`);
       // Update the task reference so isDirty resets
@@ -164,6 +168,7 @@ export default function TaskDetail({nav, task, projects}: Props) {
       task.priority = priority;
       task.due = dueString.trim() ? {...(task.due || {}), date: dueString.trim(), string: dueString.trim()} : null;
       task.project_id = projectId;
+      task.section_id = sectionId;
       setStatus('');
       setLastSaved(new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
     } catch (err: any) {
@@ -343,7 +348,8 @@ export default function TaskDetail({nav, task, projects}: Props) {
           <ProjectPicker
             projects={projects}
             selectedId={projectId}
-            onChange={(id) => { log('TaskDetail', `project changed: ${id}`); setProjectId(id); }}
+            onChange={id => {if (id !== projectId) setSectionId(null); setProjectId(id);}}
+            sections={sections} selectedSectionId={sectionId} onSectionChange={setSectionId}
           />
         </View>
       )}

@@ -31,8 +31,8 @@ function createSyncWorker(store, api, clock = Date.now) {
         // its identical frozen UUID/payload instead of manufacturing new tasks.
         await store.transaction(s => acknowledge(s, sending, response, clock()));
       }
-      const {tasks, projects} = await api.fetchSnapshot();
-      return store.transaction(s => replaceRemote(s, tasks, projects, clock()));
+      const {tasks, projects, sections} = await api.fetchSnapshot();
+      return store.transaction(s => replaceRemote(s, tasks, projects, clock(), sections));
     })();
     running = work.finally(() => { running = null; });
     return running;

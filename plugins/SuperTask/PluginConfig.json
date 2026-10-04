@@ -1,10 +1,10 @@
 {
   "name": "SuperTask",
-  "desc": "Offline Todoist, lasso batch review, optional AI and expandable project overview",
+  "desc": "Offline Todoist, project collections, lasso batch review and optional AI",
   "author": "Ofer Plesser (fork of SuperTask by apclark31)",
   "iconPath": "assets/icon.png",
-  "versionName": "0.4.0-beta.5",
-  "versionCode": "10",
+  "versionName": "0.4.0-beta.8",
+  "versionCode": "13",
   "pluginID": "supertask001",
   "pluginKey": "SuperTask",
   "jsMainPath": "index",

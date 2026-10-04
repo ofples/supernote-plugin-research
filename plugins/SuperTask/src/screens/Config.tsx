@@ -28,6 +28,8 @@ import {log} from '../utils/debug';
 import {reloadGestureConfig} from '../utils/gestureDetector';
 import {importTokenFromFile, findTokenFile, TOKEN_DIR_LABEL} from '../utils/tokenImport';
 import {PERMISSION_GROUPS, getPermissionStates, ensurePermissionGroup} from '../utils/permissions';
+import ProjectPicker from '../components/ProjectPicker';
+import {useLocations} from '../collections/useLocations';
 import {FONT_SCALE_STEPS} from '../utils/fontScale';
 import {
   Section,
@@ -118,6 +120,8 @@ export default function Config({nav}: Props) {
   const [markAsTextFontSize, setMarkAsTextFontSize] = useState(cfg0?.markAsTextFontSize || 32);
   const [enabledProjectIds, setEnabledProjectIds] = useState<string[]>(cfg0?.enabledProjectIds || []);
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(cfg0?.defaultProjectId || null);
+  const [defaultSectionId, setDefaultSectionId] = useState<string | null>(cfg0?.defaultSectionId || null);
+  const locations = useLocations(projects);
   const [debugMode, setDebugMode] = useState(cfg0?.debugMode === true);
   const [debugServerUrl, setDebugServerUrlField] = useState(cfg0?.debugServerUrl || '');
   const [fontScale, setFontScaleField] = useState(cfg0?.fontScale || 1);
@@ -170,6 +174,7 @@ export default function Config({nav}: Props) {
       }
       if (config.defaultTab) setDefaultTab(config.defaultTab);
       if (config.defaultProjectId) setDefaultProjectId(config.defaultProjectId);
+      setDefaultSectionId(config.defaultSectionId || null);
       if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
       if (config.debugMode !== undefined) setDebugMode(config.debugMode);
       if (config.markAsTextFontSize) setMarkAsTextFontSize(config.markAsTextFontSize);
@@ -381,10 +386,6 @@ export default function Config({nav}: Props) {
     }
   };
 
-  const projectOptions = [
-    {key: null as string | null, label: 'None'},
-    ...projects.map(p => ({key: p.id as string | null, label: p.name as string})),
-  ];
   // F-036 coupling: the default project is a WRITE default, "Show projects"
   // is a READ filter. A default that is unticked under Show projects still
   // receives every new task, but Today/Upcoming/Done hide it -- warn on the
@@ -665,17 +666,21 @@ export default function Config({nav}: Props) {
               control would be a lone "None" cell. */}
           {projects.length > 0 && (
             <SettingRow
-              label="Default project for new tasks"
+              label="Default project and collection for new tasks"
               hint="Where a captured task lands unless you pick a project in the form"
               saved={savedRow === 'defaultProject'}>
-              <Segmented
-                options={projectOptions}
-                value={defaultProjectId}
+              <ProjectPicker projects={projects} selectedId={defaultProjectId} sections={locations.sections}
+                selectedSectionId={defaultSectionId}
                 onChange={v => {
-                  setDefaultProjectId(v);
-                  applyChange('defaultProject', {defaultProjectId: v});
+                  if (v === defaultProjectId) return;
+                  setDefaultProjectId(v); setDefaultSectionId(null);
+                  applyChange('defaultProject', {defaultProjectId: v, defaultSectionId: null});
                 }}
-              />
+                onSectionChange={v => {
+                  const effectiveProject = defaultProjectId || projects.find(p => p.inbox_project || p.is_inbox_project)?.id || null;
+                  setDefaultProjectId(effectiveProject); setDefaultSectionId(v);
+                  applyChange('defaultProject', {defaultProjectId: effectiveProject, defaultSectionId: v});
+                }} />
               {defaultProjectHidden && (
                 <View style={s.notice}>
                   <Text style={s.noticeText}>
