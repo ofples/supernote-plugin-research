@@ -250,7 +250,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
     setProjectMap(pMap);
     setProjectList(fetchedProjects || []);
     setCollectionList(fetchedSections || []);
-    setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted));
+    setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted && !task.remoteMissing));
   }, []);
   useEffect(() => subscribeCache((data: any) => {
     setSyncInfo(data); setError(''); setLoading(false);
@@ -492,6 +492,12 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
 
   const today = localDate(new Date());
 
+  const isActiveRegistryTask = (reference: any) => {
+    const authoritative = (syncInfo?.allTasks || tasks).find((task: any) => task.id === reference.id);
+    const task = authoritative || reference;
+    return !task.completed && !task.deleted && !task.awaitingRecurrence && !task.occurrencePending && !task.remoteMissing;
+  };
+
   // Tasks linked to the current NOTE (any page), each with the page it lives
   // on so the band tells you where you'd jump in a long note (design-home-v2).
   // Sources: supertask:// links scanned on the current page, description
@@ -526,8 +532,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
 
     // 3. Registry entries for this note (carry pageNum; cover pending-sync tasks)
     for (const rt of registryNoteTasks) {
-      const authoritative = (syncInfo?.allTasks || tasks).find((task: any) => task.id === rt.id);
-      if ((authoritative || rt).completed || (authoritative || rt).deleted || (authoritative || rt).awaitingRecurrence || (authoritative || rt).occurrencePending) continue;
+      if (!isActiveRegistryTask(rt)) continue;
       if (!seen.has(rt.id)) {
         seen.add(rt.id);
         const full = tasks.find(t => t.id === rt.id);
@@ -822,8 +827,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
     // WHERE the note lives, not just its name.
     const byNote: Record<string, {label: string; entries: any[]}> = {};
     for (const dt of deviceTasks) {
-      const authoritative = (syncInfo?.allTasks || tasks).find((task: any) => task.id === dt.id);
-      if ((authoritative || dt).completed || (authoritative || dt).deleted || (authoritative || dt).awaitingRecurrence || (authoritative || dt).occurrencePending) continue;
+      if (!isActiveRegistryTask(dt)) continue;
       const key = dt.notePath || dt.noteFile || 'Unknown';
       if (!byNote[key]) {
         byNote[key] = {label: noteLabel(dt.notePath, dt.noteFile), entries: []};
@@ -902,7 +906,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
     saveConfig({lastOpenedTab: next}).catch(() => {});
   };
   const counts: Record<string, number> = {today: 0, tomorrow: 0, upcoming: 0, inbox: 0, note: noteTasks.length,
-    device: deviceTasks.filter(task => !task.completed && !task.deleted && !task.awaitingRecurrence && !task.occurrencePending).length, done: projectFiltered(doneTasks).length};
+    device: deviceTasks.filter(isActiveRegistryTask).length, done: projectFiltered(doneTasks).length};
   for (const task of projectFiltered(tasks)) {
     const due = (task.due?.date || '').slice(0, 10);
     if (due && due <= today) counts.today++;
