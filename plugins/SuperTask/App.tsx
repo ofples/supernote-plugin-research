@@ -97,7 +97,7 @@ function DeepLinkLoader({taskId, nav}: {taskId: string; nav: any}) {
         }
 
         if (taskResult.status === 'fulfilled' && taskResult.value) {
-          log('DeepLink', `Found task: "${taskResult.value.content}"`);
+          log('DeepLink', 'Found task from Todoist/cache');
           nav.replace('task-detail', {task: taskResult.value, projects});
           return;
         }
@@ -108,7 +108,7 @@ function DeepLinkLoader({taskId, nav}: {taskId: string; nav: any}) {
         // Fallback: build minimal task object from registry
         const regTask = await getRegistryTask(taskId);
         if (regTask) {
-          log('DeepLink', `Found task in registry: "${regTask.content}"`);
+          log('DeepLink', 'Found task in registry');
           nav.replace('task-detail', {
             task: {id: taskId, content: regTask.content, description: '', priority: 1},
             projects,
@@ -152,7 +152,7 @@ function App(): React.JSX.Element {
   const initialScreenName = useRef(screenStack[0].name).current;
 
   const push = useCallback((name: string, params?: Record<string, any>) => {
-    log('App', `push: ${name} ${params ? JSON.stringify(params) : ''}`);
+    log('App', `push: ${name} params=${params ? Object.keys(params).join(',') : 'none'}`);
     setScreenStack(prev => [...prev, {name, params, id: ++navIdCounter}]);
   }, []);
 
@@ -195,7 +195,7 @@ function App(): React.JSX.Element {
     // directly when the App is already mounted (re-show via showPluginView).
     // For first-mount, getInitialScreen() reads the global instead.
     global.__superTaskNavigate = (screen: string, params?: Record<string, any>) => {
-      log('App', `__superTaskNavigate: ${screen} ${params ? JSON.stringify(params) : ''}`);
+      log('App', `__superTaskNavigate: ${screen} params=${params ? Object.keys(params).join(',') : 'none'}`);
       resetToRef.current?.(screen, params);
     };
 
@@ -296,51 +296,58 @@ function App(): React.JSX.Element {
 
   return (
     <View style={[styles.container, isOverlay && styles.containerOverlay]}>
-      {current.name === 'task-home' && (
-        <TaskHome key={current.id} nav={nav} focusTab={current.params?.focusTab} />
-      )}
-      {current.name === 'project-view' && (
-        <ProjectView key={current.id} nav={nav} projectId={current.params?.projectId} projectName={current.params?.projectName} />
-      )}
-      {current.name === 'task-detail' && (
-        <TaskDetail key={current.id} nav={nav} task={current.params?.task} projects={current.params?.projects} />
-      )}
-      {current.name === 'task-add' && (
-        <TaskAdd
-          key={current.id}
-          nav={nav}
-          projects={current.params?.projects || []}
-          defaultProjectId={current.params?.defaultProjectId}
-          defaultSectionId={current.params?.defaultSectionId}
-          initialContent={current.params?.initialContent}
-          initialDescription={current.params?.initialDescription}
-          captureMode={current.params?.captureMode}
-          noteContext={current.params?.noteContext}
-          capturedAt={current.params?.capturedAt}
-        />
-      )}
-      {current.name === 'capture-lasso' && (
-        <Capture key={current.id} mode="lasso" nav={nav} />
-      )}
-      {current.name === 'task-batch' && <BatchAdd key={current.id} nav={nav}
-        projects={current.params?.projects || []} defaultProjectId={current.params?.defaultProjectId}
-        defaultSectionId={current.params?.defaultSectionId}
-        initialContent={current.params?.initialContent} initialDescription={current.params?.initialDescription}
-        noteContext={current.params?.noteContext} capturedAt={current.params?.capturedAt} preview={current.params?.preview}
-        initialRows={current.params?.initialRows} captureMode={current.params?.captureMode} />}
-      {current.name === 'ai-settings' && <AISettings key={current.id} nav={nav} />}
-      {current.name === 'capture-doc' && (
-        <Capture key={current.id} mode="doc" nav={nav} />
-      )}
-      {current.name === 'deep-link-loading' && (
-        <DeepLinkLoader key={current.id} taskId={current.params?.taskId} nav={nav} />
-      )}
-      {current.name === 'config' && (
-        <Config key={current.id} onNavigate={(s: string) => resetTo(s)} nav={nav} />
-      )}
-      {current.name === 'diagnostics' && (
-        <Diagnostics key={current.id} nav={nav} />
-      )}
+      {screenStack.filter(entry => entry.id === current.id || entry.name === 'task-add' || entry.name === 'task-batch').map(entry => {
+        const active = entry.id === current.id;
+        return <View key={entry.id} style={active ? styles.screen : styles.hiddenScreen}
+          pointerEvents={active ? 'auto' : 'none'} accessibilityElementsHidden={!active}
+          importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}>
+          {entry.name === 'task-home' && (
+            <TaskHome key={entry.id} nav={nav} focusTab={entry.params?.focusTab} />
+          )}
+          {entry.name === 'project-view' && (
+            <ProjectView key={entry.id} nav={nav} projectId={entry.params?.projectId} projectName={entry.params?.projectName} />
+          )}
+          {entry.name === 'task-detail' && (
+            <TaskDetail key={entry.id} nav={nav} task={entry.params?.task} projects={entry.params?.projects} />
+          )}
+          {entry.name === 'task-add' && (
+            <TaskAdd
+              key={entry.id}
+              nav={nav}
+              projects={entry.params?.projects || []}
+              defaultProjectId={entry.params?.defaultProjectId}
+              defaultSectionId={entry.params?.defaultSectionId}
+              initialContent={entry.params?.initialContent}
+              initialDescription={entry.params?.initialDescription}
+              captureMode={entry.params?.captureMode}
+              noteContext={entry.params?.noteContext}
+              capturedAt={entry.params?.capturedAt}
+            />
+          )}
+          {entry.name === 'capture-lasso' && (
+            <Capture key={entry.id} mode="lasso" nav={nav} />
+          )}
+          {entry.name === 'task-batch' && <BatchAdd key={entry.id} nav={nav} active={active}
+            projects={entry.params?.projects || []} defaultProjectId={entry.params?.defaultProjectId}
+            defaultSectionId={entry.params?.defaultSectionId}
+            initialContent={entry.params?.initialContent} initialDescription={entry.params?.initialDescription}
+            noteContext={entry.params?.noteContext} capturedAt={entry.params?.capturedAt} preview={entry.params?.preview}
+            initialRows={entry.params?.initialRows} captureMode={entry.params?.captureMode} />}
+          {entry.name === 'ai-settings' && <AISettings key={entry.id} nav={nav} />}
+          {entry.name === 'capture-doc' && (
+            <Capture key={entry.id} mode="doc" nav={nav} />
+          )}
+          {entry.name === 'deep-link-loading' && (
+            <DeepLinkLoader key={entry.id} taskId={entry.params?.taskId} nav={nav} />
+          )}
+          {entry.name === 'config' && (
+            <Config key={entry.id} onNavigate={(s: string) => resetTo(s)} nav={nav} />
+          )}
+          {entry.name === 'diagnostics' && (
+            <Diagnostics key={entry.id} nav={nav} />
+          )}
+        </View>;
+      })}
     </View>
   );
 }
@@ -350,6 +357,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
+  // Hidden forms retain their local draft/confirmation state but cannot take
+  // touches, occupy layout space, or enter the accessibility focus order.
+  screen: {flex: 1},
+  hiddenScreen: {display: 'none'},
   containerOverlay: {
     backgroundColor: 'transparent',
   },
