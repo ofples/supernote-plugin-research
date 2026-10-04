@@ -58,6 +58,7 @@ export default function Capture({mode, nav}: {mode: 'lasso' | 'doc'; nav: any}) 
       if (!alive.current || generation !== run.current) return;
       nav.resetTo(mode === 'lasso' ? 'task-batch' : 'task-add', {projects,
         defaultProjectId: projects.some((project: any) => project.id === config.defaultProjectId) ? config.defaultProjectId : null,
+        defaultSectionId: projects.some((project: any) => project.id === config.defaultProjectId) ? config.defaultSectionId : null,
         initialContent: content,
         noteContext, capturedAt, preview, captureMode: mode});
     } catch (error: any) {

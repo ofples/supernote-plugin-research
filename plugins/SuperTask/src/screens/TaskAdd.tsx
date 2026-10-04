@@ -20,6 +20,7 @@ import {log, logError} from '../utils/debug';
 import {addTask as registryAddTask} from '../utils/taskRegistry';
 import PriorityPicker from '../components/PriorityPicker';
 import ProjectPicker from '../components/ProjectPicker';
+import {useLocations} from '../collections/useLocations';
 import DatePicker from '../components/DatePicker';
 import {useFontScale} from '../utils/useFontScale';
 import {clampRectToPage} from '../utils/rectUtils';
@@ -63,6 +64,7 @@ type Props = {
   nav: Nav;
   projects: any[];
   defaultProjectId?: string;
+  defaultSectionId?: string;
   initialContent?: string;
   initialDescription?: string;
   captureMode?: 'lasso' | 'doc';
@@ -70,7 +72,8 @@ type Props = {
   capturedAt?: number;
 };
 
-export default function TaskAdd({nav, projects, defaultProjectId, initialContent, initialDescription, captureMode, noteContext, capturedAt}: Props) {
+export default function TaskAdd({nav, projects: initialProjects, defaultProjectId, defaultSectionId, initialContent, initialDescription, captureMode, noteContext, capturedAt}: Props) {
+  const {projects, sections} = useLocations(initialProjects);
   const saveRequest = useRef({});
   const captureTime = useRef(capturedAt || Date.now());
   const scale = useFontScale();
@@ -79,6 +82,7 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
   const [priority, setPriority] = useState(1);
   const [dueString, setDueString] = useState('');
   const [projectId, setProjectId] = useState<string | null>(defaultProjectId || null);
+  const [sectionId, setSectionId] = useState<string | null>(defaultSectionId || null);
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -123,6 +127,7 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
         content: content.trim(),
         description: fullDescription || undefined,
         projectId: projectId || undefined,
+        sectionId,
         priority,
         dueString: dueString.trim() || undefined,
         source: noteContext,
@@ -352,7 +357,8 @@ export default function TaskAdd({nav, projects, defaultProjectId, initialContent
           <ProjectPicker
             projects={projects}
             selectedId={projectId}
-            onChange={setProjectId}
+            onChange={id => {if (id !== projectId) setSectionId(null); setProjectId(id);}}
+            sections={sections} selectedSectionId={sectionId} onSectionChange={setSectionId}
           />
         </View>
       )}

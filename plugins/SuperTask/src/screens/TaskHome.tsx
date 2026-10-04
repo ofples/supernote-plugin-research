@@ -73,6 +73,8 @@ export default function TaskHome({nav, focusTab}: Props) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [projectMap, setProjectMap] = useState<ProjectMap>({});
   const [projectList, setProjectList] = useState<any[]>([]);
+  const [collectionList, setCollectionList] = useState<any[]>([]);
+  const collectionName = (task: any) => task.section_id ? collectionList.find(section => section.id === task.section_id)?.name || 'Unavailable collection' : undefined;
   // Tab resolution (F-038): session memory > deep-link focusTab > configured
   // default ('last' resolves to the persisted lastOpenedTab). Session memory
   // is the tab the user was on before another screen pushed over TaskHome;
@@ -247,8 +249,8 @@ export default function TaskHome({nav, focusTab}: Props) {
   // fingerprint stale in the safe direction -- the next fetch differs from
   // it and repaints.
   const dataFp = useRef('');
-  const applyData = useCallback((fetchedTasks: any[], fetchedProjects: any[]) => {
-    const fp = JSON.stringify([fetchedTasks, fetchedProjects]);
+  const applyData = useCallback((fetchedTasks: any[], fetchedProjects: any[], fetchedSections: any[] = []) => {
+    const fp = JSON.stringify([fetchedTasks, fetchedProjects, fetchedSections]);
     if (fp === dataFp.current) {
       log('TaskHome', 'Fetched data unchanged -- skipping repaint');
       return;
@@ -258,11 +260,12 @@ export default function TaskHome({nav, focusTab}: Props) {
     (fetchedProjects || []).forEach((p: any) => { pMap[p.id] = p.name; });
     setProjectMap(pMap);
     setProjectList(fetchedProjects || []);
+    setCollectionList(fetchedSections || []);
     setTasks(fetchedTasks || []);
   }, []);
   useEffect(() => subscribeCache((data: any) => {
     setSyncInfo(data); setError(''); setLoading(false);
-    applyData(data.tasks, data.projects);
+    applyData(data.tasks, data.projects, data.sections);
     getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
     completedData().then(setDoneTasks).catch(() => {});
   }), [applyData]);
@@ -294,7 +297,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       const data = await fetchTaskData();
       if (data) {
         setSyncInfo(data);
-        applyData(data.tasks, data.projects);
+        applyData(data.tasks, data.projects, data.sections);
         await reconcileRegistry(data.tasks);
         log('TaskHome', `Loaded ${data.tasks.length} tasks, ${data.projects.length} projects${silent ? ' (silent)' : ''}`);
       } else {
@@ -325,7 +328,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       if (cached) {
         setSyncInfo(cached);
         log('TaskHome', `Cache hit: ${cached.tasks.length} tasks (age: ${Date.now() - cached.timestamp}ms)`);
-        applyData(cached.tasks, cached.projects);
+        applyData(cached.tasks, cached.projects, cached.sections);
         setLoading(false);
         // Kick the heal from cached data NOW instead of after the network
         // fetch -- the rename probe is seconds-slow already, and waiting on
@@ -347,7 +350,7 @@ export default function TaskHome({nav, focusTab}: Props) {
         .then((data: any) => {
           if (data) {
             setSyncInfo(data);
-            applyData(data.tasks, data.projects);
+            applyData(data.tasks, data.projects, data.sections);
             reconcileRegistry(data.tasks);
             log('TaskHome', `Fresh data: ${data.tasks.length} tasks, ${data.projects.length} projects`);
           } else if (!cached) {
@@ -499,7 +502,7 @@ export default function TaskHome({nav, focusTab}: Props) {
   const handleAddTask = async () => {
     log('TaskHome', 'ADD TASK pressed');
     const config = await loadConfig();
-    nav.push('task-add', {projects: projectList, defaultProjectId: config.defaultProjectId});
+    nav.push('task-add', {projects: projectList, defaultProjectId: config.defaultProjectId, defaultSectionId: config.defaultSectionId});
   };
 
   const today = localDate(new Date());
@@ -570,7 +573,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               selected={sel.selectedIds.includes(task.id)}
               onCheckPress={sel.toggleSelect}
               onPress={handleTaskPress}
-              showProject={projectMap[task.project_id]}
+              showProject={projectMap[task.project_id]} showCollection={collectionName(task)}
               pageNum={pageNum}
               // Jump button only for tasks on a DIFFERENT page -- you're
               // already looking at the current one
@@ -608,7 +611,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       const pending = (syncInfo?.allTasks || tasks).filter((task: any) => task.syncState !== 'synced');
       if (!pending.length) return <View style={styles.centered}><Text style={styles.emptyText}>No tasks waiting to sync</Text></View>;
       return <FlatList data={pending} keyExtractor={(task: any) => task.id} renderItem={({item}) =>
-        <TaskRow task={item} onCheckPress={() => nav.push('task-detail', {task: item, projects: projectList})}
+        <TaskRow task={item} showCollection={collectionName(item)} onCheckPress={() => nav.push('task-detail', {task: item, projects: projectList})}
           onPress={task => nav.push('task-detail', {task, projects: projectList})} checked={item.completed} />}/>;
     }
     if (activeTab === 'today') return renderTodayTab();
@@ -660,7 +663,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               completedAt={item.task.completed_at}
               onCheckPress={handleReopen}
               onPress={handleTaskPress}
-              showProject={projectMap[item.task.project_id]}
+              showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
             />
           );
         }}
@@ -728,7 +731,7 @@ export default function TaskHome({nav, focusTab}: Props) {
                 completedAt={item.task.completed_at}
                 onCheckPress={handleReopen}
                 onPress={handleTaskPress}
-                showProject={projectMap[item.task.project_id]}
+                showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
               />
             );
           }
@@ -788,7 +791,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               selected={sel.selectedIds.includes(item.task.id)}
               onCheckPress={sel.toggleSelect}
               onPress={handleTaskPress}
-              showProject={projectMap[item.task.project_id]}
+              showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
             />
           );
         }}
@@ -806,7 +809,7 @@ export default function TaskHome({nav, focusTab}: Props) {
       ? projectList.filter(p => enabledProjectIds.includes(p.id))
       : projectList;
     return (
-      <ProjectOverview projects={filtered} tasks={tasks} selectedIds={sel.selectedIds}
+      <ProjectOverview projects={filtered} tasks={tasks} sections={collectionList} selectedIds={sel.selectedIds}
         onSelect={sel.toggleSelect} onTask={handleTaskPress}
         onProject={project => nav.push('project-view', {projectId: project.id, projectName: project.name})} />
     );
@@ -879,7 +882,7 @@ export default function TaskHome({nav, focusTab}: Props) {
               selected={sel.selectedIds.includes(item.task.id)}
               onCheckPress={sel.toggleSelect}
               onPress={handleTaskPress}
-              showProject={projectMap[item.task.project_id]}
+              showProject={projectMap[item.task.project_id]} showCollection={collectionName(item.task)}
               pageNum={item.pageNum}
               onOpenNote={
                 item.openPath
@@ -937,7 +940,10 @@ export default function TaskHome({nav, focusTab}: Props) {
               <Pressable style={[styles.headerButton, styles.headerButtonPrimary]} onPress={handleAddTask}>
                 <Text style={[styles.headerButtonText, styles.headerButtonPrimaryText]}>+ New</Text>
               </Pressable>
-              <Pressable style={styles.headerButton} onPress={() => nav.push('task-batch', {projects: projectList})}>
+              <Pressable style={styles.headerButton} onPress={async () => {
+                const config = await loadConfig();
+                nav.push('task-batch', {projects: projectList, defaultProjectId: config.defaultProjectId, defaultSectionId: config.defaultSectionId});
+              }}>
                 <Text style={styles.headerButtonText}>+ Batch</Text>
               </Pressable>
               {debugMode && (

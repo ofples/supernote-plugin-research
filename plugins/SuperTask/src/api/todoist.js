@@ -200,12 +200,15 @@ export async function createTask(parameters) {
   return (await saveOfflineBatch([draft], source, capturedAt, request))[0];
 }
 
-export async function updateTask(taskId, {content, description, priority, dueString, projectId}) {
+export async function updateTask(taskId, {content, description, priority, dueString, projectId, sectionId}) {
   const task = await getTask(taskId);
+  const data = await offlineData();
+  const {locationChange} = require('../collections/model');
+  const location = locationChange(task, {projectId, sectionId}, data.projects, data.sections);
   if (!task.remoteId && taskId.startsWith('local:')) {
     await editOfflineTask(taskId, {content: content ?? task.content, description: description ?? task.description,
       priority: priority ?? task.priority, dueString: dueString ?? task.due?.date,
-      projectId: projectId !== undefined ? projectId : task.project_id, labels: task.labels});
+      projectId: location.projectId, sectionId: location.sectionId, labels: task.labels});
     return;
   }
   if (task.syncState && task.syncState !== 'synced') throw new Error('Resolve pending sync before editing a task already sent to Todoist.');
@@ -215,14 +218,25 @@ export async function updateTask(taskId, {content, description, priority, dueStr
   if (description !== undefined) body.description = description;
   if (priority !== undefined) body.priority = priority;
   if (dueString !== undefined) body.due_string = dueString;
-  if (projectId !== undefined) body.project_id = projectId;
 
   log('API', `Updating task ${taskId}: ${JSON.stringify(body)}`);
-  const updated = await todoistFetch(`/tasks/${taskId}`, {
+  let updated = Object.keys(body).length ? await todoistFetch(`/tasks/${encodeURIComponent(taskId)}`, {
     method: 'POST',
     body: JSON.stringify(body),
-  });
-  if (updated?.id) await rememberRemoteTask(updated);
+  }) : task;
+  if (Object.keys(body).length && updated?.id) await rememberRemoteTask(updated);
+  if (location.changed) {
+    try {
+      const moved = await todoistFetch(`/tasks/${encodeURIComponent(taskId)}/move`, {
+        method: 'POST', body: JSON.stringify(location.body),
+      });
+      updated = moved?.id ? moved : await todoistFetch(`/tasks/${encodeURIComponent(taskId)}`);
+      await rememberRemoteTask(updated);
+    } catch (error) {
+      await syncOffline().catch(() => {});
+      throw new Error(`Task details were saved, but its location could not be confirmed. Refresh before retrying. ${error.message}`);
+    }
+  }
   await syncOffline().catch(() => {});
   return updated;
 }

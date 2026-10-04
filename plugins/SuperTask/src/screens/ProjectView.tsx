@@ -1,8 +1,7 @@
 /**
  * ProjectView - Single project drill-down
  *
- * Shows all tasks for one project, grouped by:
- * Overdue > Today > Upcoming > No Date
+ * Shows collections with their tasks. Projects without collections use due groups.
  */
 
 import React, {useState, useEffect, useCallback} from 'react';
@@ -23,6 +22,8 @@ import SectionHeader from '../components/SectionHeader';
 import SelectionBar from '../components/SelectionBar';
 import {useTaskSelection} from '../utils/useTaskSelection';
 import {subscribeCache} from '../cache/taskCache';
+import {useLocations} from '../collections/useLocations';
+const {collectionGroups} = require('../collections/model');
 const {localDate} = require('../offline/model');
 
 type Nav = {
@@ -39,6 +40,7 @@ type Props = {
 };
 
 export default function ProjectView({nav, projectId, projectName}: Props) {
+  const {projects, sections: collections} = useLocations();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -79,7 +81,7 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
 
   const handleTaskPress = (task: any) => {
     log('ProjectView', `TASK pressed id=${task.id} content="${task.content?.slice(0, 30)}"`);
-    nav.push('task-detail', {task, projects: []});
+    nav.push('task-detail', {task, projects});
   };
 
   const today = localDate(new Date());
@@ -114,7 +116,12 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
     return items;
   };
 
-  const sections = loading ? [] : buildSections();
+  const hasCollections = collections.some((section: any) => section.project_id === projectId) || tasks.some(task => task.section_id);
+  const sections = loading ? [] : hasCollections ? collectionGroups(projectId, tasks, collections).flatMap((group: any) => [
+    {key: `collection:${group.id}`, type: 'collection', title: group.name, count: group.tasks.length, sectionId: group.id},
+    ...(group.tasks.length ? group.tasks.map((task: any) => ({key: task.id, type: 'task', task})) :
+      [{key: `empty:${group.id}`, type: 'empty'}]),
+  ]) : buildSections();
 
   return (
     <View style={styles.container}>
@@ -140,7 +147,7 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
             <View style={styles.headerButtons}>
               <Pressable
                 style={styles.headerButton}
-                onPress={() => { log('ProjectView', 'ADD pressed'); nav.push('task-add', {projects: [], defaultProjectId: projectId}); }}>
+                onPress={() => { log('ProjectView', 'ADD pressed'); nav.push('task-add', {projects, defaultProjectId: projectId}); }}>
                 <Text style={styles.headerButtonText}>+</Text>
               </Pressable>
               <Pressable style={styles.headerButton} onPress={() => closePlugin()}>
@@ -169,6 +176,11 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
           data={sections}
           keyExtractor={item => item.key}
           renderItem={({item}) => {
+            if (item.type === 'collection') return <SectionHeader title={item.title} count={item.count}
+              action={item.sectionId !== 'unavailable' && <Pressable style={styles.headerButton} accessibilityLabel={`Add task to ${item.title}`}
+                onPress={() => nav.push('task-add', {projects, defaultProjectId: projectId, defaultSectionId: item.sectionId})}>
+                <Text style={styles.headerButtonText}>+ Task</Text></Pressable>} />;
+            if (item.type === 'empty') return <Text style={styles.loadingText}>No active tasks in this collection</Text>;
             if (item.type === 'header') {
               return <SectionHeader title={item.title} count={item.count} />;
             }
@@ -182,7 +194,7 @@ export default function ProjectView({nav, projectId, projectName}: Props) {
             );
           }}
           ItemSeparatorComponent={({leadingItem}) =>
-            leadingItem?.type !== 'header' ? <View style={styles.separator} /> : null
+            leadingItem?.type === 'task' ? <View style={styles.separator} /> : null
           }
         />
       )}

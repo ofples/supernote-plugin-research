@@ -65,7 +65,7 @@ export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
   const allTasks = model.mergedTasks(state);
-  return {tasks: allTasks.filter(task => !task.completed), allTasks, projects: state.projects, timestamp: state.lastSync,
+  return {tasks: allTasks.filter(task => !task.completed), allTasks, projects: state.projects, sections: state.sections || [], timestamp: state.lastSync,
     pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
     syncError: state.syncError, warning: current.store.getWarning(),
     otherAccountStores: current.identity.otherAccountStores};

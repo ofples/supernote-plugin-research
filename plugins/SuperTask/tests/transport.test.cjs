@@ -10,7 +10,7 @@ test('Sync uses form commands, frozen credential and full snapshot resource sele
     const resources = JSON.parse(body.get('resource_types'));
     return {ok: true, async json() {
       return resources.includes('user') ? {user: {id: 'user'}} :
-        resources.includes('items') ? {full_sync: true, items: [{id: 'a'}, {id: 'b', is_deleted: true}], projects: []} :
+        resources.includes('items') ? {full_sync: true, items: [{id: 'a'}, {id: 'b', is_deleted: true}], projects: [], sections: []} :
           {sync_status: {uuid: 'ok'}};
     }};
   }, async () => true);
@@ -42,9 +42,14 @@ test('HTTP 429 exposes retry delay and performs no immediate network retry', asy
 });
 
 test('incomplete full snapshot and missing user identity are errors', async () => {
-  const api = createTransport('unused', async () => ({ok: true, json: async () => ({items: [], projects: []})}), async () => true);
+  const api = createTransport('unused', async () => ({ok: true, json: async () => ({items: [], projects: [], sections: []})}), async () => true);
   await assert.rejects(api.fetchSnapshot(), /incomplete/);
   await assert.rejects(api.userId(), /identify/);
+});
+
+test('a full response missing sections cannot discard the cached collection list', async () => {
+  const api = createTransport('unused', async () => ({ok: true, json: async () => ({full_sync: true, items: [], projects: []})}), async () => true);
+  await assert.rejects(api.fetchSnapshot(), /incomplete/);
 });
 
 test('timed requests abort without exposing credentials or error bodies', async () => {
