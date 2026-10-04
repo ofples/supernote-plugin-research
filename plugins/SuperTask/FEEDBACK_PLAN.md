@@ -12,8 +12,11 @@ Prepared 4 October 2026 from the user's feedback and current beta.8 source. This
 - AI may assign known projects/collections only when the task explicitly names them: for example `in House`, `project: House`, or `House / Cleaning`. Ordinary task meaning is insufficient; ambiguous matches retain the current/default location.
 - During capture, device OCR continues in the background even after AI is requested. Its result is ready for AI failure or an explicit switch to device OCR. Keep the configured AI button visible across Wi-Fi changes, with a bounded timeout and Cancel / Use device OCR controls.
 - The user authorizes up to **100 AI requests** for this unattended session's scratch verification, using the configured SuperTask key. This is a ceiling, not a target; use only calls justified by new changes or unresolved results. Never send real notes as test data.
+- Include offline completion of recurring Todoist tasks' current occurrence. Preserve the recurring series and let Todoist resolve its next occurrence during sync, with duplicate-safe retries and tests for delayed synchronization.
+- Use Luna agents for bounded implementation tasks and Sol for orchestration, reviews and difficult coding, as specified in [FEEDBACK_GOAL.md](FEEDBACK_GOAL.md).
+- If the device is unavailable, continue all independent implementation, review, tests and packaging, with an exact deferred device checklist. Avoid idle waits, repeated device polling, redundant exploration and unnecessary test/agent work.
 
-One final question is awaiting the user's answer: include recurring-task occurrence completion offline. Update this document with that answer before implementation.
+All preparation questions are resolved. [FEEDBACK_GOAL.md](FEEDBACK_GOAL.md) is the ready-to-run goal prompt for the subsequent unattended session. Preparation is complete; runtime implementation has not started.
 
 ## Current baseline and device handoff
 
@@ -89,7 +92,7 @@ Do not discard new offline tasks or shared collection dependencies because anoth
 
 Reconcile uncertain/sending commands before conflict decisions: an observed remote change may be our own successful request whose response was lost. For ordered update/move/complete operations, advance the expected remote baseline after acknowledgement so our earlier operation is not mistaken for an external conflict. Fetching metadata is not an atomic server compare-and-set; document the remaining concurrent-change window instead of claiming an absolute no-overwrite guarantee.
 
-Synchronization remains on open/resume, manual sync and foreground reconnection. No unattended sync while every plugin is closed is required. Keep bounded retries/backoff, 429 handling and account isolation. If recurring occurrence completion is included, retain the occurrence being completed and avoid treating recurrence as permanent task deletion; verify the official recurrence command and timing semantics rather than replaying a server-relative date blindly.
+Synchronization remains on open/resume, manual sync and foreground reconnection. No unattended sync while every plugin is closed is required. Keep bounded retries/backoff, 429 handling and account isolation. Include recurring occurrence completion offline: retain the occurrence and local completion time, avoid treating recurrence as permanent task deletion, and verify the official recurrence command/timing semantics rather than replaying a server-relative date blindly. Retrying the same queued completion must never advance the series twice. If the remote occurrence changed while offline, apply the agreed remote-wins policy rather than completing the new occurrence accidentally. Do not fabricate an authoritative next due date while offline; show its pending state until Todoist confirms it. Define and test any Undo limitation explicitly, especially after server acknowledgement.
 
 ## Status and settings correction
 
@@ -103,7 +106,7 @@ The project-visibility bug is confirmed in source: TaskHome interprets legacy `e
 
 Preserve existing draft PRs and their comparison bases. No history rewrite, main merge, upstream Jira update or release publication. Use the current reviewed integration as a fixed baseline for follow-up branches; record its exact revision at session start. Prepare focused dependent PRs in the user's fork rather than broadening old PR diffs with the entire redesign.
 
-1. Offline mutations, collection creation, migration and conflict policy. This is the shared foundation for immediate completion and all offline forms.
+1. Offline mutations, recurring occurrence completion, collection creation, migration and conflict policy. This is the shared foundation for immediate completion and all offline forms.
 2. Capture/AI concurrency, batch defaults, dates, post-create flow and integrated AI Settings. Build on the offline foundation, with a PR that clearly records its dependency.
 3. Native-style sidebar, common list actions/row status, This Note view and visibility correction. Keep the navigation/UI change separately reviewable.
 4. Merge all follow-up feature heads into `release/workflow-overview-testing` and update its branch maintenance helper and included revision table. Never infer feature integration from matching filenames; verify ancestry.
@@ -117,6 +120,7 @@ Commit cohesive, validated milestones with the configured author Ofer Plesser. P
 | Visibility | Legacy all-visible renders checked; hide one, show one, hide all, newly fetched project behavior and restart are consistent with sidebar/list counts. |
 | Offline writes | Existing task title/description/date/priority/labels/location edit, completion/reopen/delete and new collection survive process death and sync once. Failed storage writes never report success. |
 | Queue dependencies | Unsent edit/create folding, uncertain create then edit/delete, collection then task/move, partial acknowledgement, lost response, restart and throttling remain duplicate-safe. |
+| Recurring tasks | Offline completion identifies the current occurrence, survives restart, preserves the series, and advances it once on sync; a lost response/retry never advances twice; delayed sync and a remotely advanced occurrence follow the conflict policy; next due date/Undo are honest. |
 | Conflicts | Unchanged remote accepts local work; genuinely changed remote wins with a notice; deleted remote does not resurrect; our own acknowledged/uncertain changes are not classified as conflicts; new tasks remain queued. |
 | Batch | Quick fields affect included rows; independent overrides survive subsequent batch changes/refinement/merge/split; Add row inherits current defaults; project changes cannot retain an incompatible collection; invalid batch has no partial save. |
 | Dates | Today/Tomorrow/custom/clear are observable in row summaries and payloads; midnight/DST/capture-date boundaries do not drift on later sync; unchanged recurrence is preserved. |
