@@ -27,3 +27,16 @@ test('completed history normalizes checked:false and cannot redisplay deleted ta
   const active = m.emptyStore('account', 'device'); active.remote = [remote]; active.completedRemote = [{...remote, checked: false}];
   assert.equal(m.completedView(active).length, 0);
 });
+test('legacy checked:false history can be reopened without premarking an active task', () => {
+  const state = m.emptyStore('account', 'device'); state.completedRemote = [{...remote, checked: false}];
+  const reopened = m.setCompleted(state, 'real', false, ids);
+  assert.equal(reopened.outbox[0].kind, 'reopen');
+  assert.equal(Object.values(reopened.tasks)[0].completed, false);
+});
+test('unknown commit after failed recovery remains uncertain to the form', async () => {
+  const {createStore} = require('../src/offline/store');
+  let reads = 0;
+  const store = createStore({read: async () => {if (++reads > 1) throw new Error('Disk cannot be read'); return {exists: false};},
+    commit: async () => {throw new Error('Lost native response');}}, 'account', 'device');
+  await assert.rejects(store.transaction(state => m.addBatch(state, [{content: 'Scratch'}], null, ids).next), error => error.uncertainCommit === true);
+});
