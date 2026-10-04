@@ -123,7 +123,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
   };
 
   useEffect(() => {
-    log('TaskDetail', `MOUNT task=${task?.id} content="${task?.content}" projects=${projects?.length}`);
+    log('TaskDetail', 'Task details opened');
     log('TaskDetail', `noteContext: ${noteContext ? `${noteContext.noteFile} p.${noteContext.pageNum}` : 'none'}`);
     setConfigLoader(loadConfig);
   }, [noteContext, projects?.length, task?.content, task?.id]);
@@ -137,7 +137,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
     projectId !== (task.project_id || null) || sectionId !== (task.section_id || null);
 
   const handleSave = async () => {
-    log('TaskDetail', `SAVE pressed. isDirty=${isDirty} saving=${saving} content="${content}"`);
+    log('TaskDetail', `SAVE pressed. isDirty=${isDirty} saving=${saving}`);
     if (!content.trim()) {
       setStatus('Task title cannot be empty');
       return;
@@ -297,7 +297,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         <TextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
-          onChangeText={(t) => { log('TaskDetail', `content changed: "${t.slice(0, 30)}"`); setContent(t); }}
+          onChangeText={(t) => { log('TaskDetail', 'Task title edited'); setContent(t); }}
           onFocus={() => log('TaskDetail', 'content FOCUSED')}
           placeholder="Task title"
           multiline
