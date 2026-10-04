@@ -51,7 +51,8 @@ function api(task) {
     '../utils/permissions': {ensurePermissionGroup: async () => true}, '../utils/debug': {log() {}},
     '../offline/service': {cachedTask: async () => task, offlineData: async () => ({projects, sections}),
       rememberRemoteTask: async value => remembered.push(value), syncOffline: async () => {},
-      editOfflineTask: async (...args) => {edited.push(args); return {...task, ...args[1]};}},
+      editOfflineTask: async (...args) => {edited.push(args); return {...task, ...args[1]};},
+      completeOffline: async () => {throw Object.assign(new Error('Cannot undo a sent recurring occurrence'), {code: 'RECURRING_UNDO_UNSUPPORTED'});}},
   });
   client.setConfigLoader(async () => ({apiToken: 'test-only-token'}));
   return {client, remembered, edited};
@@ -67,6 +68,12 @@ test('cached existing task edits and moves queue locally without depending on re
     assert.deepEqual(edited[1], [task.id, {project_id: 'p', section_id: null}]);
     assert.equal(remembered.length, 0);
   } finally {global.fetch = oldFetch;}
+});
+test('rejected recurring undo never premarks a legacy raw-ID next occurrence completed', async () => {
+  const task = {id: 'raw-id', remoteId: 'raw-id', content: 'Legacy recurring task', completed: false, due: {is_recurring: true}};
+  const {client, remembered} = api(task);
+  await assert.rejects(client.reopenTask(task.id), error => error.code === 'RECURRING_UNDO_UNSUPPORTED');
+  assert.equal(remembered.length, 0); assert.equal(task.completed, false);
 });
 
 test('local task editing preserves omitted collection and clears it across projects', async () => {
