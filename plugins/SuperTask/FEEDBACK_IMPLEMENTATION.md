@@ -24,7 +24,7 @@ For complete behavior and acceptance checks, see [TESTING.md](TESTING.md) and [F
 
 ## Device evidence and pending verification
 
-Beta.9/10 checks below passed on device. Beta.11 was installed/enabled and started successfully, displaying 20 tasks and 0 queued changes, matching the server. Beta.12 sidebar/footer polish is built and Plugin Manager confirmed installation/enabled ON; runtime layout/toggle checking remains pending. A prior device cache showed 31 active tasks while a fresh server read found 20 active tasks, all with `is_completed=false`; do not treat the stale cache count as authoritative or claim those counts had synced. Beta.11 addresses this by reconciling full active snapshots while retaining private recovery data. Beta.11 startup/count verification passed against the fresh server snapshot.
+Beta.9/10 checks below passed on device. Beta.11 was installed/enabled and started successfully, displaying 20 tasks and 0 queued changes, matching the server. Beta.12 sidebar/footer polish is built and Plugin Manager confirmed installation/enabled ON. Startup, sidebar placement/spacing and footer button styling passed on hardware. Show done selected state toggled true then false; Refresh retained 20 tasks / 0 queued. A prior device cache showed 31 active tasks while a fresh server read found 20 active tasks, all with `is_completed=false`; do not treat the stale cache count as authoritative or claim those counts had synced. Beta.11 addresses this by reconciling full active snapshots while retaining private recovery data. Beta.11 startup/count verification passed against the fresh server snapshot.
 
 Verified device behavior:
 
@@ -36,7 +36,7 @@ Verified device behavior:
 - A live offline conflict retained the remote description and cleared the queue; final device readback was `True`.
 - Scratch cleanup completed: remote manifest confirmed removal of three beta.9 labeled tasks and the empty collection; beta.10 deleted-task test was absent remotely; the old `Codex-collections-scratch-20261004-A` was found and removed. No unrelated tasks were touched. Wi-Fi is ON; Today is restored and the active cache count is verified.
 
-Still pending: beta.12 sidebar/footer button check; handwritten lasso/doc image-first timing, orientation/landscape/edge crops, OCR/AI races, cancellation/fallback/lifecycle and source-note return. Live lost-response, genuinely remotely advanced recurring guard and induced native write-failure checks have simulated coverage only. Font-scale tests cover 150%/200%; available device scale tops at 130%, with no larger setting changed.
+Still pending: handwritten lasso/doc image-first timing, orientation/landscape/edge crops, OCR/AI races, cancellation/fallback/lifecycle and source-note return. Live lost-response, genuinely remotely advanced recurring guard and induced native write-failure checks have simulated coverage only. Font-scale tests cover 150%/200%; available device scale tops at 130%, with no larger setting changed.
 
 ## Known limitations and risks
 

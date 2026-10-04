@@ -23,7 +23,7 @@ Draft PRs 4–6 remain separate/reviewable. Earlier PRs 1–3 remain in history.
 
 ## Device validation
 
-Beta.9 and beta.10 behaviors below were verified on device and remain unchanged in beta.11. Beta.11 was installed/enabled and started successfully: the device displayed 20 tasks and 0 queued changes, matching the fresh server snapshot. Beta.12 adds the requested sidebar/footer polish; Plugin Manager confirmed version 0.4.0-beta.12, enabled ON. Runtime layout/toggle checking remains pending.
+Beta.9 and beta.10 behaviors below were verified on device and remain unchanged in beta.11. Beta.11 was installed/enabled and started successfully: the device displayed 20 tasks and 0 queued changes, matching the fresh server snapshot. Beta.12 adds the requested sidebar/footer polish; Plugin Manager confirmed version 0.4.0-beta.12, enabled ON. Startup and hardware layout inspection passed: All projects is below Projects, and both footer actions match the header buttons.
 
 - Beta.10 is installed/enabled ON; startup succeeded. Ask → Batch → Details → Back preserved the saved list and Add another opened a fresh empty review. Main Settings AI section/model/masked key were inspected without changing values.
 - Beta.9 batch/device checks produced exactly two labeled tasks and one collection offline, mapped to that same collection, with due dates 2026-10-05/2026-10-04 and priorities P2/P1. A manual P2 and explicit AI P1 survived a later batch P3 assignment. Server readback verified the records.
@@ -44,7 +44,7 @@ Verified on beta.11: startup and 20 active tasks / 0 queued changes match the se
 1. Handwritten capture: lasso/doc image-first preview timing, orientation, landscape/edge crops, OCR/AI race, cancellation/timeout/fallback, lifecycle interruption and source-note return. The paid AI check was text-only.
 2. Live lost-response behavior, a genuinely remotely advanced recurring-occurrence guard and induced native storage-write failure have deterministic simulated coverage only; no account/device injection was performed.
 3. Render tests cover 150%/200%; device font-scale options top out at 130%, and no larger preference was changed. Verify available scale, touch targets, scroll and e-ink redraw if needed.
-4. Check beta.12 sidebar/footer layout, Show done toggling and Refresh on hardware.
+Beta.12 sidebar/footer layout passed hardware inspection. Show done toggled selected true then false; Refresh retained 20 tasks / 0 queued. The original off toggle preference was restored.
 
 ## Known behavior and limitations
 
