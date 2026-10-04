@@ -8,6 +8,7 @@ import ProjectPicker from '../components/ProjectPicker';
 import {useLocations} from '../collections/useLocations';
 import PriorityPicker from '../components/PriorityPicker';
 import DatePicker from '../components/DatePicker';
+import {useFontScale} from '../utils/useFontScale';
 const {fromText, mergeNext, splitRow, MAX_TASKS} = require('../batch/model');
 const {localDate} = require('../offline/model');
 const {makeDefaults, inheritDefaults, initializeProposalRow, changeDefault, editRow, resetRowField,
@@ -19,6 +20,14 @@ type Props = {nav: any; initialContent?: string; initialDescription?: string; in
 export default function BatchAdd({nav, initialContent = '', initialDescription = '', initialRows, captureMode,
   projects: initialProjects, defaultProjectId, defaultSectionId, noteContext, capturedAt = Date.now(), preview}: Props) {
   const {projects, sections} = useLocations(initialProjects);
+  const scale = useFontScale();
+  const scaledText = {fontSize: 15 * scale, lineHeight: 22 * scale};
+  const scaledLabel = {fontSize: 16 * scale};
+  const scaledTitle = {fontSize: 24 * scale};
+  const scaledTaskTitle = {fontSize: 18 * scale};
+  const scaledInput = {fontSize: 18 * scale, minHeight: 44 * scale};
+  const scaledStatus = {fontSize: 16 * scale};
+  const scaledPrimary = {fontSize: 17 * scale};
   const nextId = useRef(0);
   const defaultsRef = useRef(makeDefaults({projectId: defaultProjectId, sectionId: defaultSectionId}));
   const [defaults, setDefaults] = useState(defaultsRef.current);
@@ -171,122 +180,130 @@ export default function BatchAdd({nav, initialContent = '', initialDescription =
         if (postCreateAction === 'auto-back') autoBackTimer.current = setTimeout(() => {if (alive.current) goBack();}, 500);
       }
     } catch (error: any) {
-      if (alive.current) setStatus(`${error.message} Retry keeps the same task identities. Open Tasks to inspect any saved work.`);
+      if (alive.current) {
+        if (error?.uncertainCommit === true) {
+          setStatus(`${error.message} Retry keeps the same task identities. Open Tasks to inspect any saved work.`);
+        } else {
+          request.current = {};
+          setAttempted(false);
+          setStatus(`${error.message} No tasks were saved. Correct the batch and try again.`);
+        }
+      }
     } finally {working.current = false; if (alive.current) setBusy(false);}
   };
 
   const today = () => localDate(new Date());
   const tomorrow = () => {const date = new Date(); date.setDate(date.getDate() + 1); return localDate(date);};
   return <View style={s.page}>
-    <View style={s.header}><Text style={s.title}>{saved ? 'Tasks saved' : 'Review tasks'}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={saved ? 'Done' : 'Cancel'} style={s.button} onPress={() => {cancelRefinement(); goBack();}} disabled={busy && !controller.current}><Text style={s.label}>{saved ? 'Done' : 'Cancel'}</Text></Pressable>
+    <View style={s.header}><Text style={[s.title, scaledTitle]}>{saved ? 'Tasks saved' : 'Review tasks'}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={saved ? 'Done' : 'Cancel'} style={s.button} onPress={() => {cancelRefinement(); goBack();}} disabled={busy && !controller.current}><Text style={[s.label, scaledLabel]}>{saved ? 'Done' : 'Cancel'}</Text></Pressable>
     </View>
     {!saved && <>
       <View style={s.intro}>
-        <Text style={s.text}>One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.</Text>
-        <Text style={s.text}>Captured {localDate(new Date(captureTime))}. {selected.length} of {rows.length} selected.</Text>
+        <Text style={[s.text, scaledText]}>One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.</Text>
+        <Text style={[s.text, scaledText]}>Captured {localDate(new Date(captureTime))}. {selected.length} of {rows.length} selected.</Text>
       </View>
       {!locked && <View style={s.controls}>
         <View style={s.actions}>
-          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={s.label}>Select all</Text></Pressable>
-          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={s.label}>Select none</Text></Pressable>
-          <Pressable style={s.button} onPress={addRow} disabled={rows.length >= MAX_TASKS}><Text style={s.label}>Add row</Text></Pressable>
+          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={[s.label, scaledLabel]}>Select all</Text></Pressable>
+          <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={[s.label, scaledLabel]}>Select none</Text></Pressable>
+          <Pressable style={s.button} onPress={addRow} disabled={rows.length >= MAX_TASKS}><Text style={[s.label, scaledLabel]}>Add row</Text></Pressable>
         </View>
         <View style={s.actions}>
           {['Today', 'Tomorrow', 'Custom date', 'No date'].map(label => <Pressable key={label} accessibilityRole="button" accessibilityLabel={`Set selected rows ${label.toLowerCase()}`} style={s.button} onPress={() => {
             if (label === 'Custom date') setBatchDateOpen(true);
             else applyDefault('dueString', label === 'Today' ? today() : label === 'Tomorrow' ? tomorrow() : '');
-          }}><Text style={s.label}>{label}</Text></Pressable>)}
+          }}><Text style={[s.label, scaledLabel]}>{label}</Text></Pressable>)}
         </View>
         {batchDateOpen && <DatePicker value={defaults.dueString} onChange={dueString => applyDefault('dueString', dueString)} onClose={() => setBatchDateOpen(false)} />}
         <View style={s.actions}>
           <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchLocation}} style={s.button} onPress={() => setShowBatchLocation(!showBatchLocation)}>
-            <Text style={s.label}>Project: {projects.find((p: any) => p.id === defaults.projectId)?.name || 'Inbox'}{defaults.sectionId ? ` / ${sections.find((section: any) => section.id === defaults.sectionId)?.name || 'Collection'}` : ''}</Text>
+            <Text style={[s.label, scaledLabel]}>Project: {projects.find((p: any) => p.id === defaults.projectId)?.name || 'Inbox'}{defaults.sectionId ? ` / ${sections.find((section: any) => section.id === defaults.sectionId)?.name || 'Collection'}` : ''}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchPriority}} style={s.button} onPress={() => setShowBatchPriority(!showBatchPriority)}>
-            <Text style={s.label}>Priority: P{5 - defaults.priority}</Text>
+            <Text style={[s.label, scaledLabel]}>Priority: P{5 - defaults.priority}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{expanded: showBatchLabels}} style={s.button} onPress={() => setShowBatchLabels(!showBatchLabels)}>
-            <Text style={s.label}>Labels: {defaults.labels.length ? defaults.labels.join(', ') : 'None'}</Text>
+            <Text style={[s.label, scaledLabel]}>Labels: {defaults.labels.length ? defaults.labels.join(', ') : 'None'}</Text>
           </Pressable>
         </View>
         {showBatchLocation && <ProjectPicker projects={projects} selectedId={defaults.projectId} sections={sections} selectedSectionId={defaults.sectionId}
           onChange={projectId => applyDefault('location', {projectId, sectionId: projectId === defaultsRef.current.projectId ? defaultsRef.current.sectionId : null})}
           onSectionChange={sectionId => applyDefault('location', {projectId: defaultsRef.current.projectId, sectionId})} />}
         {showBatchPriority && <PriorityPicker value={defaults.priority} onChange={priority => applyDefault('priority', priority)} />}
-        {showBatchLabels && <TextInput style={s.input} value={defaults.labels.join(', ')} placeholder="Batch labels, separated by commas" editable={!locked}
+        {showBatchLabels && <TextInput style={[s.input, scaledInput]} value={defaults.labels.join(', ')} placeholder="Batch labels, separated by commas" editable={!locked}
           onChangeText={value => applyDefault('labels', value.split(',').map(label => label.trim()).filter(Boolean))} />}
         {showAiSetupHint && <View style={s.notice}>
-          <Text style={s.text}>Set up optional AI refinement in Settings. Nothing is sent until you choose Refine with AI.</Text>
+          <Text style={[s.text, scaledText]}>Set up optional AI refinement in Settings. Nothing is sent until you choose Refine with AI.</Text>
           <View style={s.actions}>
-            <Pressable style={s.button} onPress={() => nav.push('ai-settings')}><Text style={s.label}>Set up AI</Text></Pressable>
-            <Pressable style={s.button} onPress={dismissAiSetupHint}><Text style={s.label}>Dismiss</Text></Pressable>
+            <Pressable style={s.button} onPress={() => nav.push('ai-settings')}><Text style={[s.label, scaledLabel]}>Set up AI</Text></Pressable>
+            <Pressable style={s.button} onPress={dismissAiSetupHint}><Text style={[s.label, scaledLabel]}>Dismiss</Text></Pressable>
           </View>
         </View>}
         <View style={s.details}>
-          <Text style={s.text}>Optional AI refinement sends selected rows{activePreview ? ' and the handwriting image when all rows are selected' : ''} to OpenAI using your configured key. Review the structured suggestions before saving.</Text>
-          <View style={s.actions}><Pressable style={s.button} disabled={busy} onPress={refine}><Text style={s.label}>Refine with AI</Text></Pressable>
-            <Pressable style={s.button} disabled={busy} onPress={() => nav.push('ai-settings')}><Text style={s.label}>AI settings</Text></Pressable>
-            {undo && <Pressable style={s.button} disabled={busy} onPress={() => {setRows(undo); setUndo(null); setStatus('Restored the rows from before AI refinement.');}}><Text style={s.label}>Undo refinement</Text></Pressable>}
-            {busy && controller.current && <Pressable style={s.button} onPress={() => cancelRefinement()}><Text style={s.label}>Stop AI</Text></Pressable>}
+          <Text style={[s.text, scaledText]}>Optional AI refinement sends selected rows{activePreview ? ' and the handwriting image when all rows are selected' : ''} to OpenAI using your configured key. Review the structured suggestions before saving.</Text>
+          <View style={s.actions}><Pressable style={s.button} disabled={busy} onPress={refine}><Text style={[s.label, scaledLabel]}>Refine with AI</Text></Pressable>
+            <Pressable style={s.button} disabled={busy} onPress={() => nav.push('ai-settings')}><Text style={[s.label, scaledLabel]}>AI settings</Text></Pressable>
+            {undo && <Pressable style={s.button} disabled={busy} onPress={() => {setRows(undo); setUndo(null); setStatus('Restored the rows from before AI refinement.');}}><Text style={[s.label, scaledLabel]}>Undo refinement</Text></Pressable>}
+            {busy && controller.current && <Pressable style={s.button} onPress={() => cancelRefinement()}><Text style={[s.label, scaledLabel]}>Stop AI</Text></Pressable>}
           </View>
         </View>
       </View>}
       <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent} keyboardShouldPersistTaps="handled">
         {rows.map((row, index) => <View key={row.rowId} style={s.card}>
-          <View style={s.actions}><Pressable style={s.button} onPress={() => update(index, {selected: !row.selected})} disabled={locked}><Text style={s.label}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
-            <TextInput style={s.input} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
+          <View style={s.actions}><Pressable style={s.button} onPress={() => update(index, {selected: !row.selected})} disabled={locked}><Text style={[s.label, scaledLabel]}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
+            <TextInput style={[s.input, scaledInput]} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
           </View>
-          <Text style={s.text}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
+          <Text style={[s.text, scaledText]}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
           {!locked && <View style={s.actions}>
-            <Pressable style={s.button} onPress={() => setExpanded(expanded === row.rowId ? null : row.rowId)}><Text style={s.label}>Details</Text></Pressable>
-            {index < rows.length - 1 && <Pressable style={s.button} onPress={() => merge(index)}><Text style={s.label}>Merge next</Text></Pressable>}
-            <Pressable style={s.button} onPress={() => split(index)}><Text style={s.label}>Split lines</Text></Pressable>
-            <Pressable style={s.button} onPress={() => setRows(prev => prev.filter(item => item.rowId !== row.rowId))}><Text style={s.label}>Remove</Text></Pressable>
+            <Pressable style={s.button} onPress={() => setExpanded(expanded === row.rowId ? null : row.rowId)}><Text style={[s.label, scaledLabel]}>Details</Text></Pressable>
+            {index < rows.length - 1 && <Pressable style={s.button} onPress={() => merge(index)}><Text style={[s.label, scaledLabel]}>Merge next</Text></Pressable>}
+            <Pressable style={s.button} onPress={() => split(index)}><Text style={[s.label, scaledLabel]}>Split lines</Text></Pressable>
+            <Pressable style={s.button} onPress={() => setRows(prev => prev.filter(item => item.rowId !== row.rowId))}><Text style={[s.label, scaledLabel]}>Remove</Text></Pressable>
           </View>}
           {!locked && expanded === row.rowId && <View style={s.details}>
-            <Text style={s.label}>Project and collection</Text>
+            <Text style={[s.label, scaledLabel]}>Project and collection</Text>
             <ProjectPicker projects={projects} selectedId={row.projectId} onChange={projectId => edit(index, 'location', {projectId, sectionId: projectId === row.projectId ? row.sectionId : null})}
               sections={sections} selectedSectionId={row.sectionId} onSectionChange={sectionId => edit(index, 'location', {projectId: row.projectId, sectionId})} />
-            {!!(row.overrides?.location || row.instructions?.location) && <Pressable style={s.button} onPress={() => resetField(index, 'location')}><Text style={s.label}>Use batch project and collection</Text></Pressable>}
-            <Text style={s.label}>Priority</Text><PriorityPicker value={row.priority} onChange={priority => edit(index, 'priority', priority)} />
-            {!!(row.overrides?.priority || row.instructions?.priority) && <Pressable style={s.button} onPress={() => resetField(index, 'priority')}><Text style={s.label}>Use batch priority</Text></Pressable>}
-            <View style={s.actions}><Pressable style={s.button} onPress={() => setDateRow(row.rowId)}><Text style={s.label}>Custom date</Text></Pressable>
-              <Pressable style={s.button} onPress={() => edit(index, 'dueString', today())}><Text style={s.label}>Today</Text></Pressable>
-              <Pressable style={s.button} onPress={() => edit(index, 'dueString', tomorrow())}><Text style={s.label}>Tomorrow</Text></Pressable>
-              <Pressable style={s.button} onPress={() => edit(index, 'dueString', '')}><Text style={s.label}>No date</Text></Pressable></View>
-            {!!(row.overrides?.dueString || row.instructions?.dueString) && <Pressable style={s.button} onPress={() => resetField(index, 'dueString')}><Text style={s.label}>Use batch date</Text></Pressable>}
+            {!!(row.overrides?.location || row.instructions?.location) && <Pressable style={s.button} onPress={() => resetField(index, 'location')}><Text style={[s.label, scaledLabel]}>Use batch project and collection</Text></Pressable>}
+            <Text style={[s.label, scaledLabel]}>Priority</Text><PriorityPicker value={row.priority} onChange={priority => edit(index, 'priority', priority)} />
+            {!!(row.overrides?.priority || row.instructions?.priority) && <Pressable style={s.button} onPress={() => resetField(index, 'priority')}><Text style={[s.label, scaledLabel]}>Use batch priority</Text></Pressable>}
+            <View style={s.actions}><Pressable style={s.button} onPress={() => setDateRow(row.rowId)}><Text style={[s.label, scaledLabel]}>Custom date</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', today())}><Text style={[s.label, scaledLabel]}>Today</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', tomorrow())}><Text style={[s.label, scaledLabel]}>Tomorrow</Text></Pressable>
+              <Pressable style={s.button} onPress={() => edit(index, 'dueString', '')}><Text style={[s.label, scaledLabel]}>No date</Text></Pressable></View>
+            {!!(row.overrides?.dueString || row.instructions?.dueString) && <Pressable style={s.button} onPress={() => resetField(index, 'dueString')}><Text style={[s.label, scaledLabel]}>Use batch date</Text></Pressable>}
             {dateRow === row.rowId && <DatePicker value={row.dueString} onChange={dueString => edit(index, 'dueString', dueString)} onClose={() => setDateRow(null)} />}
-            <TextInput style={s.input} value={row.description} placeholder="Description" multiline onChangeText={description => edit(index, 'description', description)} />
-            <TextInput style={s.input} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => edit(index, 'labels', labels.split(',').map((value: string) => value.trim()).filter(Boolean))} />
-            {!!(row.overrides?.labels || row.instructions?.labels) && <Pressable style={s.button} onPress={() => resetField(index, 'labels')}><Text style={s.label}>Use batch labels</Text></Pressable>}
+            <TextInput style={[s.input, scaledInput]} value={row.description} placeholder="Description" multiline onChangeText={description => edit(index, 'description', description)} />
+            <TextInput style={[s.input, scaledInput]} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => edit(index, 'labels', labels.split(',').map((value: string) => value.trim()).filter(Boolean))} />
+            {!!(row.overrides?.labels || row.instructions?.labels) && <Pressable style={s.button} onPress={() => resetField(index, 'labels')}><Text style={[s.label, scaledLabel]}>Use batch labels</Text></Pressable>}
           </View>}
         </View>)}
       </ScrollView>
     </>}
     {saved && postCreateAction !== 'auto-back' && <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent}>
-      <Text style={s.text}>Saved on this device. These tasks are pending sync.</Text>
+      <Text style={[s.text, scaledText]}>Saved on this device. These tasks are pending sync.</Text>
       {createdTasks.map((task, index) => <Pressable key={task.id || index} accessibilityRole="button" accessibilityLabel={`Open task ${task.content}`} style={s.createdTask}
-        onPress={() => nav.push('task-detail', {task, projects})}><Text style={s.taskTitle}>{task.content}</Text><Text style={s.text}>Open task details</Text></Pressable>)}
-      <View style={s.actions}><Pressable style={s.primary} onPress={goBack}><Text style={s.primaryText}>Done</Text></Pressable>
-        <Pressable style={s.button} onPress={addAnother}><Text style={s.label}>Add another</Text></Pressable></View>
+        onPress={() => nav.push('task-detail', {task, projects})}><Text style={[s.taskTitle, scaledTaskTitle]}>{task.content}</Text><Text style={[s.text, scaledText]}>Open task details</Text></Pressable>)}
+      <View style={s.actions}><Pressable style={s.primary} onPress={goBack}><Text style={[s.primaryText, scaledPrimary]}>Done</Text></Pressable>
+        <Pressable style={s.button} onPress={addAnother}><Text style={[s.label, scaledLabel]}>Add another</Text></Pressable></View>
     </ScrollView>}
-    {!!status && <Text style={s.status}>{status}</Text>}
+    {!!status && <Text style={[s.status, scaledStatus]}>{status}</Text>}
     {!saved && <View style={s.footer}>
-      {!attempted && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={s.primaryText}>{`Save ${selected.length} task${selected.length === 1 ? '' : 's'}`}</Text></Pressable>}
-      {attempted && !saved && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={s.primaryText}>Retry same batch</Text></Pressable>}
-      <Pressable style={s.button} disabled={busy} onPress={() => nav.resetTo('task-home')}><Text style={s.label}>Tasks</Text></Pressable>
+      {!attempted && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={[s.primaryText, scaledPrimary]}>{`Save ${selected.length} task${selected.length === 1 ? '' : 's'}`}</Text></Pressable>}
+      {attempted && !saved && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={[s.primaryText, scaledPrimary]}>Retry same batch</Text></Pressable>}
+      <Pressable style={s.button} disabled={busy} onPress={() => nav.resetTo('task-home')}><Text style={[s.label, scaledLabel]}>Tasks</Text></Pressable>
     </View>}
   </View>;
 }
 
-const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {padding: 16, flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1},
+const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {padding: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1},
   intro: {paddingHorizontal: 16, paddingTop: 12, gap: 8}, controls: {paddingHorizontal: 16, paddingVertical: 10, gap: 10, borderBottomWidth: 1, borderBottomColor: '#000'},
-  rowsScroll: {flex: 1}, rowsContent: {padding: 16, gap: 16}, title: {fontSize: 24, fontWeight: '700', color: '#000'}, text: {fontSize: 15, color: '#000', lineHeight: 22},
-  label: {fontSize: 16, color: '#000'}, actions: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center'},
+  rowsScroll: {flex: 1}, rowsContent: {padding: 16, gap: 16}, title: {flexShrink: 1, fontWeight: '700', color: '#000'}, text: {color: '#000'},
+  label: {color: '#000'}, actions: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center'},
   button: {padding: 12, borderWidth: 1, borderColor: '#000'}, card: {padding: 12, borderWidth: 1, borderColor: '#000', gap: 12},
-  createdTask: {padding: 14, borderWidth: 1, borderColor: '#000', gap: 6}, taskTitle: {fontSize: 18, fontWeight: '700', color: '#000'},
-  input: {flexGrow: 1, minWidth: 180, minHeight: 44, padding: 12, borderWidth: 1, fontSize: 18, color: '#000', textAlignVertical: 'top'},
-  details: {gap: 12}, status: {paddingHorizontal: 16, paddingVertical: 8, fontSize: 16, color: '#000', fontWeight: '600'}, footer: {padding: 12, gap: 8, flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1},
+  createdTask: {padding: 14, borderWidth: 1, borderColor: '#000', gap: 6}, taskTitle: {fontWeight: '700', color: '#000'},
+  input: {flexGrow: 1, minWidth: 180, minHeight: 44, padding: 12, borderWidth: 1, color: '#000', textAlignVertical: 'top'},
+  details: {gap: 12}, status: {paddingHorizontal: 16, paddingVertical: 8, color: '#000', fontWeight: '600'}, footer: {padding: 12, gap: 8, flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1},
   notice: {padding: 10, gap: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: '#000'},
-  primary: {padding: 14, backgroundColor: '#000'}, primaryText: {fontSize: 17, color: '#fff', fontWeight: '700'}});
+  primary: {padding: 14, backgroundColor: '#000'}, primaryText: {color: '#fff', fontWeight: '700'}});

@@ -121,6 +121,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
     setSubmitting(true);
     setStatus('Saving on device...');
 
+    let durableTask: any = null;
     try {
       // Build description with note context back-reference
       let fullDescription = description.trim();
@@ -140,6 +141,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         request: saveRequest.current,
         capturedAt: captureTime.current,
       });
+      durableTask = task;
       if (!alive.current) return;
       log('TaskAdd', 'Task committed on device');
       invalidateCache();
@@ -183,7 +185,14 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
       }
     } catch (err: any) {
       logError('TaskAdd', err);
-      setStatus(`Error: ${err.message}`);
+      if (!alive.current) return;
+      if (durableTask) {
+        setCreatedTask(durableTask); setJustCreated(true);
+        setStatus('Task saved on this device. Its optional note link could not be updated.');
+      } else {
+        if (err.uncertainCommit !== true) {setAttempted(false); saveRequest.current = {};}
+        setStatus(err.uncertainCommit ? 'Save could not be confirmed. Retry same task to inspect its saved identity.' : `Could not save: ${err.message}`);
+      }
     } finally {
       savingRef.current = false; if (alive.current) setSubmitting(false);
     }

@@ -149,6 +149,7 @@ test('AI refinement keeps manual text and excluded rows, omits the crop for excl
   const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
   const BatchAdd = load('../src/screens/BatchAdd.tsx', {
     'react-native': rn,
+    '../utils/useFontScale': {useFontScale: () => 1},
     'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
     '../utils/closePlugin': {closePlugin() {}},
     '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt', aiApiKey: 'test-key'})},
@@ -201,6 +202,7 @@ test('BatchAdd split action inserts split lines once and retains following rows'
   const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
   const BatchAdd = load('../src/screens/BatchAdd.tsx', {
     'react-native': rn,
+    '../utils/useFontScale': {useFontScale: () => 1},
     'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
     '../utils/closePlugin': {closePlugin() {}},
     '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
@@ -229,6 +231,7 @@ test('BatchAdd merge action keeps the joined titles when both rows were manually
   const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
   const BatchAdd = load('../src/screens/BatchAdd.tsx', {
     'react-native': rn, 'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/useFontScale': {useFontScale: () => 1},
     '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
     '../offline/service': {saveOfflineBatch: async () => []}, '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
     '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
@@ -245,5 +248,68 @@ test('BatchAdd merge action keeps the joined titles when both rows were manually
   const merge = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Merge next'));
   await act(async () => merge.props.onPress());
   assert.deepEqual(tree.root.findAllByType('Input').map(input => input.props.value), ['Edited first Edited second']);
+  await act(async () => tree.unmount());
+});
+
+test('BatchAdd scales text and inputs while keeping batch controls reachable outside the row scroller', async () => {
+  for (const scale of [1.5, 2]) {
+    let styles;
+    const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => (styles = value)}};
+    const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+      'react-native': rn, '../utils/useFontScale': {useFontScale: () => scale},
+      'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+      '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
+      '../offline/service': {saveOfflineBatch: async () => []}, '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+      '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+      '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+      '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+    }).default;
+    let tree;
+    await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [{id: 'house', name: 'House'}], initialContent: 'A review row'}));});
+    const texts = tree.root.findAllByType('Text');
+    assert.equal(texts.find(node => node.props.children === 'Review tasks').props.style[1].fontSize, 24 * scale);
+    assert.equal(tree.root.findAllByType('Input')[0].props.style[1].fontSize, 18 * scale);
+    assert.equal(texts.find(node => node.props.children === 'Today').props.style[1].fontSize, 16 * scale);
+    const dateButton = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Tomorrow'));
+    assert.ok(dateButton);
+    let parent = dateButton.parent;
+    while (parent && parent.type !== 'ScrollView') parent = parent.parent;
+    assert.equal(parent, null, 'batch date shortcuts stay reachable outside the row scroller');
+    assert.equal(styles.actions.flexWrap, 'wrap');
+    assert.equal(styles.header.flexWrap, 'wrap');
+    await act(async () => tree.unmount());
+  }
+});
+
+test('BatchAdd reopens a known pre-commit failure for correction but retries uncertain saves with the same request identity', async () => {
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  let failure = Object.assign(new Error('Invalid destination'), {uncertainCommit: false});
+  const requests = [];
+  const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+    'react-native': rn, '../utils/useFontScale': {useFontScale: () => 1},
+    'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
+    '../offline/service': {saveOfflineBatch: async (_rows, _context, _time, request) => {requests.push(request); throw failure;}},
+    '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+    '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+  }).default;
+  let tree;
+  await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [{id: 'house', name: 'House'}], initialContent: 'Task'}));});
+  const click = label => act(async () => {
+    const button = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
+    assert.ok(button, `expected button ${label}`); button.props.onPress(); await Promise.resolve();
+  });
+  await click('Save 1 task');
+  assert.ok(tree.root.findAllByType('Pressable').some(node => node.findAllByType('Text').some(text => text.props.children === 'Save 1 task')));
+  assert.equal(tree.root.findByType('Input').props.editable, true);
+  assert.match(tree.root.findAllByType('Text').map(node => String(node.props.children)).join(' '), /No tasks were saved/);
+  failure = Object.assign(new Error('Storage could not be verified'), {uncertainCommit: true});
+  await click('Save 1 task');
+  const firstRequest = requests.at(-1);
+  assert.ok(tree.root.findAllByType('Pressable').some(node => node.findAllByType('Text').some(text => text.props.children === 'Retry same batch')));
+  await click('Retry same batch');
+  assert.equal(requests.at(-1), firstRequest, 'uncertain retries retain the exact request identity');
   await act(async () => tree.unmount());
 });
