@@ -12,7 +12,8 @@ if ($LASTEXITCODE -ne 0 -or $workingChanges.Count -gt 0) {
 }
 & git -C $PSScriptRoot fetch origin
 if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the user fork.' }
-$featureBranches = @('feature/offline-task-workflow', 'feature/project-overview', 'feature/project-collections')
+$featureBranches = @('feature/offline-task-workflow', 'feature/project-overview', 'feature/project-collections',
+    'feature/offline-task-mutations', 'feature/capture-batch-refinements', 'feature/native-task-sidebar')
 foreach ($featureBranch in $featureBranches) {
     & git -C $PSScriptRoot merge --no-ff --no-edit "origin/$featureBranch"
     if ($LASTEXITCODE -ne 0) { throw "Resolve and review the $featureBranch merge before continuing." }
@@ -25,4 +26,4 @@ if ($Push) {
     & git -C $PSScriptRoot push origin $testingBranch
     if ($LASTEXITCODE -ne 0) { throw 'Could not push the updated testing branch.' }
 }
-Write-Host 'All three current feature heads are included. Run tests, build, verify_package.py and update TESTING.md before installing a new package.'
+Write-Host 'All six current feature heads are included. Run tests, build, verify_package.py and update TESTING.md before installing a new package.'

@@ -35,6 +35,10 @@ with zipfile.ZipFile(artifact) as plugin:
     if (root / 'src/collections/model.js').exists():
         for marker in [b'No collection', b'Unavailable collections', b'Choose collection', b'sectionId']:
             assert marker in bundle, f'Missing collections implementation: {marker}'
+    if (root / 'src/batch/captureChoice.js').exists():
+        for marker in [b'item_close', b'section_add', b'sourceRowIds', b'explicitFields',
+                       b'projectVisibility', b'Sync summary', b'Cancel AI / Use device OCR', b'New collection']:
+            assert marker in bundle, f'Missing feedback workflow implementation: {marker}'
     with zipfile.ZipFile(io.BytesIO(plugin.read('app.npk'))) as native:
         libs = [name for name in native.namelist() if name.startswith('lib/') and name.endswith('.so')]
         assert libs == ['lib/arm64-v8a/libnative-lib.so'], libs
