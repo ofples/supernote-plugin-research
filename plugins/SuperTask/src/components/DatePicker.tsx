@@ -24,11 +24,13 @@ type Props = {
 export default function DatePicker({value, onChange, onClose}: Props) {
   const scale = useFontScale();
   const today = new Date();
-  const initial = value ? new Date(value + 'T00:00:00') : today;
+  const candidate = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + 'T00:00:00') : today;
+  const initial = Number.isNaN(candidate.getTime()) ? today : candidate;
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
   const todayStr = formatDate(today);
+  const tomorrowStr = formatDate(addCalendarDays(today, 1));
   const selectedStr = value || '';
 
   const prevMonth = () => {
@@ -82,13 +84,13 @@ export default function DatePicker({value, onChange, onClose}: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable style={styles.navButton} onPress={prevMonth}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Previous month" style={styles.navButton} onPress={prevMonth}>
           <Text style={[styles.navText, {fontSize: Math.round(18 * scale)}]}>{'<'}</Text>
         </Pressable>
         <Text style={[styles.monthLabel, {fontSize: Math.round(16 * scale)}]}>
           {MONTHS[viewMonth]} {viewYear}
         </Text>
-        <Pressable style={styles.navButton} onPress={nextMonth}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Next month" style={styles.navButton} onPress={nextMonth}>
           <Text style={[styles.navText, {fontSize: Math.round(18 * scale)}]}>{'>'}</Text>
         </Pressable>
       </View>
@@ -112,6 +114,9 @@ export default function DatePicker({value, onChange, onClose}: Props) {
             return (
               <Pressable
                 key={ci}
+                accessibilityRole="button"
+                accessibilityLabel={`${MONTHS[viewMonth]} ${day}, ${viewYear}`}
+                accessibilityState={{selected: isSelected}}
                 style={[
                   styles.cell,
                   isToday && styles.cellToday,
@@ -136,6 +141,9 @@ export default function DatePicker({value, onChange, onClose}: Props) {
         <Pressable style={styles.footerButton} onPress={() => { onChange(todayStr); onClose(); }}>
           <Text style={[styles.footerButtonText, {fontSize: Math.round(14 * scale)}]}>Today</Text>
         </Pressable>
+        <Pressable style={styles.footerButton} onPress={() => { onChange(tomorrowStr); onClose(); }}>
+          <Text style={[styles.footerButtonText, {fontSize: Math.round(14 * scale)}]}>Tomorrow</Text>
+        </Pressable>
         <Pressable style={styles.footerButton} onPress={handleClear}>
           <Text style={[styles.footerButtonText, {fontSize: Math.round(14 * scale)}]}>Clear</Text>
         </Pressable>
@@ -147,7 +155,11 @@ export default function DatePicker({value, onChange, onClose}: Props) {
   );
 }
 
-function formatDate(d: Date): string {
+export function addCalendarDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+export function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 

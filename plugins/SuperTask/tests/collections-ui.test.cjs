@@ -91,6 +91,7 @@ test('local task editing preserves omitted collection and clears it across proje
 test('batch Add row uses the configured collection; changing its project clears the old section before saving', async () => {
   const saved = [];
   const Batch = load('../src/screens/BatchAdd.tsx', {
+    '../utils/useFontScale': {useFontScale: () => 1},
     'react-native': {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}},
     'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
     '../utils/closePlugin': {closePlugin() {}},

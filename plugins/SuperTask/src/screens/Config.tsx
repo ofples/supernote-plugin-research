@@ -29,6 +29,7 @@ import {reloadGestureConfig} from '../utils/gestureDetector';
 import {importTokenFromFile, findTokenFile, TOKEN_DIR_LABEL} from '../utils/tokenImport';
 import {PERMISSION_GROUPS, getPermissionStates, ensurePermissionGroup} from '../utils/permissions';
 import ProjectPicker from '../components/ProjectPicker';
+import AISettingsFields from '../components/AISettingsFields';
 import {useLocations} from '../collections/useLocations';
 import {FONT_SCALE_STEPS} from '../utils/fontScale';
 import {
@@ -43,6 +44,7 @@ import {
 
 type Props = {
   onNavigate: (screen: string) => void;
+  initialPage?: 'general' | 'setup';
   nav?: {push: (name: string, params?: Record<string, any>) => void; pop: () => void; replace: (name: string, params?: Record<string, any>) => void; resetTo: (name: string, params?: Record<string, any>) => void; canGoBack: boolean};
 };
 
@@ -87,7 +89,7 @@ function normalizeLassoInput(v?: string): string {
   return v === 'pen-lasso' ? 'pen-lasso' : 'finger';
 }
 
-export default function Config({nav}: Props) {
+export default function Config({nav, initialPage}: Props) {
   // Saved-config snapshot for the FIRST render. Settings is almost always
   // reached warm (from TaskHome), so every control can paint its saved value
   // immediately -- previously the screen mounted on defaults and every
@@ -100,7 +102,7 @@ export default function Config({nav}: Props) {
   // (short scroll -- e-ink scrolling is imperfect); Setup = touch-once /
   // super-user concerns (account, connection, debugging).
   const [page, setPage] = useState<'general' | 'setup'>(
-    cfg0 && !cfg0.apiToken ? 'setup' : 'general',
+    initialPage || (cfg0 && !cfg0.apiToken ? 'setup' : 'general'),
   );
 
   // Account
@@ -121,6 +123,11 @@ export default function Config({nav}: Props) {
   const [enabledProjectIds, setEnabledProjectIds] = useState<string[]>(cfg0?.enabledProjectIds || []);
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(cfg0?.defaultProjectId || null);
   const [defaultSectionId, setDefaultSectionId] = useState<string | null>(cfg0?.defaultSectionId || null);
+  const [aiApiKey, setAiApiKey] = useState(cfg0?.aiApiKey || '');
+  const [aiModel, setAiModel] = useState(cfg0?.aiModel || 'gpt-4.1-mini');
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiStatus, setAiStatus] = useState('');
+  const [aiSetupHintDismissed, setAiSetupHintDismissed] = useState(cfg0?.aiSetupHintDismissed === true);
   const locations = useLocations(projects);
   const [debugMode, setDebugMode] = useState(cfg0?.debugMode === true);
   const [debugServerUrl, setDebugServerUrlField] = useState(cfg0?.debugServerUrl || '');
@@ -175,6 +182,9 @@ export default function Config({nav}: Props) {
       if (config.defaultTab) setDefaultTab(config.defaultTab);
       if (config.defaultProjectId) setDefaultProjectId(config.defaultProjectId);
       setDefaultSectionId(config.defaultSectionId || null);
+      setAiApiKey(config.aiApiKey || '');
+      setAiModel(config.aiModel || 'gpt-4.1-mini');
+      setAiSetupHintDismissed(config.aiSetupHintDismissed === true);
       if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
       if (config.debugMode !== undefined) setDebugMode(config.debugMode);
       if (config.markAsTextFontSize) setMarkAsTextFontSize(config.markAsTextFontSize);
@@ -237,6 +247,20 @@ export default function Config({nav}: Props) {
     savedTimer.current = setTimeout(() => setSavedRow(null), 2000);
     if (gesture) reloadGestureConfig();
     log('Config', `Applied ${Object.keys(partial).join(',')}${ok ? '' : ' (NOT SAVED)'}`);
+    return ok;
+  };
+
+  const handleSaveAISettings = async () => {
+    setAiSaving(true);
+    setAiStatus('');
+    const ok = await applyChange('aiSettings', {aiApiKey: aiApiKey.trim(), aiModel: aiModel.trim() || 'gpt-4.1-mini'});
+    setAiStatus(ok ? 'Saved privately on this device.' : 'Could not save settings.');
+    setAiSaving(false);
+  };
+
+  const handleDismissAISetupHint = async () => {
+    const ok = await applyChange('aiSetupHint', {aiSetupHintDismissed: true});
+    if (ok) { setAiSetupHintDismissed(true); }
   };
 
   // ── Account handlers ─────────────────────────────────────
@@ -439,9 +463,6 @@ export default function Config({nav}: Props) {
         {/* ── Setup page: Account & Sync ── */}
         {page === 'setup' && (
         <Section title="ACCOUNT & SYNC" first>
-          <SettingRow label="AI refinement" hint="Optional OpenAI refinement for lasso batches. Uses a separate key stored privately.">
-            <Pressable style={s.btnAction} onPress={() => nav?.push('ai-settings')}><Text style={s.btnActionText}>AI settings</Text></Pressable>
-          </SettingRow>
           <SettingRow
             label="Todoist API token"
             hint="Todoist: Settings > Integrations > Developer > API token"
@@ -717,6 +738,19 @@ export default function Config({nav}: Props) {
           </Section>
         )}
         </>
+        )}
+
+        {page === 'setup' && (
+          <Section title="AI REFINEMENT">
+            {!aiSetupHintDismissed && !aiApiKey.trim() && <View style={s.notice}>
+              <Text style={s.noticeText}>Set up optional AI refinement below. Nothing is sent until you choose Refine with AI.</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Dismiss AI setup hint" style={s.btnSmall} onPress={handleDismissAISetupHint}>
+                <Text style={s.btnSmallText}>Dismiss</Text>
+              </Pressable>
+            </View>}
+            <AISettingsFields apiKey={aiApiKey} model={aiModel} status={aiStatus} saving={aiSaving}
+              onApiKeyChange={setAiApiKey} onModelChange={setAiModel} onSave={handleSaveAISettings} />
+          </Section>
         )}
 
         {/* ── Setup page: Debugging ── */}

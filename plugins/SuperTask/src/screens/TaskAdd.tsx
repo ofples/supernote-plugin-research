@@ -85,6 +85,10 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
   const [sectionId, setSectionId] = useState<string | null>(defaultSectionId || null);
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const savingRef = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => () => {alive.current = false;}, []);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [justCreated, setJustCreated] = useState(false);
   const [createdTask, setCreatedTask] = useState<any>(null);
@@ -96,7 +100,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
   const [markAsTextFontSize, setMarkAsTextFontSize] = useState(32);
 
   useEffect(() => {
-    log('TaskAdd', `MOUNT projects=${projects?.length} defaultProjectId=${defaultProjectId} captureMode=${captureMode || 'manual'} initialContent="${(initialContent || '').slice(0, 40)}"`);
+    log('TaskAdd', 'Task form opened');
     setConfigLoader(loadConfig);
     loadConfig().then(config => {
       if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
@@ -106,15 +110,18 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
   }, [captureMode, defaultProjectId, initialContent, projects?.length]);
 
   const handleSubmit = async () => {
-    log('TaskAdd', `SUBMIT pressed content="${content.slice(0, 30)}" priority=${priority} dueString="${dueString}" projectId=${projectId}`);
+    log('TaskAdd', 'Saving task on device');
+    if (savingRef.current || justCreated) return;
     if (!content.trim()) {
       setStatus('Task title cannot be empty');
       return;
     }
 
+    savingRef.current = true; setAttempted(true);
     setSubmitting(true);
     setStatus('Saving on device...');
 
+    let durableTask: any = null;
     try {
       // Build description with note context back-reference
       let fullDescription = description.trim();
@@ -134,7 +141,9 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         request: saveRequest.current,
         capturedAt: captureTime.current,
       });
-      log('TaskAdd', `Created task: ${content.trim()} id=${task?.id} postCreateAction=${postCreateAction}`);
+      durableTask = task;
+      if (!alive.current) return;
+      log('TaskAdd', 'Task committed on device');
       invalidateCache();
       setCreatedTask(task);
 
@@ -169,21 +178,29 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
 
       if (postCreateAction === 'auto-back') {
         setStatus('Saved on device — pending sync');
-        setTimeout(() => nav.pop(), 500);
+        if (captureMode) closePlugin(); else nav.pop();
       } else {
         setStatus('Saved on device — pending sync');
         setJustCreated(true);
       }
     } catch (err: any) {
       logError('TaskAdd', err);
-      setStatus(`Error: ${err.message}`);
+      if (!alive.current) return;
+      if (durableTask) {
+        setCreatedTask(durableTask); setJustCreated(true);
+        setStatus('Task saved on this device. Its optional note link could not be updated.');
+      } else {
+        if (err.uncertainCommit !== true) {setAttempted(false); saveRequest.current = {};}
+        setStatus(err.uncertainCommit ? 'Save could not be confirmed. Retry same task to inspect its saved identity.' : `Could not save: ${err.message}`);
+      }
     } finally {
-      setSubmitting(false);
+      savingRef.current = false; if (alive.current) setSubmitting(false);
     }
   };
 
   const handleAddAnother = () => {
     saveRequest.current = {};
+    setAttempted(false);
     log('TaskAdd', 'ADD ANOTHER pressed');
     setContent('');
     setDescription('');
@@ -198,8 +215,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
   const handleViewTask = () => {
     log('TaskAdd', `VIEW TASK pressed id=${createdTask?.id}`);
     if (createdTask) {
-      setJustCreated(false);
-      nav.replace('task-detail', {task: createdTask, projects});
+      nav.push('task-detail', {task: createdTask, projects});
     }
   };
 
@@ -320,6 +336,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         <TextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
+          editable={!attempted}
           onChangeText={setContent}
           placeholder="What needs to be done?"
           multiline
@@ -330,6 +347,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Due Date</Text>
         <Pressable
           style={styles.input}
+          disabled={attempted}
           onPress={() => { log('TaskAdd', 'DUE DATE pressed'); setShowDatePicker(true); }}>
           <Text style={[dueString ? styles.inputValue : styles.inputPlaceholder, {fontSize: Math.round(16 * scale)}]}>
             {dueString || 'Tap to pick a date'}
@@ -348,11 +366,11 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Priority</Text>
-        <PriorityPicker value={priority} onChange={setPriority} />
+        <View pointerEvents={attempted ? 'none' : 'auto'}><PriorityPicker value={priority} onChange={setPriority} /></View>
       </View>
 
       {projects.length > 0 && (
-        <View style={styles.section}>
+        <View style={styles.section} pointerEvents={attempted ? 'none' : 'auto'}>
           <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Project</Text>
           <ProjectPicker
             projects={projects}
@@ -368,6 +386,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         <TextInput
           style={[styles.input, styles.inputMultiline, {fontSize: Math.round(16 * scale)}]}
           value={description}
+          editable={!attempted}
           onChangeText={setDescription}
           placeholder="Optional notes"
           multiline
@@ -379,14 +398,15 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
         onPress={handleSubmit}
         disabled={submitting}>
         <Text style={[styles.submitText, submitting && styles.submitTextDisabled, {fontSize: Math.round(18 * scale)}]}>
-          {submitting ? 'Adding...' : 'Add to Todoist'}
+          {submitting ? 'Saving...' : attempted ? 'Retry same task' : 'Save task'}
         </Text>
       </Pressable>
     </ScrollView>
     {justCreated ? (
       <View style={styles.overlayCenter}>
         <View style={styles.overlayModal}>
-          <Text style={[styles.overlayText, {fontSize: Math.round(18 * scale)}]}>Task added!</Text>
+          <Text style={[styles.overlayText, {fontSize: Math.round(18 * scale)}]}>Saved on this device</Text>
+          <Pressable style={styles.overlayButton} onPress={handleViewTask}><Text style={styles.overlayButtonText}>{createdTask?.content}</Text></Pressable>
           {captureMode === 'lasso' && noteContext && (
             <Text style={[styles.convertedLabel, markDone !== 'text' && {opacity: 0}, {fontSize: Math.round(14 * scale)}]}>
               Handwriting converted to text.
@@ -405,9 +425,6 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
             )}
             <Pressable style={styles.overlayButton} onPress={handleAddAnother}>
               <Text style={[styles.overlayButtonText, {fontSize: Math.round(15 * scale)}]}>Add Another</Text>
-            </Pressable>
-            <Pressable style={styles.overlayButton} onPress={handleViewTask}>
-              <Text style={[styles.overlayButtonText, {fontSize: Math.round(15 * scale)}]}>View Task</Text>
             </Pressable>
             <Pressable style={[styles.overlayButton, styles.overlayButtonPrimary]} onPress={handleDone}>
               <Text style={[styles.overlayButtonText, styles.overlayButtonTextPrimary, {fontSize: Math.round(15 * scale)}]}>Done</Text>
