@@ -1,6 +1,6 @@
 # SuperTask workflow follow-up preparation
 
-Prepared 4 October 2026 from the user's feedback and current beta.8 source. The user activated this goal on 4 October; implementation evidence is maintained in PROGRESS.md. This plan describes the approved scope, not a claim that every change is implemented. SuperDashboard, InkToClipboard and the parked recognition-enhancer remain outside this work.
+Prepared 4 October 2026 from the user's feedback and beta.8 source; activated the same day. The approved scope is now implemented in beta.12, with current evidence and deferred manual device checks in [FEEDBACK_IMPLEMENTATION.md](FEEDBACK_IMPLEMENTATION.md), [TESTING.md](TESTING.md) and [PROGRESS.md](PROGRESS.md). This document remains the original acceptance specification. SuperDashboard, InkToClipboard and the parked recognition-enhancer remain outside this work.
 
 ## Confirmed decisions
 
@@ -8,7 +8,7 @@ Prepared 4 October 2026 from the user's feedback and current beta.8 source. The 
 - Offline changes to an existing task remain local if the remote version has not changed. An actual remote conflict uses the remote task and produces a brief sync notice; no conflict-resolution screen. Newly created offline tasks are never discarded under this policy.
 - Create collections from task forms, including offline creation and queued synchronization.
 - Sidebar projects are a plain list beneath a Projects header. They do not collapse or expand. Selecting a project shows its collections in the main task pane only.
-- Keep All projects as a separate sidebar item for the existing broad overview, with expansion controls in its main pane. This does not add expandable sidebar project entries.
+- Keep All projects immediately beneath the Projects header as a separate sidebar item for the existing broad overview, with expansion controls in its main pane. This does not add expandable sidebar project entries.
 - AI may assign known projects/collections only when the task explicitly names them: for example `in House`, `project: House`, or `House / Cleaning`. Ordinary task meaning is insufficient; ambiguous matches retain the current/default location.
 - During capture, device OCR continues in the background even after AI is requested. Its result is ready for AI failure or an explicit switch to device OCR. Keep the configured AI button visible across Wi-Fi changes, with a bounded timeout and Cancel / Use device OCR controls.
 - The user authorizes up to **100 AI requests** for this unattended session's scratch verification, using the configured SuperTask key. This is a ceiling, not a target; use only calls justified by new changes or unresolved results. Never send real notes as test data.

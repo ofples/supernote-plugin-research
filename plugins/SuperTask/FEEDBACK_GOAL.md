@@ -1,6 +1,6 @@
 # SuperTask workflow follow-up goal prompt
 
-Prepared 4 October 2026. All preparation questions are resolved. This prompt is ready for the user's subsequent unattended coding session; saving it does not activate a goal or start implementation.
+Prepared and activated 4 October 2026. This is the preserved execution prompt; the implementation and beta.12 validation handoff are in [FEEDBACK_IMPLEMENTATION.md](FEEDBACK_IMPLEMENTATION.md). The instructions below record the approved session scope and completion criteria.
 
 ## Goal objective
 
