@@ -1,5 +1,11 @@
 # SuperTask progress
 
+## Responsive cache and compact interactions - 5 October 2026
+
+Beta.21/code26 is installed/enabled on the Nomad. Runtime `8ce712c`, workspace `76fc02a`, launcher `5023491`. Duplicate cache/history/reference reads are removed; complete cached data seeds the first render, unchanged arrays/rows retain identity, interaction projections are memoized and native note scans wait for This Note. Account/hydration races remain guarded; native durability is unchanged. Upcoming shows scheduled tasks after today through Sunday. Collections collapse in project panes/All projects, while Select all still includes hidden tasks. Selection Cancel shares the action-button style; its count is at the usable right edge clear of host Home. The footer is compact and fixed, Refresh is plain text, and Projects has one dotted divider below its header with no Done divider. Monochrome drawn action icons have matching targets and one outer border; dialogs fit content vertically over an undimmed list.
+
+All 255 tests, TypeScript/lint, native package inspection and Hermes pass. Beta.19 hardware checks passed collection collapse/expand, bounded menu/calendar, icon borders/dismissal and 12-task selection/Cancel. Beta.20 count overlapped host Home; beta.21 reserves the header safe area. Beta.21 version/ON confirmed, count bounds `[1137,51][1292,92]` inspected clear of Home; Refresh kept footer text bounds `[23,1828][1237,1862]`. Current 12 active/0 queued. Canonical and installer hashes match; beta.18/19/20 installers removed. Inbox restored, no modal/selection open. No task/note edits or new AI calls. Physical two-finger activation and end-to-end latency measurement remain manual checks.
+
 ## Collection polish and stable sync footer - 5 October 2026
 
 Beta.18/code 23 is installed/enabled. New collection matches the plain New project action across the main pane; collection chips have faint square borders and regular-weight labels. Sync summary is one ellipsized line with full accessible text and a fixed footer height. Runtime `5dcccc1`, workspace `dd406a7`; 243 tests, TypeScript/lint, native package and Hermes checks pass. Nomad House view inspected; sync text bounds were identical before/after Refresh. Canonical and current installer hashes match; beta.17 installer removed. Inbox restored; no task/note edits or paid AI requests.
