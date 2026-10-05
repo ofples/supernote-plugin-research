@@ -76,6 +76,12 @@ function withCurrentAccount(callback: (value: any) => any) {
   const account = getCachedConfig()?.apiToken;
   return (value: any) => {if (account === getCachedConfig()?.apiToken) return callback(value);};
 }
+function sameTaskReference(left: any, right: any) {
+  const aliases = (task: any) => [task.id, task.remoteId, task.localId,
+    String(task.id || '').startsWith('remote:') ? String(task.id).slice(7) : null].filter(value => value != null).map(String);
+  const reference = new Set(aliases(left));
+  return aliases(right).some(id => reference.has(id));
+}
 
 
 export default function TaskHome({nav, focusTab, initialView, active = true}: Props) {
@@ -954,8 +960,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       if (activeTab === 'inbox') return !task.project_id || String(task.project_id) === String(inboxProject?.id);
       if (activeTab === 'today') return !!task.due?.date && task.due.date.slice(0, 10) <= today;
       if (activeTab === 'tomorrow') return task.due?.date?.slice(0, 10) === tomorrow;
-      if (activeTab === 'note') return registryNoteTasks.some(value => value.id === task.id);
-      if (activeTab === 'device') return deviceEntries.some(value => rowIdentity(value) === rowIdentity(task));
+      if (activeTab === 'note') return !!noteCtx?.filePath && (task.source?.filePath === noteCtx.filePath ||
+        registryNoteTasks.some(value => sameTaskReference(value, task)) || noteTasks.some(value => sameTaskReference(value.task, task)));
+      if (activeTab === 'device') return !!task.source?.filePath || deviceEntries.some(value => sameTaskReference(value, task));
       if (activeTab === 'upcoming') return Object.prototype.hasOwnProperty.call(task, 'due') && (!task.due?.date || task.due.date.slice(0, 10) > today);
       return isProjectVisible(visibilityConfig, task.project_id, projectList);
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
