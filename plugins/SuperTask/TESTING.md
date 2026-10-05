@@ -106,4 +106,6 @@ Beta.15 hardware evidence: installed/enabled, startup rendered, Refresh complete
 
 Beta.16 runtime `09759e4`, workspace `db84c09`. Artifact `build/outputs/SuperTask-native-beta16.snplg`: 7,586,813 bytes, SHA256 `581c8c22b60e31a85e03da8bd5aa507ccff88d97421777b65a465e2438654bc2`. 241 tests, TypeScript, lint zero errors, full native package verification and Hermes compilation pass. Tests verify Completed belongs to one main scroll list, full-page undimmed/nonanimated modals, bounded right-aligned bordered row controls and explicit dismissal.
 
-Pending: install/enable beta.16; scroll Inbox to Completed as part of the list, collapse/expand, quiet history pagination; verify stronger Projects separator; select a task and inspect right-aligned borders/trash/close glyphs and dismiss; open calendar/list actions and confirm white full-size first frame (no corner expansion or dark overlay). No real task mutations are needed. Other device workflows remain at the previously recorded coverage.
+Beta.16 installation/enabled ON confirmed in Plugin Manager. Runtime checks await reopening from the hidden Note toolbar; user asked. No task/note edits.
+
+Pending: scroll Inbox to Completed as part of the list, collapse/expand, quiet history pagination; verify stronger Projects separator; select a task and inspect right-aligned borders/trash/close glyphs and dismiss; open calendar/list actions and confirm white full-size first frame (no corner expansion or dark overlay). No real task mutations are needed. Other device workflows remain at the previously recorded coverage.
