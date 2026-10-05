@@ -41,7 +41,7 @@ export default function WorkspaceSelectionBar({count, allSelected = false, disab
 }
 
 const styles = StyleSheet.create({
-  bar: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted', backgroundColor: '#ffffff'},
+  bar: {flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 0, paddingVertical: 0, backgroundColor: '#ffffff'},
   count: {fontWeight: '700', color: '#000000', marginLeft: 'auto'},
   actions: {flexDirection: 'row', flexWrap: 'wrap', gap: 6},
   button: {minHeight: 44, minWidth: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: '#777777'},
