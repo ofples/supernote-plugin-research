@@ -52,6 +52,7 @@ function api(task) {
     '../offline/service': {cachedTask: async () => task, offlineData: async () => ({projects, sections}),
       rememberRemoteTask: async value => remembered.push(value), syncOffline: async () => {},
       editOfflineTask: async (...args) => {edited.push(args); return {...task, ...args[1]};},
+      completedData: async () => remembered, rememberCompleted: async values => remembered.push(...values),
       completeOffline: async () => {throw Object.assign(new Error('Cannot undo a sent recurring occurrence'), {code: 'RECURRING_UNDO_UNSUPPORTED'});}},
   });
   client.setConfigLoader(async () => ({apiToken: 'test-only-token'}));
@@ -123,5 +124,21 @@ test('acknowledged local task keeps its stable local identity when queuing a mov
   try {
     await client.updateTask(task.id, {sectionId: null});
     assert.equal(edited[0][0], 'local:created'); assert.equal(remembered.length, 0);
+  } finally {global.fetch = oldFetch;}
+});
+
+
+test('history accepts numeric successful HTTP status and bounds older requests', async () => {
+  const oldFetch = global.fetch; const urls = [];
+  global.fetch = async url => {urls.push(new URL(url)); return {status: 200, json: async () => ({items: [{id: String(urls.length)}]})};};
+  try {
+    const {client, remembered} = api(null);
+    await client.refreshCompletedTasks(120);
+    assert.equal(urls.length, 2);
+    assert.equal(remembered.length, 2);
+    for (const url of urls) assert.ok(new Date(url.searchParams.get('until')) - new Date(url.searchParams.get('since')) <= 89 * 86400000);
+    global.fetch = async () => ({status: 401, json: async () => ({})});
+    await assert.rejects(client.refreshCompletedTasks(), /HTTP 401/);
+    assert.equal(remembered.length, 2, 'failed refresh preserves cached history');
   } finally {global.fetch = oldFetch;}
 });

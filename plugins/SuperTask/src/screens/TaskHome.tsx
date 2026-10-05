@@ -1161,8 +1161,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     return <View style={styles.body}>
       <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
         <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
-          <View style={{flexDirection: 'row'}}><Pressable style={styles.headerButton} accessibilityLabel={`New task in ${item.group.name}`} onPress={() => setComposer(previous => ({...previous, explicit: true, projectId: id || null, sectionId: item.group.id || null}))}><Text style={styles.headerButtonText}>To here</Text></Pressable>
-            {!!item.group.id && <Pressable style={styles.headerButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>}</View>} /> :
+          !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>���</Text></Pressable>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
         <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
         ListFooterComponent={<Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>} />
@@ -1209,7 +1208,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       <View style={styles.workspace}>
         <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
           noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
-          onCreateProject={() => openContainerAction('project')} onProjectMenu={id => openContainerAction('project', String(id))} />
+          onCreateProject={() => openContainerAction('project')} />
         <View style={styles.body}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
             <Pressable style={styles.headerButton} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
@@ -1221,7 +1220,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
           {renderContent()}
           {activeTab !== 'done' && <View style={{maxHeight: '40%'}}>
-            <Pressable style={styles.headerButton} accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}} onPress={() => setShowDone(value => !value)}>
+            <Pressable style={styles.completedHeading} accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}} onPress={() => setShowDone(value => !value)}>
               <Text style={styles.headerButtonText}>{showDone ? '⌄' : '›'} Completed · {completedItems.length}</Text>
             </Pressable>
             {showDone && <FlatList data={completedItems.slice(0, historyLimit)} keyExtractor={rowIdentity} renderItem={({item}) =>
@@ -1254,18 +1253,18 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.sheetContent}>
-            {actionSheet?.kind === 'list-menu' && <>
+            {actionSheet?.kind === 'list-menu' && <View style={styles.actionRow}>
               <Pressable style={styles.headerButton} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
               {activeTab !== 'done' && <Pressable style={styles.headerButton} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
               {resolvedTab.startsWith('project:') && <>
                 <Pressable style={styles.headerButton} onPress={() => openContainerAction('project', resolvedTab.slice(8))}><Text style={styles.headerButtonText}>Rename or delete project</Text></Pressable>
                 <Pressable style={styles.headerButton} onPress={() => openContainerAction('collection', undefined, resolvedTab.slice(8))}><Text style={styles.headerButtonText}>New collection</Text></Pressable>
               </>}
-            </>}
+            </View>}
             {actionSheet?.kind === 'container' ? <>
               {!!actionSheet.frozen ? <Pressable style={styles.headerButton} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
-              <TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
-              <Pressable style={styles.headerButton} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable>
+              <View style={styles.inputRow}><TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
+              <Pressable style={styles.headerButton} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable></View>
               {!!actionSheet.id && <>
                 <Text style={styles.sheetText}>{containerProof ? containerProof.countIsMinimum ? `At least ${containerProof.count} saved tasks. Deleting all includes uncached and completed tasks in this ${actionSheet.containerKind}.` : `${containerProof.count} tasks in this ${actionSheet.containerKind}.` : 'Checking saved contents…'}</Text>
                 {!!containerProof?.reason && <Text style={styles.sheetText}>{containerProof.reason}</Text>}
@@ -1279,8 +1278,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
                   <ProjectPicker projects={keepProjects} selectedId={chosenKeepProject?.id || null} requireExplicit
                     onChange={destinationProjectId => setActionSheet((sheet: any) => ({...sheet, destinationProjectId, confirm: null}))} />
                 </>}
-                <Pressable style={styles.headerButton} disabled={!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject)} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>{actionSheet.containerKind === 'project' ? `Delete project; keep tasks${chosenKeepProject ? ` in ${chosenKeepProject.name}` : ''}` : 'Delete collection; keep tasks in project'}</Text></Pressable>
-                <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable>
+                <View style={styles.actionRow}><Pressable style={styles.headerButton} disabled={!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject)} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>Delete container; keep tasks</Text></Pressable>
+                <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable></View>
                 {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : `Confirm deleting this container while keeping ${containerProof?.count || 0} verified tasks in ${actionSheet.containerKind === 'project' ? chosenKeepProject?.name || 'the selected project' : projectMap[actionSheet.projectId] || 'their project'}, No collection. Parent and child task relationships are preserved.`}</Text>
                   <Pressable style={styles.headerButton} disabled={actionSheet.confirm === 'keep' && (!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject))} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
               </>}
@@ -1300,16 +1299,16 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
               }}><Text style={styles.headerButtonText}>Use this location</Text></Pressable>
             </>}
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
-            {actionSheet?.kind === 'more' && <>
+            {actionSheet?.kind === 'more' && <View style={styles.actionRow}>
               <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'priority'}))}><Text style={styles.headerButtonText}>Priority</Text></Pressable>
               <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'labels'}))}><Text style={styles.headerButtonText}>Labels</Text></Pressable>
               <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: !selectionHistory}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{selectionHistory ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
               <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'delete'}))}><Text style={styles.headerButtonText}>Delete selected</Text></Pressable>
-            </>}
+            </View>}
             {actionSheet?.kind === 'labels' && <>
               <Text style={styles.sheetText}>Replace labels on selected tasks. Separate names with commas; leave empty to clear.</Text>
-              <TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
-              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable>
+              <View style={styles.inputRow}><TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
+              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable></View>
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
               <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
@@ -1455,7 +1454,7 @@ const styles = StyleSheet.create({
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   syncSummary: {flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
   sheetBackdrop: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end'},
-  sheet: {backgroundColor: '#fff', maxHeight: '80%', borderWidth: 2, borderColor: '#000'},
+  sheet: {backgroundColor: '#fff', maxHeight: '80%', borderWidth: 1, borderColor: '#000'},
   sheetContent: {padding: 16, gap: 12},
   sheetText: {fontSize: 16, color: '#000'},
   queuedChange: {paddingVertical: 12, borderTopWidth: 1, borderColor: '#000', gap: 8},
@@ -1468,7 +1467,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    borderBottomWidth: 2,
+    borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
   title: {
@@ -1480,12 +1479,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  iconButton: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center'},
+  completedHeading: {minHeight: 48, justifyContent: 'center', borderTopWidth: 1, borderColor: '#aaa'},
+  actionRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center'},
+  inputRow: {flexDirection: 'row', gap: 12, alignItems: 'center'},
   headerButton: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: '#ffffff',
   },
   headerButtonText: {
@@ -1500,7 +1504,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   jumpError: {
-    borderBottomWidth: 2,
+    borderBottomWidth: 1,
     borderBottomColor: '#000000',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1512,7 +1516,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   thisPage: {
-    borderBottomWidth: 2,
+    borderBottomWidth: 1,
     borderBottomColor: '#000000',
     backgroundColor: '#ffffff',
   },

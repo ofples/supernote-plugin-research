@@ -6,7 +6,6 @@
 
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
-import Chip from './Chip';
 import {useFontScale} from '../utils/useFontScale';
 
 type Props = {
@@ -22,7 +21,7 @@ export default function SectionHeader({title, count, onPress, action}: Props) {
     <View style={styles.container}>
       <Text style={[styles.title, {fontSize: Math.round(14 * scale)}]}>{title.toUpperCase()}</Text>
       <View style={styles.right}>
-        {count !== undefined ? <Chip label={String(count)} /> : null}
+        {count !== undefined ? <Text style={styles.count}>{count}</Text> : null}
         {onPress ? <Text style={styles.arrow}>{'>'}</Text> : null}
         {action}
       </View>
@@ -42,12 +41,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderTopWidth: 2,
-    borderTopColor: '#000000',
     borderBottomWidth: 1,
-    borderBottomColor: '#000000',
+    borderBottomColor: '#aaaaaa',
     backgroundColor: '#ffffff',
   },
+  count: {color: '#666', fontSize: 14},
   title: {
     flexShrink: 1,
     fontSize: 14,
