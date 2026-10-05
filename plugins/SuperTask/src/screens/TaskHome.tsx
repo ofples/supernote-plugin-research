@@ -1161,7 +1161,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     return <View style={styles.body}>
       <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
         <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
-          !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>} /> :
+          !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>â€¢â€¢â€¢</Text></Pressable>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
         <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
         ListFooterComponent={<Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>} />
