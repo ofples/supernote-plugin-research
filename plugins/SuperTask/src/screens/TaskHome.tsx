@@ -12,6 +12,7 @@ import {
   Modal,
   ScrollView,
   TextInput,
+  Dimensions,
 } from 'react-native';
 import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
@@ -465,8 +466,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         // Render durable history first, then refresh its remote cache. A fresh
         // installation's active snapshot cannot contain completed history.
         setDoneLoading(false);
-        refreshCompletedTasks(30).then(history => {if (account === getCachedConfig()?.apiToken) setDoneTasks(history);}).catch(() => {
-          if (account === getCachedConfig()?.apiToken) setDoneError('Showing saved completed history. Todoist history could not be refreshed right now.');
+        refreshCompletedTasks(30).then(history => {if (account === getCachedConfig()?.apiToken) {setDoneTasks(history); setDoneError('');}}).catch((cause: any) => {
+          if (account === getCachedConfig()?.apiToken) setDoneError(`Showing saved completed history. Refresh failed: ${cause.message}`);
         });
       } catch (err: any) {
         if (account !== getCachedConfig()?.apiToken) return;
@@ -988,7 +989,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     setHistoryLoading(true);
     refreshCompletedTasks(days).then(items => {
       if (account !== getCachedConfig()?.apiToken) return;
-      setHistoryDays(days); setDoneTasks(items); setHistoryLimit(value => value + 20);
+      setHistoryDays(days); setDoneTasks(items); setDoneError(''); setHistoryLimit(value => value + 20);
     }).catch(() => {if (account === getCachedConfig()?.apiToken) setDoneError('Older history is unavailable. Saved tasks remain visible.');})
       .finally(() => {if (account === getCachedConfig()?.apiToken) setHistoryLoading(false);});
   };
@@ -1251,15 +1252,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             sel.clearSelection();
             fetchData(true);
             if (activeTab === 'done' || showDone) {
-              refreshCompletedTasks(30).then(withCurrentAccount(setDoneTasks)).catch(withCurrentAccount((err: any) => setDoneError(`History refresh failed: ${err.message}`)));
+              refreshCompletedTasks(30).then(withCurrentAccount((items: any[]) => {setDoneTasks(items); setDoneError('');})).catch(withCurrentAccount((err: any) => setDoneError(`History refresh failed: ${err.message}`)));
             }
           }}>
             <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
           </Pressable>
         </View>
       </View>
-      <Modal visible={!!actionSheet} transparent={false} animationType="none" presentationStyle="fullScreen" onRequestClose={() => setActionSheet(null)}>
-        <View style={styles.sheetBackdrop}><View style={styles.sheet}>
+      <Modal visible={!!actionSheet} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setActionSheet(null)}>
+        <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.sheetContent}>
@@ -1325,8 +1326,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           </ScrollView>
         </View></View>
       </Modal>
-      <Modal visible={syncSheetOpen} transparent={false} animationType="none" presentationStyle="fullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
-        <View style={styles.sheetBackdrop}><View style={styles.sheet}>
+      <Modal visible={syncSheetOpen} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
+        <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>Sync summary</Text>
             <Pressable style={styles.headerButton} onPress={() => setSyncSheetOpen(false)} accessibilityLabel="Close sync summary"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.sheetContent}>
@@ -1463,8 +1464,8 @@ const styles = StyleSheet.create({
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   syncSummary: {flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
-  sheetBackdrop: {flex: 1, backgroundColor: '#fff'},
-  sheet: {flex: 1, width: '100%', backgroundColor: '#fff'},
+  sheetBackdrop: {flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center'},
+  sheet: {width: '90%', maxWidth: 720, height: '65%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
   sheetContent: {padding: 16, gap: 12},
   sheetText: {fontSize: 16, color: '#000'},
   queuedChange: {paddingVertical: 12, borderTopWidth: 1, borderColor: '#000', gap: 8},

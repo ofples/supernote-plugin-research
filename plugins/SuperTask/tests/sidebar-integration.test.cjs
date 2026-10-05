@@ -16,11 +16,11 @@ function load(file, overrides = {}) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true,
   }}).outputText, filename); return mod.exports;
 }
-const native = {TextInput: 'TextInput', View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
+const native = {Dimensions: {get: () => ({width: 800, height: 1000})}, TextInput: 'TextInput', View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null,
   StyleSheet: {create: value => value}, FlatList: ({data, renderItem, ListFooterComponent, ...props}) => React.createElement('List', props, data.map(item =>
     React.createElement('ListItem', {key: item.key || item.id}, renderItem({item}))), ListFooterComponent)};
-function workspace(config = {}, note = false, extraTasks = []) {
+function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const today = require('../src/offline/model').localDate(new Date());
   const next = new Date(); next.setDate(next.getDate() + 1);
   const tomorrow = require('../src/offline/model').localDate(next);
@@ -38,7 +38,7 @@ function workspace(config = {}, note = false, extraTasks = []) {
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
     reopened.push(id); data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false} : task)};
     data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted);
-  }, getCompletedTasks: async () => data.allTasks.filter(task => task.completed), refreshCompletedTasks: async () => data.allTasks.filter(task => task.completed)};
+  }, getCompletedTasks: async () => data.allTasks.filter(task => task.completed), refreshCompletedTasks: async () => historyRefresh ? historyRefresh() : data.allTasks.filter(task => task.completed)};
   const hook = load('../src/utils/useTaskSelection.ts', {'../api/todoist': api}).useTaskSelection;
   let frozenReferences;
   const references = () => frozenReferences || data.allTasks.filter(task => task.source).map(task => ({...task, notePath: task.source.filePath, pageNum: task.source.pageNum}));
@@ -436,8 +436,20 @@ test('completed tasks are inside the active list scroll flow and action pages ne
   assert.equal(tree.root.findAllByType('List').length, 1, 'no independent completed scroller');
   await act(async () => tree.root.findByProps({accessibilityLabel: 'List menu'}).props.onPress());
   const page = tree.root.findByType('Modal');
-  assert.equal(page.props.transparent, false);
+  assert.equal(page.props.transparent, true);
   assert.equal(page.props.animationType, 'none');
-  assert.equal(page.props.presentationStyle, 'fullScreen');
+  assert.equal(page.props.presentationStyle, 'overFullScreen');
+  await act(async () => tree.unmount());
+});
+
+
+test('successful retry clears a previous history warning without discarding saved history', async () => {
+  let fail = true;
+  const model = workspace({}, false, [], async () => {if (fail) throw new Error('Temporary network problem'); return [];}); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  assert.match(JSON.stringify(tree.toJSON()), /Temporary network problem/);
+  fail = false;
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Refresh'}).props.onPress());
+  assert.doesNotMatch(JSON.stringify(tree.toJSON()), /Temporary network problem/);
   await act(async () => tree.unmount());
 });
