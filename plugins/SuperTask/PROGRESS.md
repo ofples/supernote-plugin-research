@@ -2,7 +2,7 @@
 
 ## Connected Nomad follow-up — 5 October 2026
 
-Beta.13 is now installed/enabled and startup/new workspace layout is verified on the Nomad. Existing configuration is unchanged and privately backed up. Saved completed history renders; its remote refresh was unavailable during the check. No task/note edits or new AI calls were made. A missing dotted separator in the new Inbox view was corrected centrally on the workspace feature branch (`db69d20`). Combined beta.14/code 19 is built/inspected with all 236 tests, TypeScript/lint and full Hermes compilation passing, ready for installation when the coordinated Obsidian screen-testing window ends. Exact artifact/hash and outstanding checks are in [TESTING.md](TESTING.md). Subsequent sections describe the earlier local-delivery checkpoint.
+**Beta.14 is installed/enabled**, with startup and corrected dotted separators verified on the Nomad. Existing configuration is unchanged and privately backed up. Multiselect/Select all selected 20 active Inbox tasks, including offscreen rows; Cancel cleared selection without edits. Saved completed history renders; its remote refresh was unavailable during the check. No task/note edits or new AI calls were made. The separator correction is on the workspace feature branch (`db69d20`). Combined beta.14/code 19 has all 236 tests, TypeScript/lint, package inspection and full Hermes compilation passing. Screen control was coordinated with and returned to the Obsidian testing chat. Exact artifact/hash and remaining hardware checks are in [TESTING.md](TESTING.md). Subsequent sections describe earlier checkpoints.
 
 ## Native interaction goal delivered locally — 5 October 2026
 
