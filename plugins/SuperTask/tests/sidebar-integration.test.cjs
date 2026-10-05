@@ -33,7 +33,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
       {id: 's', uuid: 'b', kind: 'collection_create', state: 'pending', collection: {name: 'Writing'}}]};
   const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = [];
   let finishProject; const projectGate = new Promise(resolve => {finishProject = resolve;});
-  let session = null;
+  let session = null; let reads = 0; let scans = 0; let cacheListener;
   const api = {completeTask: async id => {completed.push(id); data = {...data, tasks: data.tasks.filter(task => task.id !== id),
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
     reopened.push(id); data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false} : task)};
@@ -53,13 +53,13 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     '../components/TaskRow': {__esModule: true, default: 'TaskRow'}, '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
   const view = load('../src/screens/TaskHome.tsx', {
     'react-native': native, 'sn-plugin-lib': {PluginCommAPI: {getCurrentFilePath: async () => ({success: true, result: note ? '/note/Test.note' : ''}),
-      getCurrentPageNum: async () => ({success: true, result: 0})}, PluginFileAPI: {getElements: async () => ({success: true, result: []})}},
-    '../utils/closePlugin': {closePlugin() {}}, '../utils/taskRegistry': {getAllTasks: async () => references(), getTasksForNote: async () => references(), getTask: async () => null},
+      getCurrentPageNum: async () => ({success: true, result: 0})}, PluginFileAPI: {getElements: async () => {scans++; return {success: true, result: []};}}},
+    '../utils/closePlugin': {closePlugin() {}}, '../utils/taskRegistry': {getAllTasks: async () => {reads++; return references();}, getTasksForNote: async () => {reads++; return references();}, getTask: async () => null},
     '../utils/noteOpener': {}, '../utils/noteHeal': {healRenamedNotes: async () => 0}, '../utils/noteLabel': {noteLabel: () => 'Test'},
     '../utils/config': {getCachedConfig: () => config, loadConfig: async () => config, resolveDefaultTab: cfg => cfg?.defaultTab || 'today', saveConfig: async () => {}},
     '../utils/useFontScale': {useFontScale: () => 1}, '../components/settings': {Check: 'Check'},
     '../utils/viewState': {getSessionTab: () => session, setSessionTab: value => {session = value;}}, '../api/todoist': api,
-    '../cache/taskCache': {getCache: () => data, fetchTaskData: async () => data, initTaskCache: async () => data, invalidateCache() {}, subscribeCache: () => () => {}},
+    '../cache/taskCache': {getCachedWorkspace: () => ({...data, completedTasks: data.allTasks.filter(task => task.completed)}), getCache: () => data, fetchTaskData: async () => data, initTaskCache: async () => data, invalidateCache() {}, subscribeCache: listener => {cacheListener = listener; return () => {};}},
     '../offline/service': service, '../workspace/useWorkspaceMutations': {__esModule: true, default: mutations},
     '../workspace/WorkspaceTaskRow': {...rowModule, __esModule: true},
     '../components/NativeTaskSidebar': {__esModule: true, default: 'Sidebar'},
@@ -75,7 +75,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   });
   const nav = {push: (...args) => navCalls.push(args)};
   return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, updateData: update => {data = update(data);},
-    finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
+    emitCache: () => cacheListener({...data, completedTasks: data.allTasks.filter(task => task.completed)}), getReads: () => reads, getScans: () => scans, finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
     markMissing: (id, leakIntoActive = false) => {
       data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
       data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted && (leakIntoActive || !task.remoteMissing));
@@ -465,8 +465,51 @@ test('sync summary stays one truncated line in a stable footer and keeps full de
   assert.equal(labels[0].props.ellipsizeMode, 'tail');
   assert.match(summary.props.accessibilityValue.text, /tasks, .*queued/);
   const parent = summary.parent;
-  assert.equal(parent.props.style[1].height, 69);
+  assert.equal(parent.props.style[1].height, 30);
   await act(async () => summary.props.onPress());
   assert.ok(tree.root.findByProps({accessibilityLabel: 'Close sync summary'}));
+  await act(async () => tree.unmount());
+});
+
+
+test('cache updates do not reread history or note references and native scans wait for This Note', async () => {
+  const model = workspace({}, true); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  assert.equal(model.getScans(), 0);
+  const before = model.getReads();
+  await act(async () => model.emitCache());
+  assert.equal(model.getReads(), before);
+  await switchTo(tree, 'note');
+  assert.equal(model.getScans(), 1);
+  await act(async () => tree.unmount());
+});
+
+test('Upcoming count and rows agree on scheduled tasks through Sunday', async () => {
+  const far = new Date(); far.setDate(far.getDate()+14);
+  const model = workspace({}, false, [{id: 'far', content: 'Later task', project_id:'p', due: {date: require('../src/offline/model').localDate(far)}},
+    {id:'undated', content:'No schedule', project_id:'p'}]); let tree;
+  await act(async () => {tree=create(React.createElement(model.Home,{nav:model.nav}));});
+  await switchTo(tree,'upcoming');
+  const rows=tree.root.findAllByType('TaskRow').filter(row => !row.props.checked);
+  assert.equal(tree.root.findByType('Sidebar').props.counts.upcoming, rows.length);
+  assert.ok(rows.every(row => !['far','undated','inbox'].includes(row.props.task.id)));
+  await act(async () => tree.unmount());
+});
+
+
+test('collapsing a collection preserves its count and Select all includes hidden tasks', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree=create(React.createElement(model.Home,{nav:model.nav}));});
+  await switchTo(tree,'project:p');
+  const section=tree.root.findAllByType('Section').find(row => row.props.title === 'Writing');
+  await act(async () => section.props.onToggle());
+  assert.equal(tree.root.findAllByType('Section').find(row => row.props.title === 'Writing').props.count, 1);
+  assert.equal(tree.root.findAllByType('TaskRow').filter(row => row.props.task.id === 'one').length, 0);
+  await act(async () => tree.root.findByProps({accessibilityLabel:'List menu'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel:'Select tasks'}).props.onPress());
+  await act(async () => tree.root.findByType('Selection').props.onSelectAll());
+  assert.equal(tree.root.findByType('Selection').props.count, 2);
+  assert.deepEqual(model.completed, []);
+  await act(async () => tree.root.findAllByType('Section').find(row => row.props.title === 'Writing').props.onToggle());
   await act(async () => tree.unmount());
 });

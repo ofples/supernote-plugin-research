@@ -2,7 +2,7 @@
  * TaskHome - shared task workspace with sidebar navigation and sync summary.
  */
 
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useRef, useMemo} from 'react';
 import {
   View,
   Text,
@@ -25,13 +25,15 @@ import {useFontScale} from '../utils/useFontScale';
 import {loadConfig, getCachedConfig, resolveDefaultTab} from '../utils/config';
 import {getSessionTab, setSessionTab} from '../utils/viewState';
 import {getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
-import {getCache, fetchTaskData, initTaskCache, subscribeCache} from '../cache/taskCache';
-import {completedData, offlineData, retryOffline, subscribeOffline, saveOfflineBatch} from '../offline/service';
+import {getCache, fetchTaskData, initTaskCache, subscribeCache, getCachedWorkspace} from '../cache/taskCache';
+import {completedData, offlineData, retryOffline, saveOfflineBatch} from '../offline/service';
 const workspaceService = require('../offline/service');
 const {projectTasks, composerDefaults, sameScope, projectContainers, projectContainerTasks, resolveContainerId, rowIdentity, protectedOccurrence, orderedTasks} = require('../workspace/intents');
 import useWorkspaceMutations from '../workspace/useWorkspaceMutations';
 const {syncStatusMessage} = require('../offline/status');
 const {visibleProjectIds, isProjectVisible} = require('../utils/projectVisibility');
+const {isCollectionExpanded, toggleCollectionExpanded} = require('../collections/collapse');
+const {isUpcomingThisWeek} = require('../workspace/upcoming');
 const {collectionGroups} = require('../collections/model');
 const {localDate} = require('../offline/model');
 const {splitTitleDescription} = require('../batch/descriptionParser');
@@ -94,14 +96,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   // and the loadConfig().then below corrects them (usually behind the
   // loading screen, so still no visible jump).
   const [cfg0] = useState(getCachedConfig);
-  const [baseTasks, setTasks] = useState<any[]>([]);
-  const [, setProjectMap] = useState<ProjectMap>({});
-  const [baseProjects, setProjectList] = useState<any[]>([]);
-  const [baseCollections, setCollectionList] = useState<any[]>([]);
+  const [cached0] = useState(() => getCachedWorkspace());
+  const [baseTasks, setTasks] = useState<any[]>(cached0?.tasks || []);
+  const [baseProjects, setProjectList] = useState<any[]>(cached0?.projects || []);
+  const [baseCollections, setCollectionList] = useState<any[]>(cached0?.sections || []);
+  const [, setCollectionRevision] = useState(0);
   const [containerIntents, setContainerIntents] = useState<any[]>([]);
-  const projectList: any[] = projectContainers(baseProjects, containerIntents, 'project');
-  const collectionList: any[] = projectContainers(baseCollections, containerIntents, 'collection');
-  const projectMap: ProjectMap = Object.fromEntries(projectList.map(project => [String(project.id), project.name]));
+  const projectList: any[] = useMemo(() => projectContainers(baseProjects, containerIntents, 'project'), [baseProjects, containerIntents]);
+  const collectionList: any[] = useMemo(() => projectContainers(baseCollections, containerIntents, 'collection'), [baseCollections, containerIntents]);
+  const projectMap: ProjectMap = useMemo(() => Object.fromEntries(projectList.map(project => [String(project.id), project.name])), [projectList]);
   const collectionName = (task: any) => task.section_id ? collectionList.find(section => section.id === task.section_id)?.name || 'Unavailable collection' : undefined;
   // Tab resolution (F-038): session memory > deep-link focusTab > configured
   // default ('last' resolves to the persisted lastOpenedTab). Session memory
@@ -114,21 +117,21 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [syncSheetOpen, setSyncSheetOpen] = useState(() => (getSessionTab() || focusTab || resolveDefaultTab(cfg0)) === 'pending');
   const [syncRetrying, setSyncRetrying] = useState(false);
   const [syncRetryError, setSyncRetryError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached0);
   const [error, setError] = useState('');
-  const [syncInfo, setSyncInfo] = useState<any>(null);
+  const [syncInfo, setSyncInfo] = useState<any>(cached0);
   const [jumpError, setJumpError] = useState('');
   const [noteCtx, setNoteCtx] = useState<{fileName: string; pageNum: number; filePath: string} | null>(null);
   const [pageTaskIds, setPageTaskIds] = useState<string[]>([]);
   const [registryNoteTasks, setRegistryNoteTasks] = useState<any[]>([]);
-  const [deviceTasks, setDeviceTasks] = useState<any[]>([]);
+  const [deviceTasks, setDeviceTasks] = useState<any[]>(() => (cached0?.allTasks || []).filter((task: any) => task.source?.filePath).map((task: any) => ({...task, notePath: task.source.filePath, noteFile: task.source.filePath.split('/').pop(), pageNum: task.source.pageNum})));
   const [deviceLoaded, setDeviceLoaded] = useState(false);
   const [visibilityConfig, setVisibilityConfig] = useState<any>(cfg0 || {});
   const [, setDebugModeOn] = useState(cfg0?.debugMode === true);
 
   // Done tab: fetched lazily on first visit (separate endpoint, not part of
   // the main cache -- completed history changes rarely and can be large)
-  const [doneTasks, setDoneTasks] = useState<any[]>([]);
+  const [doneTasks, setDoneTasks] = useState<any[]>(cached0?.completedTasks || []);
   const [doneLoading, setDoneLoading] = useState(false);
   const [doneError, setDoneError] = useState('');
   const [doneFetched, setDoneFetched] = useState(false);
@@ -158,10 +161,10 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const submissionSequence = useRef(0);
   const mutations = useWorkspaceMutations(async () => {
     const account = getCachedConfig()?.apiToken;
-    const data = await offlineData(); if (account !== getCachedConfig()?.apiToken) return;
-    setSyncInfo(data); dataFp.current = '';
+    const data = getCachedWorkspace() || await offlineData(); if (account !== getCachedConfig()?.apiToken) return;
+    setSyncInfo(data);
     applyData(data.tasks, data.projects, data.sections);
-    const history = await completedData(); if (account === getCachedConfig()?.apiToken) setDoneTasks(history);
+    const history = data.completedTasks || await completedData(); if (account === getCachedConfig()?.apiToken) setDoneTasks(previous => JSON.stringify(previous) === JSON.stringify(history) ? previous : history);
   }, setError, () => getCachedConfig()?.apiToken);
   const accountRef = useRef(getCachedConfig()?.apiToken);
   const resolvedTab = activeTab.startsWith('project:') ? `project:${resolveContainerId(activeTab.slice(8), projectList)}` : activeTab;
@@ -169,12 +172,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const completedViewKey = activeProject ? `project:${activeProject.localId || activeProject.id}` : resolvedTab;
   const showDone = completedExpanded[completedViewKey] !== false;
   const setShowDone = (update: (value: boolean) => boolean) => setCompletedExpanded(previous => ({...previous, [completedViewKey]: update(previous[completedViewKey] !== false)}));
-  const seedTasks = [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
-    .filter((task, index, list) => list.findIndex(value => rowIdentity(value) === rowIdentity(task)) === index);
-  const projected: any[] = projectContainerTasks(projectTasks(orderedTasks(seedTasks), mutations.intents), containerIntents);
-  const tasks: any[] = projected.filter((task: any) => !task.deleted && !task.completed);
-  const projectedDone: any[] = projectContainerTasks(projectTasks(doneTasks, mutations.intents), containerIntents).filter((task: any) => task.completed !== false && !task.deleted);
-  const optimisticDone: any[] = projected.filter((task: any) => task.completed && !task.deleted);
+  const seedTasks = useMemo(() => {
+    const seen = new Set();
+    return [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
+      .filter(task => {const id = rowIdentity(task); if (seen.has(id)) return false; seen.add(id); return true;});
+  }, [baseTasks, doneTasks, creatingDrafts]);
+  const projected: any[] = useMemo(() => projectContainerTasks(projectTasks(orderedTasks(seedTasks), mutations.intents), containerIntents), [seedTasks, mutations.intents, containerIntents]);
+  const tasks: any[] = useMemo(() => projected.filter((task: any) => !task.deleted && !task.completed), [projected]);
+  const projectedDone: any[] = useMemo(() => projectContainerTasks(projectTasks(doneTasks, mutations.intents), containerIntents).filter((task: any) => task.completed !== false && !task.deleted), [doneTasks, mutations.intents, containerIntents]);
+  const optimisticDone: any[] = useMemo(() => projected.filter((task: any) => task.completed && !task.deleted), [projected]);
   useEffect(() => {
     if (!active) return;
     loadConfig().then(withCurrentAccount(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);})).catch(() => {});
@@ -273,33 +279,28 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         setNoteCtx({fileName, pageNum, filePath});
         if (account === getCachedConfig()?.apiToken) setRegistryNoteTasks(regTasks);
 
-        // Scan page elements for supertask:// links
-        try {
-          const elemResult: any = await PluginFileAPI.getElements(pageNum, filePath);
-          if (elemResult?.success && elemResult.result) {
-            const linkElements = elemResult.result.filter(
-              (el: any) => el.type === 600 && el.link?.destPath?.startsWith('supertask://task/')
-            );
-            const ids = linkElements.map((el: any) => {
-              const path = el.link.destPath;
-              return path.replace('supertask://task/', '');
-            });
-            setPageTaskIds(ids);
-            log('TaskHome', `Found ${ids.length} supertask links on page`);
 
-            // Recycle elements to free native memory
-            elemResult.result.forEach((el: any) => {
-              if (el.recycle) el.recycle();
-            });
-          }
-        } catch (e: any) {
-          log('TaskHome', `Element scan failed: ${e.message}`);
-        }
       } catch (e: any) {
         log('TaskHome', `Page context detection failed: ${e.message}`);
       }
     })();
   }, [focusTab, initialView]);
+
+  useEffect(() => {
+    if (!active || activeTab !== 'note' || !noteCtx) return;
+    let cancelled = false;
+    const {filePath, pageNum} = noteCtx;
+    PluginFileAPI.getElements(pageNum, filePath).then((response: any) => {
+      try {
+        if (!cancelled && response?.success && response.result) {
+          const ids = response.result.filter((element: any) => element.type === 600 && element.link?.destPath?.startsWith('supertask://task/'))
+            .map((element: any) => element.link.destPath.replace('supertask://task/', ''));
+          setPageTaskIds(previous => JSON.stringify(previous) === JSON.stringify(ids) ? previous : ids);
+        }
+      } finally {response?.result?.forEach((element: any) => element.recycle?.());}
+    }).catch(() => {});
+    return () => {cancelled = true;};
+  }, [active, activeTab, noteCtx]);
 
   // Apply fetched data to component state. Skips the update entirely when
   // the data matches what is already rendered: the background revalidate
@@ -308,17 +309,17 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   // (complete/reopen) bypass this via setTasks directly, which leaves the
   // fingerprint stale in the safe direction -- the next fetch differs from
   // it and repaints.
-  const dataFp = useRef('');
+  const dataRefs = useRef(cached0 ? [cached0.tasks, cached0.projects, cached0.sections] : []);
+  const dataFp = useRef(cached0 ? JSON.stringify([cached0.tasks, cached0.projects, cached0.sections]) : '');
   const applyData = useCallback((fetchedTasks: any[], fetchedProjects: any[], fetchedSections: any[] = []) => {
-    const fp = JSON.stringify([fetchedTasks, fetchedProjects, fetchedSections]);
+    if (dataRefs.current[0] === fetchedTasks && dataRefs.current[1] === fetchedProjects && dataRefs.current[2] === fetchedSections) return;
+    dataRefs.current = [fetchedTasks, fetchedProjects, fetchedSections];
+    const fp = JSON.stringify(dataRefs.current);
     if (fp === dataFp.current) {
       log('TaskHome', 'Fetched data unchanged -- skipping repaint');
       return;
     }
     dataFp.current = fp;
-    const pMap: ProjectMap = {};
-    (fetchedProjects || []).forEach((p: any) => { pMap[p.id] = p.name; });
-    setProjectMap(pMap);
     setProjectList(fetchedProjects || []);
     setCollectionList(fetchedSections || []);
     setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted && !task.remoteMissing));
@@ -340,9 +341,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   useEffect(() => subscribeCache((data: any) => {
     setSyncInfo(data); setError(''); setLoading(false);
     applyData(data.tasks, data.projects, data.sections);
-    getAllRegistryTasks().then(withCurrentAccount(setDeviceTasks)).catch(() => {});
-    completedData().then(withCurrentAccount(setDoneTasks)).catch(() => {});
-    if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(withCurrentAccount(setRegistryNoteTasks)).catch(() => {});
+    if (data.completedTasks) setDoneTasks(previous => JSON.stringify(previous) === JSON.stringify(data.completedTasks) ? previous : data.completedTasks);
+    const references = (data.allTasks || []).filter((task: any) => task.source?.filePath).map((task: any) => ({...task, notePath: task.source.filePath,
+      noteFile: task.source.filePath.split('/').pop(), pageNum: task.source.pageNum}));
+    setDeviceTasks(previous => JSON.stringify(previous) === JSON.stringify(references) ? previous : references);
+    if (noteCtx?.filePath) setRegistryNoteTasks(previous => {
+      const next = references.filter((task: any) => task.notePath === noteCtx.filePath);
+      return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+    });
   }), [applyData, noteCtx?.filePath]);
 
   // Reconcile registry: remove entries for tasks no longer in Todoist,
@@ -489,10 +495,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const clearSelection = () => {setSelectionMode(false); setSelectionHistory(false); setSelectedIds([]);};
   const sel = {selectedIds, busy: false, clearSelection,
     completeOne: (id: string) => selectionMode ? toggleSelection(id) : mutations.mutate([id], {kind: 'complete', completed: true})};
-  useEffect(() => {const unsubscribe = subscribeOffline(() => {
-    offlineData().then(withCurrentAccount(data => {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);})).catch(() => {});
-    completedData().then(withCurrentAccount(setDoneTasks)).catch(() => {});
-  }); return () => {unsubscribe();};}, [applyData]);
+
 
   // Jump straight into a note at a task's page. Registry pages are 0-based,
   // the intent is 1-based; openNote() closes the plugin view itself.
@@ -789,13 +792,12 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     const upcoming = visible
       .filter(t => {
         const due = (t.due?.date || '').slice(0, 10);
-        return due && due > today;
+        return isUpcomingThisWeek(due, today);
       })
       .sort((a, b) => (a.due?.date || '').localeCompare(b.due?.date || ''));
 
-    const noDue = visible.filter(t => !t.due?.date);
 
-    if (upcoming.length === 0 && noDue.length === 0) {
+    if (upcoming.length === 0) {
       return (
         <ScrollView><View style={styles.emptyList}>
           <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No upcoming tasks</Text>
@@ -804,10 +806,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }
 
     const buckets = groupByDateBucket(upcoming, today);
-    if (noDue.length > 0) {
-      buckets.push({key: 'header-nodate', type: 'header' as const, title: 'No Date', count: noDue.length});
-      noDue.forEach(t => buckets.push({key: t.id, type: 'task' as const, task: t}));
-    }
+
 
     return (
       <FlatList
@@ -946,7 +945,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     activeTab === 'inbox' ? tasks.filter(task => !task.project_id || String(task.project_id) === String(inboxProject?.id)) :
     activeTab === 'today' ? projectFiltered(tasks).filter(task => task.due?.date && task.due.date.slice(0, 10) <= today) :
     activeTab === 'tomorrow' ? projectFiltered(tasks).filter(task => task.due?.date?.slice(0, 10) === tomorrow) :
-    activeTab === 'upcoming' ? projectFiltered(tasks).filter(task => !task.due?.date || task.due.date.slice(0, 10) > today) :
+    activeTab === 'upcoming' ? projectFiltered(tasks).filter(task => isUpcomingThisWeek(task.due?.date, today)) :
     activeTab === 'note' ? noteTasks.map(item => item.task) : activeTab === 'device' ? deviceEntries.filter(isActiveRegistryTask).map(reference => tasks.find(task => rowIdentity(task) === rowIdentity(reference)) || reference) :
     activeTab === 'done' ? projectFiltered(projectedDone) : projectFiltered(tasks);
   const completedItems = [...projectedDone, ...optimisticDone].filter((task, index, list) =>
@@ -958,7 +957,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       if (activeTab === 'note') return !!noteCtx?.filePath && (task.source?.filePath === noteCtx.filePath ||
         registryNoteTasks.some(value => sameTaskReference(value, task)) || noteTasks.some(value => sameTaskReference(value.task, task)));
       if (activeTab === 'device') return !!task.source?.filePath || deviceEntries.some(value => sameTaskReference(value, task));
-      if (activeTab === 'upcoming') return Object.prototype.hasOwnProperty.call(task, 'due') && (!task.due?.date || task.due.date.slice(0, 10) > today);
+      if (activeTab === 'upcoming') return isUpcomingThisWeek(task.due?.date, today);
       return isProjectVisible(visibilityConfig, task.project_id, projectList);
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
   const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
@@ -1133,7 +1132,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     const due = (task.due?.date || '').slice(0, 10);
     if (due && due <= today) counts.today++;
     if (due === tomorrow) counts.tomorrow++;
-    if (due > today || !due) counts.upcoming++;
+    if (isUpcomingThisWeek(due, today)) counts.upcoming++;
     if (String(task.project_id) === String(inboxProject?.id) || !task.project_id) counts.inbox++;
     counts[task.project_id] = (counts[task.project_id] || 0) + 1;
   }
@@ -1175,11 +1174,11 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     const groups = collectionGroups(id || '', projectTasks, collectionList);
     const rows = groups.flatMap((group: any) => [
       {key: `collection:${group.id}`, type: 'collection', group},
-      ...(group.tasks.length ? group.tasks.map((task: any) => ({key: task.id, type: 'task', task})) : [{key: `empty:${group.id}`, type: 'empty'}]),
+      ...(isCollectionExpanded(id || '', group.id) ? (group.tasks.length ? group.tasks.map((task: any) => ({key: task.id, type: 'task', task})) : [{key: `empty:${group.id}`, type: 'empty'}]) : []),
     ]);
     return <View style={styles.body}>
       <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
-        <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
+        <SectionHeader title={item.group.name} count={item.group.tasks.length} expanded={isCollectionExpanded(id || '', item.group.id)} onToggle={() => {toggleCollectionExpanded(id || '', item.group.id); setCollectionRevision(value => value + 1); setExpandedId(null);}} action={item.group.id !== 'unavailable' &&
           !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
         <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
@@ -1199,8 +1198,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} /> : <>
           <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
           <View style={styles.headerButtons}>
-            <Pressable style={styles.headerButton} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
-            <Pressable style={styles.headerButton} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
+            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
+            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
           </View>
         </>}
       </View>
@@ -1214,15 +1213,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       {error ? <View style={styles.jumpError}><Text style={styles.jumpErrorText}>{error}</Text></View> : null}
       {creatingDrafts.filter(task => task.syncState === 'attention').map(task => <View key={task.id} style={{padding: 8, flexDirection: 'row', gap: 8}}>
         <Text style={{color: '#000', flex: 1}}>New task needs local save confirmation: {task.content}</Text>
-        <Pressable style={styles.headerButton} accessibilityLabel="Retry new task save" onPress={() => persistComposer(task.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+        <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Retry new task save" onPress={() => persistComposer(task.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
       </View>)}
       {containerRetries.filter(sheet => sheet.error).map(sheet => <View key={sheet.optimisticId} style={{padding: 8, flexDirection: 'row', gap: 8}}>
         <Text style={{color: '#000', flex: 1}}>{sheet.containerKind} change needs local save confirmation: {sheet.frozen.name}</Text>
-        <Pressable style={styles.headerButton} disabled={sheet.saving} accessibilityLabel="Retry container save" onPress={() => performContainerAction(sheet.frozen.action, sheet.frozen.mode, sheet)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+        <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={sheet.saving} accessibilityLabel="Retry container save" onPress={() => performContainerAction(sheet.frozen.action, sheet.frozen.mode, sheet)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
       </View>)}
       {mutations.failures.map(failure => <View key={failure.sequence} style={{padding: 8, flexDirection: 'row', gap: 8}}>
         <Text style={{color: '#000', flex: 1}}>{failure.error}</Text>
-        <Pressable style={styles.headerButton} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+        <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
       </View>)}
       <View style={styles.workspace}>
         <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
@@ -1230,7 +1229,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           onCreateProject={() => openContainerAction('project')} />
         <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
           <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
-            <Pressable style={styles.headerButton} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
+            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
           {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
             onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
               source: previous.value ? previous.source : activeTab === 'note' && noteCtx ? {filePath: noteCtx.filePath, pageNum: noteCtx.pageNum} : null}))} dueDate={composerLocation.dueDate}
@@ -1242,12 +1241,12 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         </View>
       </View>
 
-      <View style={[styles.footer, {height: Math.max(44, Math.round(14 * scale) + 18) + 25}]}>
+      <View style={[styles.footer, {height: Math.max(30, Math.round(13 * scale) + 12)}]}>
         <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
           <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {syncMessage || 'Sync details'}</Text>
         </Pressable>
         <View style={styles.footerRight}>
-          <Pressable style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
+          <Pressable style={styles.footerRefresh} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
             sel.clearSelection();
             fetchData(true);
             if (activeTab === 'done' || showDone) {
@@ -1261,25 +1260,25 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       <Modal visible={!!actionSheet} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setActionSheet(null)}>
         <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
-            <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
-          <ScrollView contentContainerStyle={styles.sheetContent}>
+            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
+          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             {actionSheet?.kind === 'list-menu' && <View style={styles.actionRow}>
-              <Pressable style={styles.headerButton} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
-              {activeTab !== 'done' && <Pressable style={styles.headerButton} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
+              {activeTab !== 'done' && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
               {resolvedTab.startsWith('project:') && <>
-                <Pressable style={styles.headerButton} onPress={() => openContainerAction('project', resolvedTab.slice(8))}><Text style={styles.headerButtonText}>Rename or delete project</Text></Pressable>
-                <Pressable style={styles.headerButton} onPress={() => openContainerAction('collection', undefined, resolvedTab.slice(8))}><Text style={styles.headerButtonText}>New collection</Text></Pressable>
+                <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => openContainerAction('project', resolvedTab.slice(8))}><Text style={styles.headerButtonText}>Rename or delete project</Text></Pressable>
+                <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => openContainerAction('collection', undefined, resolvedTab.slice(8))}><Text style={styles.headerButtonText}>New collection</Text></Pressable>
               </>}
             </View>}
             {actionSheet?.kind === 'container' ? <>
-              {!!actionSheet.frozen ? <Pressable style={styles.headerButton} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
+              {!!actionSheet.frozen ? <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
               <View style={styles.inputRow}><TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
-              <Pressable style={styles.headerButton} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable></View>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable></View>
               {!!actionSheet.id && <>
                 <Text style={styles.sheetText}>{containerProof ? containerProof.countIsMinimum ? `At least ${containerProof.count} saved tasks. Deleting all includes uncached and completed tasks in this ${actionSheet.containerKind}.` : `${containerProof.count} tasks in this ${actionSheet.containerKind}.` : 'Checking saved contents…'}</Text>
                 {!!containerProof?.reason && <Text style={styles.sheetText}>{containerProof.reason}</Text>}
                 {!containerProof?.canKeep && !!containerProof?.keepReason && <Text style={styles.sheetText}>{containerProof.keepReason}</Text>}
-                {!containerProof?.canKeep && <Pressable style={styles.headerButton} onPress={() => {
+                {!containerProof?.canKeep && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {
                   const sheet = actionSheet;
                   workspaceService.verifyOfflineContainer(sheet.containerKind, sheet.id).then((proof: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setContainerProof(proof);}).catch((cause: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setError(cause.message);});
                 }}><Text style={styles.headerButtonText}>Verify full contents online</Text></Pressable>}
@@ -1288,10 +1287,10 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
                   <ProjectPicker projects={keepProjects} selectedId={chosenKeepProject?.id || null} requireExplicit
                     onChange={destinationProjectId => setActionSheet((sheet: any) => ({...sheet, destinationProjectId, confirm: null}))} />
                 </>}
-                <View style={styles.actionRow}><Pressable style={styles.headerButton} disabled={!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject)} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>Delete container; keep tasks</Text></Pressable>
-                <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable></View>
+                <View style={styles.actionRow}><Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject)} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>Delete container; keep tasks</Text></Pressable>
+                <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable></View>
                 {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : `Confirm deleting this container while keeping ${containerProof?.count || 0} verified tasks in ${actionSheet.containerKind === 'project' ? chosenKeepProject?.name || 'the selected project' : projectMap[actionSheet.projectId] || 'their project'}, No collection. Parent and child task relationships are preserved.`}</Text>
-                  <Pressable style={styles.headerButton} disabled={actionSheet.confirm === 'keep' && (!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject))} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
+                  <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={actionSheet.confirm === 'keep' && (!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject))} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
               </>}
               </>}
             </> : null}
@@ -1302,7 +1301,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
               <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
                 onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
-              <Pressable style={styles.headerButton} disabled={!actionLocation.projectId} onPress={() => {
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionLocation.projectId} onPress={() => {
                 if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, ...actionLocation, explicit: true}));
                 else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: actionLocation.projectId, section_id: actionLocation.sectionId}});
                 setActionSheet(null);
@@ -1310,26 +1309,26 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </>}
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
             {actionSheet?.kind === 'more' && <View style={styles.actionRow}>
-              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'priority'}))}><Text style={styles.headerButtonText}>Priority</Text></Pressable>
-              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'labels'}))}><Text style={styles.headerButtonText}>Labels</Text></Pressable>
-              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: !selectionHistory}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{selectionHistory ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
-              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'delete'}))}><Text style={styles.headerButtonText}>Delete selected</Text></Pressable>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'priority'}))}><Text style={styles.headerButtonText}>Priority</Text></Pressable>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'labels'}))}><Text style={styles.headerButtonText}>Labels</Text></Pressable>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: !selectionHistory}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{selectionHistory ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'delete'}))}><Text style={styles.headerButtonText}>Delete selected</Text></Pressable>
             </View>}
             {actionSheet?.kind === 'labels' && <>
               <Text style={styles.sheetText}>Replace labels on selected tasks. Separate names with commas; leave empty to clear.</Text>
               <View style={styles.inputRow}><TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
-              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable></View>
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable></View>
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
-              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
+              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
           </ScrollView>
         </View></View>
       </Modal>
       <Modal visible={syncSheetOpen} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
         <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>Sync summary</Text>
-            <Pressable style={styles.headerButton} onPress={() => setSyncSheetOpen(false)} accessibilityLabel="Close sync summary"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
-          <ScrollView contentContainerStyle={styles.sheetContent}>
+            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setSyncSheetOpen(false)} accessibilityLabel="Close sync summary"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
+          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetText}>{syncMessage || 'No saved changes are waiting to sync.'}</Text>
             <Text style={styles.sheetText}>{syncInfo?.timestamp ? `Last successful sync: ${new Date(syncInfo.timestamp).toLocaleString()}` : 'No successful sync yet.'}</Text>
             {syncInfo?.warning ? <Text style={styles.sheetText}>{syncInfo.warning}</Text> : null}
@@ -1339,8 +1338,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
               <Text style={styles.sheetText}>{syncChangeLabel(change.kind)} · {change.task?.content || change.collection?.name || 'Saved change'}</Text>
               <Text style={styles.sheetText}>{change.state === 'attention' ? syncStatusMessage({syncError: change.error}) || 'Needs attention' : change.state === 'sending' ? 'Syncing or waiting for acknowledgement' : 'Waiting to sync'}</Text>
               {change.error && /^(This task|This project|This collection|This older queued|A collection|Todoist acknowledged|No command)/.test(change.error) ? <Text style={styles.sheetText}>{change.error}</Text> : null}
-              {change.task && !change.task.deleted ? <Pressable style={styles.headerButton} onPress={() => {setSyncSheetOpen(false); nav.push('task-detail', {task: change.task, projects: projectList});}}><Text style={styles.headerButtonText}>Task details</Text></Pressable> : null}
-              {change.error ? <Pressable style={styles.headerButton} disabled={syncRetrying} accessibilityLabel="Retry saved change" onPress={() => retryChange(change.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable> : null}
+              {change.task && !change.task.deleted ? <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {setSyncSheetOpen(false); nav.push('task-detail', {task: change.task, projects: projectList});}}><Text style={styles.headerButtonText}>Task details</Text></Pressable> : null}
+              {change.error ? <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={syncRetrying} accessibilityLabel="Retry saved change" onPress={() => retryChange(change.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable> : null}
             </View>)}
             {syncRetryError ? <Text style={styles.sheetText}>{syncRetryError}</Text> : null}
           </ScrollView>
@@ -1458,15 +1457,18 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
 }
 
 const styles = StyleSheet.create({
+  pressed: {backgroundColor: '#eeeeee'},
   workspace: {flex: 1, flexDirection: 'row'},
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   newCollection: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, alignSelf: 'stretch', backgroundColor: '#fff'},
   newCollectionText: {fontSize: 15, color: '#000', fontWeight: '700'},
-  syncSummary: {minWidth: 0, flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
+  syncSummary: {minWidth: 0, flex: 1, alignSelf: 'stretch', justifyContent: 'center', paddingRight: 10},
   sheetBackdrop: {flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center'},
-  sheet: {width: '90%', maxWidth: 720, height: '65%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
+  sheet: {width: '90%', maxWidth: 720, maxHeight: '85%', flexShrink: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
+  sheetScroll: {flexGrow: 0, flexShrink: 1},
+  footerRefresh: {alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: 8},
   sheetContent: {padding: 16, gap: 12},
   sheetText: {fontSize: 16, color: '#000'},
   queuedChange: {paddingVertical: 12, borderTopWidth: 1, borderColor: '#000', gap: 8},
@@ -1618,7 +1620,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
     borderTopWidth: 1,
     borderTopColor: '#000000',
   },

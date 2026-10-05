@@ -8,24 +8,29 @@ type Props = {
   title: string;
   count?: number;
   onPress?: () => void;
+  expanded?: boolean;
+  onToggle?: () => void;
   action?: React.ReactNode;
 };
 
-export default function SectionHeader({title, count, onPress, action}: Props) {
+export default function SectionHeader({title, count, onPress, expanded, onToggle, action}: Props) {
   const scale = useFontScale();
+  const collapsible = onToggle !== undefined;
   const content = (
     <View style={styles.container}>
       <Text style={[styles.title, {fontSize: Math.round(14 * scale)}]}>{title.toUpperCase()}</Text>
       <View style={styles.right}>
         {count !== undefined ? <Text style={styles.count}>{count}</Text> : null}
-        {onPress ? <Text style={styles.arrow}>{'>'}</Text> : null}
+        {collapsible ? <Text style={styles.arrow}>{expanded ? '⌄' : '›'}</Text> : onPress ? <Text style={styles.arrow}>{'>'}</Text> : null}
         {action}
       </View>
     </View>
   );
 
-  if (onPress) {
-    return <Pressable onPress={onPress}>{content}</Pressable>;
+  if (collapsible || onPress) {
+    return <Pressable accessibilityRole="button" accessibilityState={collapsible ? {expanded} : undefined}
+      accessibilityLabel={collapsible ? `${expanded ? 'Collapse' : 'Expand'} ${title}` : undefined}
+      onPress={collapsible ? onToggle : onPress}>{content}</Pressable>;
   }
   return content;
 }
@@ -38,7 +43,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#aaaaaa',
+    borderBottomColor: '#cccccc',
     backgroundColor: '#ffffff',
   },
   count: {color: '#666', fontSize: 14},

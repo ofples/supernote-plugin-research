@@ -22,12 +22,9 @@ export default function WorkspaceSelectionBar({count, allSelected = false, disab
     {key: 'more', label: 'More', callback: onMore, disabled: !!disabledActions.more},
   ];
   return <View accessibilityLabel="Task selection actions" style={styles.bar}>
-    <View style={styles.summary}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Cancel task selection" onPress={onCancel} style={styles.cancelButton}>
-        <Text style={[styles.cancelText, {fontSize: Math.round(14 * scale)}]}>Cancel</Text>
-      </Pressable>
-      <Text accessibilityLiveRegion="polite" style={[styles.count, {fontSize: Math.round(16 * scale)}]}>{count} selected</Text>
-    </View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Cancel task selection" onPress={onCancel} style={styles.button}>
+      <Text style={[styles.buttonText, {fontSize: Math.round(14 * scale)}]}>Cancel</Text>
+    </Pressable>
     <View style={styles.actions}>
       {actions.map(action => <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.label}
         accessibilityState={{disabled: action.disabled}} disabled={action.disabled} onPress={action.callback}
@@ -39,15 +36,13 @@ export default function WorkspaceSelectionBar({count, allSelected = false, disab
         <Text style={[styles.buttonText, {fontSize: Math.round(14 * scale)}]}>{allSelected ? 'Clear all' : 'Select all'}</Text>
       </Pressable>
     </View>
+    <Text accessibilityLiveRegion="polite" style={[styles.count, {fontSize: Math.round(16 * scale)}]}>{count} selected</Text>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  bar: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted', backgroundColor: '#ffffff'},
-  summary: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8},
-  cancelButton: {minHeight: 44, minWidth: 64, justifyContent: 'center', paddingHorizontal: 8},
-  cancelText: {fontWeight: '700', color: '#000000'},
-  count: {fontWeight: '700', color: '#000000'},
+  bar: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted', backgroundColor: '#ffffff'},
+  count: {fontWeight: '700', color: '#000000', marginLeft: 'auto'},
   actions: {flexDirection: 'row', flexWrap: 'wrap', gap: 6},
   button: {minHeight: 44, minWidth: 52, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: '#777777'},
   selectAllButton: {minHeight: 44, minWidth: 76, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: '#000000'},
