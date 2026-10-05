@@ -120,6 +120,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingVertical: 14,
     paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#999999',
+    borderStyle: 'dotted',
   },
   rowCentered: {
     alignItems: 'center',
