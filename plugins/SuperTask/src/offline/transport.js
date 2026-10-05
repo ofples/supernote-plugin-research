@@ -1,5 +1,6 @@
 // Pure transport. A worker owns retries; this layer performs one timed request.
 function createTransport(token, request, allowNetwork, timeoutMs = 20000) {
+  let accountJoinedAt = null;
   async function syncRequest(commands, resourceTypes = []) {
     if (!(await allowNetwork())) {throw new Error('Todoist access is not allowed. Enable Sync with Todoist in settings.');}
     const controller = new AbortController();
@@ -56,9 +57,60 @@ function createTransport(token, request, allowNetwork, timeoutMs = 20000) {
     } finally {clearTimeout(timer);}
   }
   return {
+    async fetchArchivedProjects(maxPages = 30) {
+      const projects = []; let cursor = null;
+      for (let page = 0; page < maxPages; page++) {
+        const result = await get(`projects/archived?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        const rows = result?.results || result?.items;
+        if (!Array.isArray(rows)) {throw new Error('Todoist did not provide a complete archived-project list.');}
+        projects.push(...rows); cursor = result.next_cursor;
+        if (!cursor) {return {complete: true, projects};}
+      }
+      return {complete: false, projects};
+    },
+    async fetchContainerHistorySince(kind, id, sinceAt, maxPages = 30) {
+      const start = Date.parse(sinceAt), end = Date.now() + 60000;
+      if (!Number.isFinite(start) || start > end) {return {complete: false, tasks: []};}
+      let pages = 0; const tasks = [];
+      for (let since = start; since < end; since += 89 * 86400000) {
+        const until = Math.min(end, since + 89 * 86400000); let cursor = null;
+        do {
+          if (++pages > maxPages) {return {complete: false, tasks};}
+          const query = `${kind === 'project' ? 'project_id' : 'section_id'}=${encodeURIComponent(id)}&since=${encodeURIComponent(new Date(since).toISOString())}&until=${encodeURIComponent(new Date(until).toISOString())}&limit=200` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+          const result = await get(`tasks/completed/by_completion_date?${query}`);
+          if (!result || !Array.isArray(result.items)) {throw new Error('Invalid completed-history verification response.');}
+          tasks.push(...result.items); cursor = result.next_cursor;
+        } while (cursor);
+      }
+      return {complete: true, tasks};
+    },
+    async verifyContainerHistory(kind, id, createdAt, maxPages = 30) {
+      // Account lifetime bounds an advisory dated scan, not all history:
+      // backdated/imported completions can precede even joined_at. The worker
+      // must not promote a complete range scan into a full-container proof.
+      if (!accountJoinedAt) {accountJoinedAt = (await syncRequest([], ['user'])).user?.joined_at || null;}
+      const start = Date.parse(accountJoinedAt), end = Date.now() + 60000;
+      if (!Number.isFinite(start) || start > end) {return {complete: false, reason: 'Todoist did not provide a verified account creation date for complete history.'};}
+      if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 120) {throw new Error('Completed-history verification budget must be between 1 and 120 requests.');}
+      const tasks = []; let pages = 0;
+      // v1 completed-history date ranges are at most three months. A hard
+      // request budget makes old or very large containers explicitly incomplete.
+      for (let until = end; until > start; until -= 89 * 86400000) {
+        const since = Math.max(start, until - 89 * 86400000); let cursor = null;
+        do {
+          if (++pages > maxPages) {return {complete: false, tasks, reason: 'Completed-history verification reached its request limit. Keep tasks is unavailable for this scope.'};}
+          const query = `${kind === 'project' ? 'project_id' : 'section_id'}=${encodeURIComponent(id)}&since=${encodeURIComponent(new Date(since).toISOString())}&until=${encodeURIComponent(new Date(until).toISOString())}&limit=200` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+          const result = await get(`tasks/completed/by_completion_date?${query}`);
+          if (!result || !Array.isArray(result.items)) {throw new Error('Invalid completed-history verification response.');}
+          tasks.push(...result.items); cursor = result.next_cursor;
+        } while (cursor);
+      }
+      return {complete: true, tasks};
+    },
     async userId() {
       const result = await syncRequest([], ['user']);
       if (!result.user?.id) {throw new Error('Todoist did not identify the account.');}
+      accountJoinedAt = result.user.joined_at || null;
       return String(result.user.id);
     },
     commands: commands => syncRequest(commands),

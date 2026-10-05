@@ -1,8 +1,9 @@
 /* Pure task/outbox model. Mutations never change a committed generation. */
 const SCHEMA = 2;
+const locations = require('./locations');
 const clone = value => JSON.parse(JSON.stringify(value));
 const completed = t => Boolean(t.completed ?? t.is_completed ?? t.checked);
-const kinds = ['create', 'complete', 'reopen', 'update', 'move', 'delete', 'collection_create', 'recurring_complete'];
+const kinds = ['create', 'complete', 'reopen', 'update', 'move', 'delete', 'collection_create', 'recurring_complete', 'project_create', 'project_rename', 'project_delete', 'collection_rename', 'collection_delete', 'reorder'];
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function remoteState(t) {
@@ -34,7 +35,7 @@ function validateStore(store, accountKey, deviceId) {
     if (!op || typeof op.uuid !== 'string' || !op.uuid || ids.has(op.uuid) ||
         !(store.schema === 1 ? ['create', 'complete', 'reopen'] : kinds).includes(op.kind) ||
         !['pending', 'sending', 'attention'].includes(op.state) ||
-        !(op.kind === 'collection_create' ? store.collections?.[op.localId] : store.tasks[op.localId]) ||
+        !(locations.locationKind(op) ? (op.kind.startsWith('project_') ? store.localProjects?.[op.localId] : store.collections?.[op.localId]) : store.tasks[op.localId]) ||
         !Number.isSafeInteger(op.attempts) || op.attempts < 0 || (op.attempts > 0 && !op.command) ||
         (['update', 'move'].includes(op.kind) && (!op.patch || typeof op.patch !== 'object' || Array.isArray(op.patch)))) {
       throw new Error('Damaged task queue. Existing data was not overwritten.');
@@ -50,6 +51,26 @@ function validateStore(store, accountKey, deviceId) {
     if (!section || section.id !== id || typeof section.name !== 'string' || !section.name.trim() || !section.project_id) {
       throw new Error('Damaged collection data. Existing data was not overwritten.');
     }
+  }
+  if (store.localProjects !== undefined && (!store.localProjects || Array.isArray(store.localProjects) || typeof store.localProjects !== 'object')) {throw new Error('Damaged project data.');}
+  for (const [id, project] of Object.entries(store.localProjects || {})) {
+    if (!project || project.id !== id || typeof project.name !== 'string' || !project.name.trim()) {throw new Error('Damaged project data.');}
+  }
+  if (store.mutationRequests !== undefined && (!store.mutationRequests || Array.isArray(store.mutationRequests) || typeof store.mutationRequests !== 'object')) {throw new Error('Damaged mutation identities.');}
+  for (const request of Object.values(store.mutationRequests || {})) {
+    if (!request || typeof request.signature !== 'string' || !(Array.isArray(request.results) ? request.results.every(r => r && typeof r.requestedId === 'string' && typeof r.localId === 'string' && typeof r.deleted === 'boolean') : request.result && typeof request.result.id === 'string')) {throw new Error('Damaged mutation receipt.');}
+  }
+  for (const key of ['acknowledgedOperations', 'containerScopes']) {
+    if (store[key] !== undefined && (!store[key] || Array.isArray(store[key]) || typeof store[key] !== 'object')) {throw new Error('Damaged operation metadata.');}
+  }
+  if (store.archivedProjects !== undefined && !Array.isArray(store.archivedProjects)) {throw new Error('Damaged archived-project scope.');}
+  for (const value of Object.values(store.acknowledgedOperations || {})) {if (value !== true) {throw new Error('Damaged command acknowledgement.');}}
+  for (const proof of Object.values(store.containerScopes || {})) {if (!proof || typeof proof.complete !== 'boolean' || typeof proof.token !== 'string') {throw new Error('Damaged scope verification.');}}
+  for (const op of store.outbox) {
+    if (op.dependencies !== undefined && (!Array.isArray(op.dependencies) || op.dependencies.some(id => typeof id !== 'string'))) {throw new Error('Damaged operation dependencies.');}
+    if (op.kind.endsWith('_rename') && (typeof op.name !== 'string' || !op.name.trim())) {throw new Error('Damaged location rename.');}
+    if (['project_delete', 'collection_delete'].includes(op.kind) && (!op.recovery || !Array.isArray(op.recovery.tasks) || !Array.isArray(op.recovery.projects) || !Array.isArray(op.recovery.activeBaseline) || typeof op.scopeToken !== 'string' || !Number.isFinite(Date.parse(op.capturedAt)))) {throw new Error('Damaged container deletion scope.');}
+    if (op.kind === 'reorder' && (!op.order || !Array.isArray(op.order.baseline) || typeof op.order.order_key !== 'string')) {throw new Error('Damaged task order.');}
   }
   return store;
 }
@@ -93,7 +114,7 @@ function normalizeDraft(draft, capturedAt) {
 }
 function mergedSections(store) {
   const local = Object.values(store.collections || {}), owned = new Set(local.map(s => s.remoteId).filter(Boolean));
-  return [...(store.sections || []).filter(s => !owned.has(s.id)), ...local.map(s => ({...clone(s), id: s.remoteId || s.id, localId: s.id,
+  return [...(store.sections || []).filter(s => !owned.has(s.id)), ...local.filter(s => !s.deleted).map(s => ({...clone(s), id: s.remoteId || s.id, localId: s.id,
     is_deleted: !!s.remoteUnavailable,
     syncState: store.outbox.find(op => op.localId === s.id)?.state === 'attention' ? 'attention' : s.remoteId ? 'synced' : 'pending'}))];
 }
@@ -209,7 +230,9 @@ function deleteTask(store, id, ids) {
 function addCollection(store, projectId, name, ids) {
   const next = clone(store), title = String(name || '').trim();
   if (!title) {throw new Error('Enter a collection name.');}
-  if (!next.projects.some(p => p.id === projectId && !p.is_deleted && !p.is_archived)) {throw new Error('This project is unavailable. Refresh projects before creating a collection.');}
+  const project = locations.mergedProjects(next).find(p => p.id === projectId && !p.is_deleted && !p.is_archived);
+  if (!project) {throw new Error('This project is unavailable. Refresh projects before creating a collection.');}
+  if (!project.inbox_project && !project.is_inbox_project) {locations.permission(project);}
   const existing = mergedSections(next).find(s => s.project_id === projectId && s.name.trim().toLowerCase() === title.toLowerCase());
   if (existing) {const error = new Error('A collection with this name already exists. Choose the existing collection.'); error.existingCollection = existing; throw error;}
   const id = `section:${ids()}`, collection = {id, remoteId: null, project_id: projectId, name: title};
@@ -265,7 +288,7 @@ function checkDestinations(store) {
     const destination = op.kind === 'collection_create' ? next.collections[op.localId] : op.kind === 'move' ? op.patch : next.tasks[op.localId];
     const projectId = destination.project_id, section = destination.section_id;
     let error;
-    if (projectId && !next.projects.some(p => p.id === projectId && !p.is_deleted && !p.is_archived)) {error = 'The destination project is unavailable. Choose an available project, then retry.';}
+    if (projectId && !locations.mergedProjects(next).some(p => p.id === projectId && !p.is_deleted && !p.is_archived)) {error = 'The destination project is unavailable. Choose an available project, then retry.';}
     else {
       try {validateLocation(next, projectId, section);}
       catch {error = 'The destination collection is unavailable. Choose an available collection or No collection, then retry.';}
@@ -281,15 +304,17 @@ function readyOperations(store, now = Date.now()) {
     seen.add(op.localId);
     if (op.state === 'attention' || op.retryAt > now) {return false;}
     if (op.command) {return true;}
-    if (op.kind === 'collection_create') {return true;}
+    if (locations.locationKind(op)) {return locations.ready(store, op);}
     const task = store.tasks[op.localId], destination = op.kind === 'move' ? op.patch.section_id : op.kind === 'create' ? task.section_id : null;
+    const projectId = op.kind === 'move' ? op.patch.project_id : task.project_id;
+    if (projectId && store.localProjects?.[projectId] && !store.localProjects[projectId].remoteId) {return false;}
     if (destination && store.collections?.[destination] && !store.collections[destination].remoteId) {return false;}
     return op.kind === 'create' || !!task.remoteId;
   }).slice(0, 50);
 }
 function commandFor(store, op) {
   if (op.command) {return clone(op.command);}
-  if (op.kind === 'collection_create') {const s = store.collections[op.localId]; return {type: 'section_add', uuid: op.uuid, temp_id: op.tempId, args: {name: s.name, project_id: s.project_id}};}
+  if (locations.locationKind(op)) {return locations.command(store, op);}
   const task = store.tasks[op.localId];
   if (op.kind === 'create') {
     const args = {content: task.content, description: task.description, priority: task.priority, labels: task.labels};
@@ -299,6 +324,7 @@ function commandFor(store, op) {
     return {type: 'item_add', uuid: op.uuid, temp_id: op.tempId, args};
   }
   if (!task.remoteId) {throw new Error('Task creation must be acknowledged first.');}
+  if (op.kind === 'reorder') {return {type: 'item_update', uuid: op.uuid, args: {id: task.remoteId, order_key: op.order.order_key}};}
   if (op.kind === 'update') {return {type: 'item_update', uuid: op.uuid, args: {id: task.remoteId, ...clone(op.patch)}};}
   if (op.kind === 'move') {return {type: 'item_move', uuid: op.uuid, args: {id: task.remoteId, ...(op.patch.section_id ? {section_id: mappedSectionId(store, op.patch.section_id)} : {project_id: op.patch.project_id})}};}
   return {type: ({complete: 'item_complete', reopen: 'item_uncomplete', delete: 'item_delete', recurring_complete: 'item_close'})[op.kind], uuid: op.uuid, args: {id: task.remoteId}};
@@ -341,6 +367,11 @@ function acknowledge(store, operations, response, now = Date.now()) {
   for (const op of next.outbox) {
     if (!selected.has(op.uuid)) {continue;}
     const status = response?.sync_status?.[op.uuid];
+    if (locations.locationKind(op)) {
+      if (status === 'ok' && locations.acknowledge(next, op, response, now)) {accepted.add(op.uuid);}
+      else {op.state = status && typeof status === 'object' && status.http_code < 500 && status.http_code !== 429 ? 'attention' : 'pending'; op.retryAt = now + 30000; op.error = 'Location change needs synchronization attention; the same command identity is retained.';}
+      continue;
+    }
     const task = op.kind === 'collection_create' ? next.collections[op.localId] : next.tasks[op.localId];
     if (status === 'ok') {
       if (['create', 'collection_create'].includes(op.kind)) {
@@ -354,6 +385,7 @@ function acknowledge(store, operations, response, now = Date.now()) {
       } else {
         const base = task.baseRemote || remoteState(task);
         if (op.kind === 'update') {Object.assign(base, remoteState({...base, ...op.command.args, completed: base.completed}));}
+        if (op.kind === 'reorder') {task.order_key = op.order.order_key; task.ackOrder = op.order.order_key;}
         if (op.kind === 'move') {base.project_id = op.patch.project_id; base.section_id = mappedSectionId(next, op.patch.section_id) || null; base.parent_id = null;}
         if (['complete', 'reopen'].includes(op.kind)) {task.serverCompleted = op.kind === 'complete'; base.completed = task.serverCompleted;}
         if (op.kind === 'delete') {task.deleted = true; task.deleteAcknowledged = true; base.deleted = true;}
@@ -368,12 +400,14 @@ function acknowledge(store, operations, response, now = Date.now()) {
       op.retryAt = now + 30000; op.error = status.http_code === 429 ? 'Todoist rate limited synchronization. Retry later.' : 'Todoist rejected this change. Check the task and destination, then retry.';
     } else {op.state = 'pending'; op.retryAt = now + 30000; op.error = 'No command acknowledgement. Retrying the same identity is safe.';}
   }
+  for (const uuid of accepted) {(next.acknowledgedOperations ||= {})[uuid] = true;}
   next.outbox = next.outbox.filter(op => !accepted.has(op.uuid)); return next;
 }
 function reconcileAcknowledged(store, localId, result) {
   const next = clone(store), task = next.tasks[localId];
   if (!task || task.deleted || !result || result.status === 'missing' || result.status === 'unavailable') {return next;}
   const remote = result.task || result;
+  if (task.ackOrder && remote.order_key !== task.ackOrder) {return next;}
   task.remoteMissing = false;
   const oldBase = task.baseRemote, latest = remoteState(remote);
   // Do not roll the expected state back to a stale post-write read. The next
@@ -386,6 +420,7 @@ function reconcileAcknowledged(store, localId, result) {
   task.baseRemote = latest;
   task.acknowledgedCreate = false;
   task.ackPendingRefresh = false;
+  delete task.ackOrder;
   if (!next.outbox.some(op => op.localId === localId)) {
     applyRemote(task, remote);
   } else if (task.awaitingRecurrence) {
@@ -420,11 +455,12 @@ function replaceRemote(store, remote, projects, now = Date.now(), sections = sto
   // responses before the worker calls it; individual reads use rememberTask.
   if (!Array.isArray(remote) || !Array.isArray(projects) || !Array.isArray(sections)) {throw new Error('Invalid remote snapshot.');}
   const next = clone(store); next.remote = remote; next.projects = projects; next.sections = sections; next.lastSync = now; next.syncError = null;
+  locations.reconcile(next);
   for (const collection of Object.values(next.collections || {})) {
     if (!collection.remoteId) {continue;}
     const latest = sections.find(section => section.id === collection.remoteId && !section.is_deleted && !section.is_archived);
     collection.remoteUnavailable = !latest;
-    if (latest) {collection.name = latest.name; collection.project_id = latest.project_id;}
+    if (latest && !next.outbox.some(op => op.localId === collection.id)) {collection.name = latest.name; collection.project_id = latest.project_id;}
   }
   for (const task of Object.values(next.tasks)) {
     const latest = remote.find(t => t.id === task.remoteId);
@@ -438,6 +474,7 @@ function replaceRemote(store, remote, projects, now = Date.now(), sections = sto
     }
     if (task.deleted || pending) {continue;}
     if (latest) {
+      if (task.ackOrder && latest.order_key !== task.ackOrder) {continue;}
       if (task.ackPendingRefresh && !task.acknowledgedCreate && !same(remoteState(latest), task.baseRemote) && !task.awaitingRecurrence) {continue;}
       if (task.awaitingRecurrence && same(remoteState(latest).due, task.baseRemote?.due)) {continue;}
       applyRemote(task, latest);
@@ -461,13 +498,22 @@ function rememberCompleted(store, history) {
 }
 function mergedTasks(store, {includeRemoteMissing = false} = {}) {
   const owned = new Set(Object.values(store.tasks).map(t => t.remoteId).filter(Boolean));
-  return [...store.remote.filter(t => !owned.has(t.id) && !t.is_deleted).map(t => ({...t, completed: completed(t), syncState: 'synced'})),
+  const rows = [...store.remote.filter(t => !owned.has(t.id) && !t.is_deleted).map(t => ({...t, completed: completed(t), syncState: 'synced'})),
     ...Object.values(store.tasks).filter(t => !t.deleted && !t.is_deleted &&
       (includeRemoteMissing || !t.remoteMissing || completed(t) || t.acknowledgedCreate || t.ackPendingRefresh || t.awaitingRecurrence ||
         store.outbox.some(op => op.localId === t.id))).map(t => {
       const ops = store.outbox.filter(op => op.localId === t.id);
       return {...clone(t), syncState: ops.some(op => op.state === 'attention') ? 'attention' : ops.length || t.awaitingRecurrence ? 'pending' : 'synced', syncError: ops.find(op => op.error)?.error || null};
     })];
+  const groups = new Map();
+  for (const task of rows) {
+    const scope = JSON.stringify([task.project_id || null, task.section_id || null, task.parent_id || null]);
+    if (!groups.has(scope)) {groups.set(scope, []);} groups.get(scope).push(task);
+  }
+  return [...groups.values()].flatMap(group => group.sort((a, b) => {
+    if (a.order_key && b.order_key) {return a.order_key < b.order_key ? -1 : a.order_key > b.order_key ? 1 : a.id.localeCompare(b.id);}
+    return (a.child_order || 0) - (b.child_order || 0);
+  }));
 }
 function cachedView(store, id) {
   const owned = Object.values(store.tasks).find(task => task.id === id || task.remoteId === id);
@@ -496,5 +542,5 @@ function snapshot(store) {
       due: t.due || null, completed: !!t.completed, source: t.source || null, syncState: t.syncState}))};
 }
 module.exports = {SCHEMA, clone, emptyStore, validateStore, migrateStore, resolveDue, localDate, remoteState,
-  addBatch, findTask, setCompleted, editTask, deleteTask, addCollection, mergedSections, editUnsent, cancelUnsent,
+  addBatch, findTask, ownTask, setCompleted, editTask, deleteTask, addCollection, mergedSections, editUnsent, cancelUnsent,
   readyOperations, commandFor, markSending, preflight, checkDestinations, acknowledge, reconcileAcknowledged, rememberTask, rememberCompleted, failOperations, replaceRemote, mergedTasks, privateTasks, cachedView, completedView, snapshot};

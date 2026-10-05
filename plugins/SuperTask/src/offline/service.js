@@ -7,6 +7,9 @@ const model = require('./model');
 const {createStore} = require('./store');
 const {createSyncWorker} = require('./sync');
 const {createTransport} = require('./transport');
+const locations = require('./locations');
+const bulk = require('./bulk');
+const ordering = require('./order');
 
 let session = null;
 let opening = Promise.resolve();
@@ -66,11 +69,15 @@ export async function offlineData() {
   const state = await current.store.load();
   const allTasks = model.privateTasks(state);
   const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state,
-    error: op.error, task: state.tasks[op.localId], collection: (model.mergedSections?.(state) || state.sections || []).find(section => section.id === op.localId)}));
-  return {tasks: model.mergedTasks(state).filter(task => !task.completed && !task.deleted), allTasks, projects: state.projects, sections: model.mergedSections?.(state) || state.sections || [], timestamp: state.lastSync,
+    error: op.error, task: state.tasks[op.localId],
+    project: op.kind.startsWith('project_') ? locations.find(state, 'project', op.localId) : null,
+    collection: op.kind.startsWith('collection_') ? locations.find(state, 'collection', op.localId) : null}));
+  return {tasks: model.mergedTasks(state).filter(task => !task.completed && !task.deleted), allTasks, projects: locations.mergedProjects(state), sections: model.mergedSections?.(state) || state.sections || [], timestamp: state.lastSync,
     pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
-    pendingTaskCount: new Set(state.outbox.filter(op => op.kind !== 'collection_create').map(op => op.localId)).size,
-    pendingCollectionCount: state.outbox.filter(op => op.kind === 'collection_create').length,
+    pendingTaskCount: new Set(state.outbox.filter(op => !locations.locationKind(op)).map(op => op.localId)).size,
+    pendingCollectionCount: state.outbox.filter(op => op.kind.startsWith('collection_')).length,
+    pendingProjectCount: state.outbox.filter(op => op.kind.startsWith('project_')).length,
+    pendingOtherCount: state.outbox.filter(op => op.kind.startsWith('project_')).length,
     pendingChanges, syncNotices: state.syncNotices || [],
     syncError: state.syncError, warning: current.store.getWarning(),
     otherAccountStores: current.identity.otherAccountStores};
@@ -121,17 +128,11 @@ export async function deleteOfflineTask(id) {
   requestActiveSync();
 }
 
-export async function createOfflineCollection(projectId, name) {
-  const current = await offlineSession();
-  const ids = await idGenerator(12);
-  let collection;
-  await current.store.transaction(state => {
+export async function createOfflineCollection(projectId, name, request = {}) {
+  return durableMutation(request, 16, (state, ids) => {
     const result = model.addCollection(state, projectId, name, ids);
-    collection = result.collection;
-    return result.next;
-  });
-  requestActiveSync();
-  return collection;
+    return {next: result.next, result: result.collection};
+  }, ['collection_create', projectId, name]);
 }
 
 export async function cancelOfflineTask(id) {
@@ -182,6 +183,71 @@ export async function completedData() {
 export async function rememberCompleted(tasks) {
   const current = await offlineSession();
   await current.store.transaction(state => model.rememberCompleted(state, tasks));
+}
+
+async function mutationIdentity(request, count) {
+  if (!request.ids) {request.ids = JSON.parse(await NativeModules.TaskStorage.newIds(count));}
+  let index = 1;
+  return {requestId: request.ids[0], ids: () => {
+    if (index >= request.ids.length) {throw new Error('Mutation identity pool exhausted. Retain this request for retry.');}
+    return request.ids[index++];
+  }};
+}
+function assertCurrent(current) {
+  if (getCachedConfig()?.apiToken?.trim() !== current.token) {const error = new Error('The Todoist account changed. This interaction was cancelled.'); error.code = 'ACCOUNT_CHANGED'; throw error;}
+}
+async function durableMutation(request, count, reduce, operationSignature) {
+  const current = await offlineSession(), identity = await mutationIdentity(request, count); let result;
+  const signature = JSON.stringify(operationSignature);
+  assertCurrent(current);
+  await current.store.transaction(state => {
+    assertCurrent(current);
+    const prior = state.mutationRequests?.[identity.requestId];
+    if (prior) {if (prior.signature !== signature) {throw new Error('An uncertain mutation identity cannot be reused for different changes.');} result = prior.result; return state;}
+    const reduced = reduce(state, identity.ids); result = reduced.result;
+    (reduced.next.mutationRequests ||= {})[identity.requestId] = {signature, result};
+    return reduced.next;
+  });
+  assertCurrent(current); requestActiveSync(); return result;
+}
+export async function createOfflineProject(name, options = {}, request = {}) {
+  return durableMutation(request, 16, (state, ids) => {
+    const result = locations.createProject(state, name, ids, options);
+    return {next: result.next, result: result.project};
+  }, ['project_create', name, options]);
+}
+export async function renameOfflineProject(id, name, request = {}) {
+  return durableMutation(request, 16, (state, ids) => ({next: locations.rename(state, 'project', id, name, ids), result: {id, name}}), ['project_rename', id, name]);
+}
+export async function renameOfflineCollection(id, name, request = {}) {
+  return durableMutation(request, 16, (state, ids) => ({next: locations.rename(state, 'collection', id, name, ids), result: {id, name}}), ['collection_rename', id, name]);
+}
+export async function inspectOfflineContainer(kind, id) {
+  if (!['project', 'collection'].includes(kind)) {throw new Error('Unsupported container type.');}
+  const current = await offlineSession();
+  return locations.scope(await current.store.load(), kind, id, model);
+}
+export async function verifyOfflineContainer(kind, id, options = {}) {
+  const current = await offlineSession(); assertCurrent(current);
+  const snapshot = await current.worker.verifyContainer(kind, id, options);
+  assertCurrent(current); return snapshot;
+}
+export async function deleteOfflineContainer(kind, id, options, request = {}) {
+  const current = await offlineSession(), plan = locations.scope(await current.store.load(), kind, id, model);
+  return durableMutation(request, Math.max(32, plan.count * 6 + 16), (state, ids) => ({next: locations.remove(state, kind, id, options, ids, model), result: {id, kind, count: plan.count, mode: options.mode}}), ['container_delete', kind, id, options]);
+}
+export async function mutateOfflineTasks(taskIds, mutation, request = {}) {
+  const current = await offlineSession(), identity = await mutationIdentity(request, taskIds.length * 6 + 16); let results;
+  assertCurrent(current);
+  await current.store.transaction(state => {
+    assertCurrent(current);
+    const reduced = bulk.mutate(state, taskIds, mutation, identity.ids, identity.requestId, model);
+    results = reduced.results; return reduced.next;
+  });
+  assertCurrent(current); requestActiveSync(); return results;
+}
+export async function reorderOfflineTask(id, direction, request = {}) {
+  return durableMutation(request, 16, (state, ids) => ({next: ordering.reorder(state, id, direction, ids, model), result: {id, direction}}), ['reorder', id, direction]);
 }
 
 export async function forgetRemoteTask(id) {
