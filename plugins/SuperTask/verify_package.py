@@ -36,7 +36,7 @@ with zipfile.ZipFile(artifact) as plugin:
         for marker in [b'No collection', b'Unavailable collections', b'Choose collection', b'sectionId']:
             assert marker in bundle, f'Missing collections implementation: {marker}'
     if (root / 'src/batch/captureChoice.js').exists():
-        for marker in [b'item_close', b'section_add', b'sourceRowIds', b'explicitFields',
+        for marker in [b'item_close', b'collection_create', b'sourceRowIds', b'explicitFields',
                        b'projectVisibility', b'Sync summary', b'Cancel AI / Use device OCR', b'New collection']:
             assert marker in bundle, f'Missing feedback workflow implementation: {marker}'
     if (root / 'src/workspace/intents.js').exists():
