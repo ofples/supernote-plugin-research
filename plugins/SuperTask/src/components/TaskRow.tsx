@@ -90,7 +90,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
         )}
       </View>
       {syncPending || syncAttention ? <Pressable style={styles.syncTarget} accessibilityRole="button"
-        accessibilityLabel={syncAttention ? 'Sync needs attention' : task.awaitingRecurrence ? 'Waiting for next recurring occurrence' : 'Waiting to sync'}
+        accessibilityLabel={task.savingLocally ? 'Saving locally' : syncAttention ? 'Save needs attention' : task.awaitingRecurrence ? 'Waiting for next recurring occurrence' : 'Saved on device, waiting to sync'}
         onPress={event => {event.stopPropagation(); onSyncPress ? onSyncPress() : onPress(task);}}>
         <Text style={styles.syncSymbol}>{syncAttention ? '!' : '↥'}</Text>
       </Pressable> : null}
