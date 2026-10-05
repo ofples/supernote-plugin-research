@@ -24,6 +24,7 @@
 import {PluginManager, PluginCommAPI} from 'sn-plugin-lib';
 import {log} from './debug';
 import {setOfflineForeground} from '../offline/service';
+import {launcherViewChanged, launcherLifecycle} from '../launcher/service';
 
 let _viewOpen = false;
 let _currentScreen = null;
@@ -32,6 +33,7 @@ let _sessionTab = null;
 export function markViewOpen(source) {
   if (!_viewOpen) log('ViewState', `view OPEN (${source})`);
   _viewOpen = true;
+  launcherViewChanged(true);
   setOfflineForeground(true);
   probeCanHandwrite(`viewOpen:${source}`);
 }
@@ -39,6 +41,7 @@ export function markViewOpen(source) {
 export function markViewClosed(source) {
   if (_viewOpen) log('ViewState', `view CLOSED (${source})`);
   _viewOpen = false;
+  launcherViewChanged(false);
   setOfflineForeground(false);
   _sessionTab = null; // next open honors the configured default tab (F-038)
   probeCanHandwrite(`viewClosed:${source}`);
@@ -58,6 +61,9 @@ export function registerLifecycleDiagnostics() {
   try {
     PluginManager.registerPluginLifeListener({
       onMsg: msg => {
+        launcherLifecycle(msg.state);
+        if (msg.state === 2) _viewOpen = true;
+        if (msg.state >= 3) { _viewOpen = false; _sessionTab = null; }
         if (msg.state === 2) setOfflineForeground(true);
         if (msg.state >= 3) setOfflineForeground(false);
         log('ViewState', `LIFECYCLE ${JSON.stringify(msg)} (manual flag: ${_viewOpen ? 'open' : 'closed'})`);
