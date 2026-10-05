@@ -74,7 +74,7 @@ function workspace(config = {}, note = false, extraTasks = []) {
     '../components/SectionHeader': {__esModule: true, default: 'Section'}, '../components/Chip': {__esModule: true, default: 'Chip'},
   });
   const nav = {push: (...args) => navCalls.push(args)};
-  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, updateData: update => {data = update(data);},
+  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, updateData: update => {data = update(data);},
     finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
     markMissing: (id, leakIntoActive = false) => {
       data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
@@ -332,5 +332,69 @@ test('selecting an optimistic project before local commit preserves its draft an
   assert.equal(tree.root.findByType('Composer').props.value, 'Draft while location saves');
   await act(async () => tree.root.findByType('Composer').props.onSubmit());
   assert.equal(model.savedDrafts[0].drafts[0].projectId, 'saved-local-project');
+  await act(async () => tree.unmount());
+});
+const pressText = (tree, label) => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
+test('failed container save stays retryable after closing its sheet and reuses the frozen request', async () => {
+  const model = workspace(); let tree; const calls = [];
+  model.service.createOfflineProject = async (name, options, request) => {
+    request.ids ||= ['same-create-identity']; calls.push({name, request});
+    if (calls.length === 1) {const error = new Error('lost local reply'); error.uncertainCommit = true; throw error;}
+    const project = {id: 'retained-project', name}; model.updateData(data => ({...data, projects: [...data.projects, project]})); return project;
+  };
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await act(async () => tree.root.findByType('Sidebar').props.onCreateProject());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'project name'}).props.onChangeText('Retained project'));
+  await act(async () => {pressText(tree, 'Save name').props.onPress();});
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Close task actions'}).props.onPress());
+  await switchTo(tree, 'device');
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Retry container save'}).props.onPress());
+  assert.equal(calls.length, 2); assert.equal(calls[0].request, calls[1].request);
+  assert.deepEqual(calls.map(call => call.name), ['Retained project', 'Retained project']);
+  assert.equal(tree.root.findAllByProps({accessibilityLabel: 'Retry container save'}).length, 0);
+  await act(async () => tree.unmount());
+});
+test('failed Note and Device composer saves have global retries; manual local tasks remain on Device without note provenance', async () => {
+  for (const view of ['note', 'device']) {
+    const model = workspace({}, true); let tree; const calls = [];
+    model.service.saveOfflineBatch = async (drafts, source, capturedAt, request) => {
+      request.ids ||= [`identity-${view}`]; calls.push({request, source});
+      if (calls.length === 1) throw new Error('local save failed');
+      const task = {id: `saved-${view}`, content: drafts[0].content, project_id: drafts[0].projectId, source,
+        batchId: request.ids[0], capturedAt, syncState: 'pending'};
+      model.updateData(data => ({...data, tasks: [...data.tasks, task], allTasks: [...data.allTasks, task]})); return [task];
+    };
+    await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+    await switchTo(tree, view);
+    await act(async () => tree.root.findByType('Composer').props.onChangeText(`Task from ${view}`));
+    await act(async () => tree.root.findByType('Composer').props.onSubmit());
+    await switchTo(tree, 'projects');
+    await act(async () => tree.root.findByProps({accessibilityLabel: 'Retry new task save'}).props.onPress());
+    assert.equal(calls.length, 2); assert.equal(calls[0].request, calls[1].request);
+    await switchTo(tree, 'device');
+    const saved = tree.root.findAllByType('TaskRow').find(row => row.props.task.id === `saved-${view}`);
+    assert.ok(saved);
+    if (view === 'device') {assert.equal(calls[1].source, null); assert.equal(saved.props.onOpenNote, undefined); assert.match(JSON.stringify(tree.toJSON()), /Created on this device/);}
+    await act(async () => tree.unmount());
+  }
+});
+test('Keep tasks requires an explicit surviving writable project and passes its destination with the verified scope', async () => {
+  const model = workspace(); let tree; const deletes = [];
+  model.updateData(data => ({...data, projects: [...data.projects, {id: 'child', parent_id: 'p', name: 'Child'},
+    {id: 'viewer', name: 'Read only', can_edit: false}, {id: 'q', name: 'Survivor'}]}));
+  model.service.inspectOfflineContainer = async () => ({canKeep: true, allowed: true, count: 2, scopeToken: 'verified-scope'});
+  model.service.deleteOfflineContainer = async (kind, id, options, request) => {deletes.push({kind, id, options, request});};
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await act(async () => tree.root.findByType('Sidebar').props.onProjectMenu('p'));
+  const picker = tree.root.findByType('ProjectPicker');
+  assert.equal(picker.props.requireExplicit, true); assert.equal(picker.props.selectedId, null);
+  assert.deepEqual(picker.props.projects.map(project => project.id), ['i', 'q']);
+  assert.equal(pressText(tree, 'Delete project; keep tasks').props.disabled, true);
+  await act(async () => picker.props.onChange('q'));
+  await act(async () => pressText(tree, 'Delete project; keep tasks in Survivor').props.onPress());
+  assert.match(JSON.stringify(tree.toJSON()), /2 verified tasks in Survivor/);
+  await act(async () => pressText(tree, 'Confirm deletion').props.onPress());
+  assert.equal(deletes[0].options.destinationProjectId, 'q'); assert.equal(deletes[0].options.confirmCount, 2);
+  assert.equal(deletes[0].options.scopeToken, 'verified-scope'); assert.equal(deletes[0].options.mode, 'keep');
   await act(async () => tree.unmount());
 });

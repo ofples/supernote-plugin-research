@@ -15,9 +15,10 @@ type Props = {
   selectedSectionId?: string | null;
   onSectionChange?: (sectionId: string | null) => void;
   onCreateCollection?: (projectId: string, name: string) => Promise<any>;
+  requireExplicit?: boolean;
 };
 
-export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection}: Props) {
+export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection, requireExplicit = false}: Props) {
   const scale = useFontScale();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -32,7 +33,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
 
   if (!projects.length) return null;
   const inbox = projects.find((p: any) => p.inbox_project || p.is_inbox_project);
-  const effectiveId = selectedId || inbox?.id;
+  const effectiveId = selectedId || (requireExplicit ? null : inbox?.id);
   const selectedProject = projects.find(p => p.id === effectiveId);
   const collections: Section[] = selectedProject ? projectSections(sections, selectedProject.id) : [];
 

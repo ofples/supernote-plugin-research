@@ -144,6 +144,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [actionDate, setActionDate] = useState('');
   const [actionLabels, setActionLabels] = useState('');
   const [containerProof, setContainerProof] = useState<any>(null);
+  const [containerRetries, setContainerRetries] = useState<any[]>([]);
+  const containerRequests = useRef(new Map<string, any>());
   const submissions = useRef(new Map<string, any>());
   const containerIdentity = useRef<any>(null);
   const submissionSequence = useRef(0);
@@ -318,6 +320,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     if (!active || accountRef.current === getCachedConfig()?.apiToken) return;
     accountRef.current = getCachedConfig()?.apiToken;
     mutations.cancel(); submissions.current.clear(); setCreatingDrafts([]); setContainerIntents([]);
+    containerRequests.current.clear(); setContainerRetries([]);
     setComposer({value: '', projectId: null, sectionId: null, dueDate: '', explicit: false, source: null});
     setActionSheet(null); setSelectedIds([]); setSelectionMode(false); setExpandedId(null);
     setDoneTasks([]); setDoneFetched(false); setTasks([]); setProjectList([]); setCollectionList([]); dataFp.current = '';
@@ -538,10 +541,12 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const today = localDate(new Date());
 
   const isActiveRegistryTask = (reference: any) => {
-    const authoritative = (syncInfo?.allTasks || tasks).find((task: any) => task.id === reference.id);
+    const authoritative = projected.find((task: any) => task.id === reference.id) || (syncInfo?.allTasks || tasks).find((task: any) => task.id === reference.id);
     const task = authoritative || reference;
     return !task.completed && !task.deleted && !task.awaitingRecurrence && !task.occurrencePending && !task.remoteMissing;
   };
+  const deviceEntries = [...deviceTasks, ...(syncInfo?.allTasks || []).filter((task: any) => task.batchId && task.capturedAt != null),
+    ...creatingDrafts].filter((task, index, list) => list.findIndex(value => rowIdentity(value) === rowIdentity(task)) === index);
 
   // Tasks linked to the current NOTE (any page), each with the page it lives
   // on so the band tells you where you'd jump in a long note (design-home-v2).
@@ -551,6 +556,11 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const noteTasks = (() => {
     const seen = new Set<string>();
     const result: Array<{task: any; pageNum?: number}> = [];
+    for (const task of tasks) {
+      if (noteCtx?.filePath && task.source?.filePath === noteCtx.filePath && !seen.has(task.id)) {
+        seen.add(task.id); result.push({task, pageNum: task.source.pageNum});
+      }
+    }
 
     // 1. Tasks whose IDs were found as supertask:// links on the current page
     for (const id of pageTaskIds) {
@@ -838,7 +848,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     if (!deviceLoaded) {
       return <View style={styles.centered} />;
     }
-    if (deviceTasks.length === 0) {
+    if (deviceEntries.length === 0) {
       return (
         <View style={styles.centered}>
           <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No tasks captured on this device</Text>
@@ -850,11 +860,11 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     // registry entries), labeled filesystem-style: "Connor / 1x1" tells you
     // WHERE the note lives, not just its name.
     const byNote: Record<string, {label: string; entries: any[]}> = {};
-    for (const dt of deviceTasks) {
+    for (const dt of deviceEntries) {
       if (!isActiveRegistryTask(dt)) continue;
-      const key = dt.notePath || dt.noteFile || 'Unknown';
+      const key = dt.notePath || dt.noteFile || dt.source?.filePath || 'Created on this device';
       if (!byNote[key]) {
-        byNote[key] = {label: noteLabel(dt.notePath, dt.noteFile), entries: []};
+        byNote[key] = {label: dt.notePath || dt.noteFile || dt.source?.filePath ? noteLabel(dt.notePath || dt.source?.filePath, dt.noteFile) : 'Created on this device', entries: []};
       }
       byNote[key].entries.push(dt);
     }
@@ -868,7 +878,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         const fullTask = tasks.find(t => t.id === dt.id);
         // Jump target: stored full path, or same-directory guess for legacy
         // entries (mirrors TaskDetail's View Note fallback)
-        let openPath: string | undefined = dt.notePath;
+        let openPath: string | undefined = dt.notePath || dt.source?.filePath;
         if (!openPath && dt.noteFile && noteCtx?.filePath) {
           openPath = noteCtx.filePath.substring(0, noteCtx.filePath.lastIndexOf('/') + 1) + dt.noteFile;
         }
@@ -936,7 +946,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     activeTab === 'today' ? projectFiltered(tasks).filter(task => task.due?.date && task.due.date.slice(0, 10) <= today) :
     activeTab === 'tomorrow' ? projectFiltered(tasks).filter(task => task.due?.date?.slice(0, 10) === tomorrow) :
     activeTab === 'upcoming' ? projectFiltered(tasks).filter(task => !task.due?.date || task.due.date.slice(0, 10) > today) :
-    activeTab === 'note' ? noteTasks.map(item => item.task) : activeTab === 'device' ? deviceTasks.filter(isActiveRegistryTask) :
+    activeTab === 'note' ? noteTasks.map(item => item.task) : activeTab === 'device' ? deviceEntries.filter(isActiveRegistryTask).map(reference => tasks.find(task => rowIdentity(task) === rowIdentity(reference)) || reference) :
     activeTab === 'done' ? projectFiltered(projectedDone) : projectFiltered(tasks);
   const completedItems = [...projectedDone, ...optimisticDone].filter((task, index, list) =>
     list.findIndex(value => rowIdentity(value) === rowIdentity(task)) === index).filter(task => {
@@ -945,12 +955,29 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       if (activeTab === 'today') return !!task.due?.date && task.due.date.slice(0, 10) <= today;
       if (activeTab === 'tomorrow') return task.due?.date?.slice(0, 10) === tomorrow;
       if (activeTab === 'note') return registryNoteTasks.some(value => value.id === task.id);
-      if (activeTab === 'device') return deviceTasks.some(value => value.id === task.id);
+      if (activeTab === 'device') return deviceEntries.some(value => rowIdentity(value) === rowIdentity(task));
       if (activeTab === 'upcoming') return Object.prototype.hasOwnProperty.call(task, 'due') && (!task.due?.date || task.due.date.slice(0, 10) > today);
       return isProjectVisible(visibilityConfig, task.project_id, projectList);
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
   const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
   const selectableKey = selectableTasks.map((task: any) => rowIdentity(task)).join('|');
+  const excludedKeepProjects = new Set([actionSheet?.id, ...(containerProof?.projects || [])].filter(id => id != null).map(String));
+  let excludedChanged = true;
+  while (excludedChanged) {
+    excludedChanged = false;
+    for (const project of projectList) {
+      const aliases = [project.id, project.localId].filter(Boolean).map(String);
+      if (aliases.some(id => excludedKeepProjects.has(id)) || (project.parent_id && excludedKeepProjects.has(String(project.parent_id)))) {
+        for (const id of aliases) if (!excludedKeepProjects.has(id)) {excludedKeepProjects.add(id); excludedChanged = true;}
+      }
+    }
+  }
+  const keepProjects = projectList.filter(project => {
+    if ([project.id, project.localId].filter(Boolean).some(id => excludedKeepProjects.has(String(id))) || String(project.id).startsWith('ui:')) return false;
+    if (project.deleted || project.is_deleted || project.is_archived || project.remoteUnavailable || project.is_read_only || project.is_frozen || project.can_edit === false || project.role === 'viewer') return false;
+    return !(project.workspace_id || project.shared || project.is_shared) || project.can_edit === true || ['admin', 'owner', 'member'].includes(project.role);
+  });
+  const chosenKeepProject = keepProjects.find(project => String(project.id) === String(resolveContainerId(actionSheet?.destinationProjectId, projectList)));
   useEffect(() => {if (selectionMode) setSelectedIds(previous => previous.filter(id => selectableKey.split('|').includes(id)));}, [selectionMode, selectableKey]);
   const loadMoreHistory = () => {
     const total = activeTab === 'done' ? projectFiltered(projectedDone).length : completedItems.length;
@@ -976,28 +1003,43 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   };
   const openContainerAction = (kind: 'project' | 'collection', id?: string, projectId?: string) => {
     if (id?.startsWith('ui:') || projectId?.startsWith('ui:')) {setError('This container is still being saved on your device.'); return;}
+    id = resolveContainerId(id, kind === 'project' ? projectList : collectionList) || undefined;
+    projectId = resolveContainerId(projectId, projectList) || undefined;
     const container = id && (kind === 'project' ? projectList : collectionList).find(value => String(value.id) === id);
     const parent = kind === 'project' ? container : projectList.find(project => String(project.id) === String(projectId || container?.project_id));
     if (parent && (parent.is_inbox_project || parent.inbox_project || parent.isInbox) && kind === 'project') {setError('Inbox is protected from rename and deletion.'); return;}
     if ([container, parent].some(value => value && (value.is_read_only || value.is_frozen || value.can_edit === false || value.role === 'viewer' || ((value.is_shared || value.workspace_id) && value.can_edit !== true)))) {setError('This location requires verified edit permissions.'); return;}
     setActionName(container?.name || ''); setContainerProof(null);
-    id = resolveContainerId(id, kind === 'project' ? projectList : collectionList) || undefined;
-    projectId = resolveContainerId(projectId, projectList) || undefined;
     const sheet = {kind: 'container', containerKind: kind, id, projectId, request: {}, identity: {}, account: getCachedConfig()?.apiToken};
+    const pending = [...containerRequests.current.values()].find(value => value.account === sheet.account &&
+      resolveContainerId(value.id, kind === 'project' ? projectList : collectionList) === id && !!id && value.containerKind === kind);
+    if (pending) {setActionSheet(pending); setActionName(pending.frozen.name); setContainerProof(pending.frozen.proof); return;}
     containerIdentity.current = sheet.identity;
     setActionSheet(sheet);
     if (id) workspaceService.inspectOfflineContainer(kind, id).then((proof: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setContainerProof(proof);}).catch(withCurrentAccount((cause: any) => setError(cause.message)));
   };
-  const performContainerAction = async (action: string, mode?: string) => {
-    const sheet = actionSheet;
+  const performContainerAction = async (action: string, mode?: string, retrySheet?: any) => {
+    let sheet = retrySheet || actionSheet;
     if (sheet.account !== getCachedConfig()?.apiToken) {setActionSheet(null); return;}
-    if (!sheet.frozen) sheet.frozen = {action, mode, name: actionName.trim(), proof: containerProof};
+    if (!sheet.frozen) {
+      const existing = [...containerRequests.current.values()].find(value => !sheet.id && !value.id && value.account === sheet.account &&
+        value.containerKind === sheet.containerKind && value.projectId === sheet.projectId && value.frozen.name === actionName.trim());
+      if (existing) sheet = existing;
+      else sheet.frozen = {action, mode, name: actionName.trim(), proof: containerProof,
+        destinationProjectId: sheet.containerKind === 'project' ? resolveContainerId(sheet.destinationProjectId, projectList) : sheet.projectId};
+    }
+    if (sheet.saving) return;
     const frozen = sheet.frozen; action = frozen.action; mode = frozen.mode;
+    if (action === 'delete' && mode === 'keep' && sheet.containerKind === 'project' && !frozen.destinationProjectId) {setError('Choose a surviving destination project first.'); delete sheet.frozen; return;}
+    sheet.saving = true; sheet.error = null;
+    if (!sheet.optimisticId) sheet.optimisticId = String(sheet.id || `ui:container:${++submissionSequence.current}`);
+    containerRequests.current.set(sheet.optimisticId, sheet);
+    setContainerRetries([...containerRequests.current.values()]);
     setActionSheet(null);
     const operation = {sequence: ++submissionSequence.current, scope: sheet.containerKind,
-      action: action === 'delete' ? 'delete' : sheet.id ? 'rename' : 'create', id: String(sheet.id || `ui:container:${submissionSequence.current}`),
+      action: action === 'delete' ? 'delete' : sheet.id ? 'rename' : 'create', id: sheet.optimisticId,
       name: frozen.name, projectId: sheet.projectId, mode,
-      destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId};
+      destinationProjectId: frozen.destinationProjectId};
     setContainerIntents(previous => [...previous, operation]);
     try {
       let created: any;
@@ -1006,7 +1048,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         else if (sheet.containerKind === 'project') created = await workspaceService.createOfflineProject(frozen.name, {}, sheet.request);
         else created = await workspaceService.createOfflineCollection(sheet.projectId, frozen.name, sheet.request);
       } else await workspaceService.deleteOfflineContainer(sheet.containerKind, sheet.id, {mode,
-        destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId,
+        destinationProjectId: frozen.destinationProjectId,
         confirmCount: frozen.proof.count, scopeToken: frozen.proof.scopeToken, includeUncached: mode === 'delete'}, sheet.request);
       if (sheet.account !== getCachedConfig()?.apiToken) return;
       if (created?.id) {
@@ -1016,8 +1058,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           sectionId: previous.sectionId === operation.id ? createdId : previous.sectionId}));
       }
       await refreshSyncSheet();
-    } catch (cause: any) {if (sheet.account !== getCachedConfig()?.apiToken) return; setError(cause.message); await refreshSyncSheet().catch(() => {}); setActionSheet((current: any) => current || sheet);}
-    finally {setContainerIntents(previous => previous.filter(value => value.sequence !== operation.sequence));}
+      containerRequests.current.delete(sheet.optimisticId);
+    } catch (cause: any) {if (sheet.account !== getCachedConfig()?.apiToken) return; sheet.error = cause.message || 'Could not confirm the local save.'; setError(sheet.error); await refreshSyncSheet().catch(() => {}); setActionSheet((current: any) => current || sheet);}
+    finally {sheet.saving = false; if (sheet.account === getCachedConfig()?.apiToken) setContainerRetries([...containerRequests.current.values()]); setContainerIntents(previous => previous.filter(value => value.sequence !== operation.sequence));}
   };
   const saveComposer = () => {
     if (!composer.value.trim()) return;
@@ -1035,6 +1078,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       source: composer.source};
     submissions.current.set(id, submission);
     setCreatingDrafts(previous => [...previous, {...draft, id, project_id: draft.projectId, section_id: draft.sectionId,
+      source: submission.source, capturedAt: submission.capturedAt,
       due: draft.dueDate ? {date: draft.dueDate} : null, syncState: 'pending', savingLocally: true}]);
     setComposer(previous => ({...previous, value: '', source: null}));
     persistComposer(id);
@@ -1082,7 +1126,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     saveConfig({lastOpenedTab: next}).catch(() => {});
   };
   const counts: Record<string, number> = {today: 0, tomorrow: 0, upcoming: 0, inbox: 0, note: noteTasks.length,
-    device: deviceTasks.filter(isActiveRegistryTask).length, done: projectFiltered(doneTasks).length};
+    device: deviceEntries.filter(isActiveRegistryTask).length, done: projectFiltered(doneTasks).length};
   for (const task of projectFiltered(tasks)) {
     const due = (task.due?.date || '').slice(0, 10);
     if (due && due <= today) counts.today++;
@@ -1155,6 +1199,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       ) : null}
 
       {error ? <View style={styles.jumpError}><Text style={styles.jumpErrorText}>{error}</Text></View> : null}
+      {creatingDrafts.filter(task => task.syncState === 'attention').map(task => <View key={task.id} style={{padding: 8, flexDirection: 'row', gap: 8}}>
+        <Text style={{color: '#000', flex: 1}}>New task needs local save confirmation: {task.content}</Text>
+        <Pressable style={styles.headerButton} accessibilityLabel="Retry new task save" onPress={() => persistComposer(task.id)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+      </View>)}
+      {containerRetries.filter(sheet => sheet.error).map(sheet => <View key={sheet.optimisticId} style={{padding: 8, flexDirection: 'row', gap: 8}}>
+        <Text style={{color: '#000', flex: 1}}>{sheet.containerKind} change needs local save confirmation: {sheet.frozen.name}</Text>
+        <Pressable style={styles.headerButton} disabled={sheet.saving} accessibilityLabel="Retry container save" onPress={() => performContainerAction(sheet.frozen.action, sheet.frozen.mode, sheet)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+      </View>)}
       {mutations.failures.map(failure => <View key={failure.sequence} style={{padding: 8, flexDirection: 'row', gap: 8}}>
         <Text style={{color: '#000', flex: 1}}>{failure.error}</Text>
         <Pressable style={styles.headerButton} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
@@ -1227,10 +1279,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
                   const sheet = actionSheet;
                   workspaceService.verifyOfflineContainer(sheet.containerKind, sheet.id).then((proof: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setContainerProof(proof);}).catch((cause: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setError(cause.message);});
                 }}><Text style={styles.headerButtonText}>Verify full contents online</Text></Pressable>}
-                <Pressable style={styles.headerButton} disabled={!containerProof?.canKeep} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>{actionSheet.containerKind === 'project' ? 'Delete project; move tasks to Inbox' : 'Delete collection; keep tasks in project'}</Text></Pressable>
+                {actionSheet.containerKind === 'project' && <>
+                  <Text style={styles.sheetText}>Keep tasks: choose a surviving destination project. Tasks stay together in No collection.</Text>
+                  <ProjectPicker projects={keepProjects} selectedId={chosenKeepProject?.id || null} requireExplicit
+                    onChange={destinationProjectId => setActionSheet((sheet: any) => ({...sheet, destinationProjectId, confirm: null}))} />
+                </>}
+                <Pressable style={styles.headerButton} disabled={!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject)} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>{actionSheet.containerKind === 'project' ? `Delete project; keep tasks${chosenKeepProject ? ` in ${chosenKeepProject.name}` : ''}` : 'Delete collection; keep tasks in project'}</Text></Pressable>
                 <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable>
-                {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : 'Confirm deleting this container while keeping its tasks in the destination shown above.'}</Text>
-                  <Pressable style={styles.headerButton} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
+                {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : `Confirm deleting this container while keeping ${containerProof?.count || 0} verified tasks in ${actionSheet.containerKind === 'project' ? chosenKeepProject?.name || 'the selected project' : projectMap[actionSheet.projectId] || 'their project'}, No collection. Parent and child task relationships are preserved.`}</Text>
+                  <Pressable style={styles.headerButton} disabled={actionSheet.confirm === 'keep' && (!containerProof?.canKeep || (actionSheet.containerKind === 'project' && !chosenKeepProject))} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
               </>}
               </>}
             </> : null}
