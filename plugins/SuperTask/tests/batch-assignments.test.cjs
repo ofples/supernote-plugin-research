@@ -59,6 +59,8 @@ test('individual field edits mark overrides and Use batch restores the latest de
   assert.equal(resetRowField(value, 'priority', defaults).priority, 3);
   value = editRow(value, 'labels', ['urgent']);
   assert.deepEqual(resetRowField(value, 'labels', defaults).labels, ['home']);
+  assert.equal(editRow(row(2), 'content', 'Edited title').fieldProvenance.content, 'manual');
+  assert.equal(editRow(row(2), 'description', 'Edited detail').fieldProvenance.description, 'manual');
 });
 
 test('a newly added draft inherits the latest batch defaults and begins without manual overrides', () => {
@@ -118,6 +120,7 @@ test('AI source row mappings restore manual overrides while retaining proposed f
   assert.equal(result.content, 'Refined task');
   assert.deepEqual([result.projectId, result.sectionId], ['house', 'garden']);
   assert.equal(result.dueString, '2026-10-07');
+  assert.equal(result.sourceText, 'Task 10');
   assert.equal(result.priority, 4); assert.deepEqual(result.labels, ['new']);
   assert.equal(result.rowId, 10);
   assert.deepEqual(result.overrides, {location: true, dueString: true});
@@ -129,6 +132,7 @@ test('manual title and description survive AI refinement and explicit AI metadat
     dueString: '', priority: 4, labels: [], sourceRowIds: ['30'], explicitFields: ['priority']}]);
   assert.equal(result.content, 'My edited title');
   assert.equal(result.description, 'Keep these details');
+  assert.deepEqual(result.fieldProvenance, {content: 'manual', description: 'manual'});
   assert.equal(result.priority, 4);
   assert.equal(result.instructions.priority, true);
   const changed = changeDefault([result], makeDefaults({priority: 1}), 'priority', 2);
@@ -186,6 +190,7 @@ test('refinement can fall back to same-position mapping when cardinality is unch
   const result = reconcileRefinement([row(22)], [{content: 'Edited by AI'}]);
   assert.equal(result[0].rowId, 22);
   assert.deepEqual(result[0].overrides, {});
+  assert.deepEqual(result[0].fieldProvenance, {content: 'ai-proposal', description: 'ai-proposal'});
 });
 
 test('AI split proposals that cite one source row receive distinct fresh identities', () => {
