@@ -1,5 +1,15 @@
 # Combined SuperTask testing
 
+## Connected device follow-up — 5 October 2026
+
+The Nomad `SN078D10010594` reconnected. Beta.13/code 18 was installed through Select Plugin Package from the exact inspected file and enabled ON; Plugin Manager displayed **0.4.0-beta.13**. Startup and the new runtime UI were inspected: Settings/Close header, pane menu, contextual inline composer, plain project sidebar with fixed New project, and expanded cached Completed footer without an Undo banner. Initial cache showed 24 tasks / 0 queued. Configuration before/after installation was identical; backup remains in ignored `build/device-beta13-backup`. No scratch or real tasks/notes were modified, and no AI request was made.
+
+Completed-history refresh reported unavailable; saved history remained visible. This is not a successful remote-history refresh claim. Physical gesture/pen/capture, offline mutation and full action flows remain pending. The legacy `MyStyle/Plugins/SuperTask.snplg` copy still contains an older package, so always select the separately named beta package explicitly for installation rather than reinstalling that legacy file.
+
+Visual inspection found missing dotted separators in the new Inbox list. The shared TaskRow now owns the dotted rule across views and duplicate legacy list separators are removed. **Beta.14/code 19** is built from `70508ac1518a2996f7e053726bafd28981d8dfc6`: `build/outputs/SuperTask-native-beta14.snplg`, **7,586,181 bytes**, SHA-256 `5fe90ff075e9e55275bb32105eda5420b4892df04eaa9985d8d638c3648ce57f`. All 236 tests, full TypeScript/lint error checks, native/JS build, actual archive verification and complete Hermes compilation pass. Installation is awaiting release of screen control from the user-authorized Obsidian testing chat; no overlapping ADB taps/app launches are performed.
+
+The records below precede this connected follow-up; beta.13's former unavailable-device status is historical.
+
 ## Current native interaction beta — 5 October 2026
 
 Integration branch: `release/workflow-overview-testing`; packaged runtime revision **a70aa6a1f03c595f85c140014a5edcca23a71037**. All nine current remote feature heads pass ancestry verification through `syncTestingBranch.ps1` without additional changes. Main and the earlier six draft PRs remain unchanged.

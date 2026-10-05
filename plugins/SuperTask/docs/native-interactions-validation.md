@@ -1,6 +1,10 @@
 # Native interactions beta verification
 
-This record distinguishes automated checks, scratch server evidence and device checks. Specification: `NATIVE_INTERACTIONS.md`; activated goal: `NATIVE_INTERACTIONS_GOAL.md`. Beta.12 is the last installed and hardware-inspected version. Beta.13 is a separate combined testing artifact.
+This record distinguishes automated checks, scratch server evidence and device checks. Specification: `NATIVE_INTERACTIONS.md`; activated goal: `NATIVE_INTERACTIONS_GOAL.md`. Beta.13 is now installed/enabled and startup/layout inspected. Beta.14 adds the device-discovered separator correction; see TESTING.md for current installation status and exact artifact hash. Beta.12/initial beta.13 local-delivery records below are historical.
+
+## Reconnected-device smoke check
+
+Beta.13 was installed explicitly from the separately named inspected package. Plugin Manager version/enabled state and startup/new workspace controls were verified. Existing configuration stayed identical; no task/note changes or AI calls were made. Cached completed history rendered but remote refresh reported unavailable. Detailed mutation, gesture/pen/capture and launcher workflows are still pending; this smoke check does not establish them. Screen control was released to the user-authorized Obsidian testing chat to avoid simultaneous ADB interaction.
 
 ## Server contract and scratch cleanup
 

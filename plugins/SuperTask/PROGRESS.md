@@ -1,5 +1,9 @@
 # SuperTask progress
 
+## Connected Nomad follow-up — 5 October 2026
+
+Beta.13 is now installed/enabled and startup/new workspace layout is verified on the Nomad. Existing configuration is unchanged and privately backed up. Saved completed history renders; its remote refresh was unavailable during the check. No task/note edits or new AI calls were made. A missing dotted separator in the new Inbox view was corrected centrally on the workspace feature branch (`db69d20`). Combined beta.14/code 19 is built/inspected with all 236 tests, TypeScript/lint and full Hermes compilation passing, ready for installation when the coordinated Obsidian screen-testing window ends. Exact artifact/hash and outstanding checks are in [TESTING.md](TESTING.md). Subsequent sections describe the earlier local-delivery checkpoint.
+
 ## Native interaction goal delivered locally — 5 October 2026
 
 The native interaction redesign is implemented and reviewed on `release/workflow-overview-testing`, runtime revision `a70aa6a1f03c595f85c140014a5edcca23a71037`. All nine current feature heads are verified ancestors; the sync helper maintains that set. Main is unchanged. Separate draft PRs: [engine #7](https://github.com/ofples/supernote-plugin-research/pull/7), [launcher/recognition #8](https://github.com/ofples/supernote-plugin-research/pull/8), [workspace #9](https://github.com/ofples/supernote-plugin-research/pull/9). PR 9 depends on the engine branch; PRs 7/8 compare against the common reviewed beta.12/design base. The earlier six PRs are preserved.
