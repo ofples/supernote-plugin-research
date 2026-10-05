@@ -35,7 +35,7 @@ const DEFAULT_CONFIG = {
   // long press and three-finger double tap are always active. Default 'off':
   // hold-then-drag resembles a paused scroll, so it is opt-in (session 34).
   lassoGestureInput: 'off',
-  // Strict edge swipe: exactly three coherent finger contacts from the bottom
+  // Strict edge swipe: two or three coherent finger contacts from the bottom
   // edge. Opt-in; unknown physical dimensions or ambiguous streams fail closed.
   bezelSwipeEnabled: false,
   launcherEnabled: false,
