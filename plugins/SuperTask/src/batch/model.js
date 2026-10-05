@@ -1,5 +1,6 @@
 /* Native recognition is the baseline. AI proposals must pass the same review. */
 const {resolveDue} = require('../offline/model');
+const {MAX_SOURCE_ROW_LENGTH, MAX_TRANSCRIPTION_LENGTH, stripBullet, splitTitleDescription} = require('./descriptionParser');
 const MAX_TASKS = 100;
 const taskSchema = {
   type: 'object', additionalProperties: false,
@@ -17,14 +18,26 @@ const taskSchema = {
 const batchSchema = {type: 'object', additionalProperties: false, required: ['tasks'],
   properties: {tasks: {type: 'array', items: taskSchema}}};
 
-function stripBullet(line) {
-  return line.trim().replace(/^(?:[-*•◦▪☐□]\s*|\[(?: |x|X)\]\s*|\d+[.)]\s+)/, '').trim();
-}
 function fromText(text, defaults = {}) {
-  const lines = String(text).split(/\r?\n/).map(stripBullet).filter(Boolean);
-  if (lines.length > MAX_TASKS) throw new Error('Select at most 100 lines at a time.');
-  return lines.map(content => ({description: '', priority: 1, dueString: '',
-    projectId: null, sectionId: null, labels: [], ...defaults, content, selected: true}));
+  const transcription = String(text);
+  if (transcription.length > MAX_TRANSCRIPTION_LENGTH) {
+    throw new Error('The transcription is too large to review.');
+  }
+  const lines = transcription.split(/\r?\n/).map(line => ({sourceText: line.trim(), text: stripBullet(line)})).filter(line => line.text);
+  if (lines.length > MAX_TASKS) {
+    throw new Error('Select at most 100 lines at a time.');
+  }
+  return lines.map(({sourceText, text: rowText}) => {
+    if (sourceText.length > MAX_SOURCE_ROW_LENGTH) {
+      throw new Error('A transcription row is too long to review.');
+    }
+    const parsed = splitTitleDescription(rowText);
+    return {priority: 1, dueString: '',
+      projectId: null, sectionId: null, labels: [], ...defaults,
+      content: parsed.content, description: parsed.split ? parsed.description : (defaults.description || ''),
+      sourceText, sourceRowIds: [], fieldProvenance: {content: 'transcription',
+        description: parsed.split || defaults.description ? 'transcription' : 'empty'}, selected: true};
+  });
 }
 function validateProposal(value, projects = [], sections = [], rows = []) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -53,7 +66,7 @@ function validateProposal(value, projects = [], sections = [], rows = []) {
     }
     if (task.dueDate) resolveDue(task.dueDate);
     const sources = rows.filter(row => task.sourceRowIds.includes(String(row.rowId)));
-    const sourceText = sources.length ? sources.map(row => row.content).join('\n') : task.sourceText;
+    const sourceText = sources.length ? sources.map(row => row.sourceText || row.content).join('\n') : task.sourceText;
     const inherited = sources.length && sources.every(row => (row.projectId || null) === task.projectId &&
       (row.sectionId || null) === task.sectionId);
     const location = resolveExplicitLocation(sourceText, projects, sections);
@@ -61,7 +74,8 @@ function validateProposal(value, projects = [], sections = [], rows = []) {
         (!location || location.projectId !== task.projectId || location.sectionId !== task.sectionId)) {
       throw new Error('AI location must match an explicit, unambiguous project or collection phrase. Original rows are unchanged.');
     }
-    const next = {...task, content: task.content.trim(), dueString: task.dueDate || '', selected: true};
+    const next = {...task, content: task.content.trim(), dueString: task.dueDate || '', selected: true,
+      sourceText, fieldProvenance: {content: 'ai-proposal', description: 'ai-proposal'}};
     const proof = {location: !!location, dueString: /\b(?:today|tomorrow|tonight|next|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|due)\b|\d{4}-\d{2}-\d{2}/i.test(sourceText),
       priority: /\b(?:important|urgent|priority|p[1-4])\b/i.test(sourceText), labels: /(?:^|\s)#[\p{L}\p{N}_-]+|\blabels?\s*:/iu.test(sourceText)};
     next.explicitFields = task.explicitFields.filter(field => proof[field]);
@@ -130,13 +144,33 @@ function explicitLocation(text, projectId, sectionId, projects, sections) {
 function mergeNext(rows, index) {
   if (index < 0 || index >= rows.length - 1) return rows;
   const next = rows.slice();
-  next.splice(index, 2, {...rows[index], content: `${rows[index].content.trim()} ${rows[index + 1].content.trim()}`.trim()});
+  const left = rows[index], right = rows[index + 1];
+  const sourceText = [left.sourceText || left.content, right.sourceText || right.content].filter(Boolean).join('\n');
+  if (sourceText.length > MAX_SOURCE_ROW_LENGTH) throw new Error('The merged transcription is too long to review.');
+  const fieldProvenance = {};
+  for (const field of ['content', 'description']) {
+    const leftSource = left.fieldProvenance?.[field] || 'transcription';
+    const rightSource = right.fieldProvenance?.[field] || 'transcription';
+    if (field === 'content') {
+      fieldProvenance[field] = 'manual';
+    } else if (!left.description) {
+      fieldProvenance[field] = rightSource;
+    } else if (!right.description || leftSource === rightSource) {
+      fieldProvenance[field] = leftSource;
+    } else {
+      fieldProvenance[field] = 'mixed';
+    }
+  }
+  next.splice(index, 2, {...left, content: `${left.content.trim()} ${right.content.trim()}`.trim(),
+    description: [left.description, right.description].filter(Boolean).join('\n'), sourceText,
+    sourceRowIds: [...new Set([...(left.sourceRowIds || []), ...(right.sourceRowIds || [])])], fieldProvenance});
   return next;
 }
 function splitRow(rows, index) {
   const row = rows[index];
   if (!row) return rows;
-  const parts = fromText(row.content, row);
+  const parts = fromText(row.content, row).map(part => ({...part, sourceText: row.sourceText || row.content,
+    sourceRowIds: [...(row.sourceRowIds || [])]}));
   if (parts.length < 2) throw new Error('Insert a line break in the title, then split.');
   if (rows.length - 1 + parts.length > MAX_TASKS) throw new Error('A batch can contain at most 100 tasks.');
   const next = rows.slice();

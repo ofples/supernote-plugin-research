@@ -35,9 +35,12 @@ const DEFAULT_CONFIG = {
   // long press and three-finger double tap are always active. Default 'off':
   // hold-then-drag resembles a paused scroll, so it is opt-in (session 34).
   lassoGestureInput: 'off',
-  // Bezel swipe (F-021): 2+ fingers up from the bottom edge opens task home.
-  // Opt-in while it re-proves itself on-device (session 34).
+  // Strict edge swipe: two or three coherent finger contacts from the bottom
+  // edge. Opt-in; unknown physical dimensions or ambiguous streams fail closed.
   bezelSwipeEnabled: false,
+  launcherEnabled: false,
+  launcherEdge: 'right',
+  launcherPosition: 0.45,
   // Three-finger double tap opens task home ANYWHERE on the canvas -- no
   // geometric constraint, so palm activity can mimic it (B-028). Opt-in
   // since session 34; was always-on from session 31 until B-028.

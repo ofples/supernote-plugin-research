@@ -20,13 +20,11 @@
  *      clusters can mimic it and why it is opt-in
  *
  * 4. BEZEL SWIPE (F-021, config-gated, default OFF):
- *    - 2+ fingers swipe up from the bottom edge zone (bottom 4% of canvas)
- *    - Opens task home, same as three-finger double tap
- *    - Parameters from design-gesture-audit.md: natural swipes take
- *      1400-2000ms (max 3500ms), displacement 150px (80px relaxed for 3+
- *      fingers -- 3-finger swipes read shorter). The DOWN must land in the
- *      edge zone -- there is deliberately NO mid-page recovery path (see
- *      B-028: palm+pen multi-touch produces phantom displacement).
+ *    - Two or three stable finger IDs begin in the bottom 4% of the screen.
+ *    - Each must move upward at least 150px concurrently, with bounded drift
+ *      and coherent motion; malformed, cancelled, palm/pen and reentry streams
+ *      fail closed. Screen bounds come from native display metrics.
+ *    - Classification lives in launcher/strictEdgeSwipe.cjs; no relaxed path.
  *
  * PALM + PEN POISONING (B-028, on-device 2026-07-24): palm/hand-edge contacts
  * DO reach the listener during pen writing and look like multi-touch. Any pen
@@ -75,6 +73,19 @@
  */
 
 import {PluginManager, PluginCommAPI, PluginFileAPI} from 'sn-plugin-lib';
+import {NativeModules, Dimensions, DeviceEventEmitter} from 'react-native';
+const {StrictEdgeSwipe} = require('../launcher/strictEdgeSwipe.cjs');
+const _strictSwipe = new StrictEdgeSwipe();
+let _edgeStream = false;
+let _dimensionSub = null;
+let _rotationSub = null;
+function updateSwipeDimensions() {
+  // MotionEvent uses physical pixels, not RN logical layout units.
+  NativeModules.TaskLauncher?.getStatus().then(status => {
+    _strictSwipe.setDimensions(status.width, status.height);
+    _edgeStream = false;
+  }).catch(() => { _strictSwipe.setDimensions(0, 0); });
+}
 import {log} from './debug';
 import {loadConfig, resolveDefaultTab} from './config';
 import {fetchTaskData} from '../cache/taskCache';
@@ -107,19 +118,6 @@ const TAP_MAX_MS = 600;          // A tap cluster is crisp; longer = a resting p
 const SDK_TIMEOUT_MS = 5000;     // Max wait for SDK calls (only works while JS timers run)
 const WATCHDOG_MS = 8000;        // Event-driven force-clear of a stuck _actionInProgress
 
-// --- Bezel swipe config (F-021; parameters from design-gesture-audit.md) ---
-const BEZEL_ZONE_START = 0.96;      // Bottom 4% of canvas height is the entry zone
-const BEZEL_MIN_DISP = 150;         // Min upward travel (px) for 2 fingers
-const BEZEL_MIN_DISP_RELAXED = 80;  // Relaxed travel for 3+ fingers (they read shorter)
-const BEZEL_MAX_MS = 3500;          // Natural swipes take 1400-2000ms; 1200ms killed 13/13
-// --- B-028 palm discrimination ---
-const BEZEL_PTR_BAND = 0.60;        // Additional fingers must land in the bottom 40%
-                                    // (generous: fingers register staggered 50-150ms,
-                                    // a late finger may already be mid-swipe)
-const BEZEL_MAX_STEP = 120;         // Max px between consecutive MOVEs that counts as
-                                    // motion; bigger = stream switching between contact
-                                    // points (palm + finger), ignored for displacement
-
 /** Race a promise against a timeout. Returns null if the timeout fires first.
  * NOTE: JS timers are suspended while the plugin view is closed, so this is
  * best-effort only -- the onMsg watchdog is the guaranteed recovery path. */
@@ -142,9 +140,6 @@ let _actionId = 0;             // Token: stale handlers' finally{} must not clea
 let _bezelEnabled = false;     // Config-gated (bezelSwipeEnabled), default off
 let _threeFingerEnabled = false; // Config-gated (threeFingerTapEnabled), default off --
                                // it fires ANYWHERE on canvas, so it must be opted into (B-028)
-let _bezelTracking = null;     // {downY, downTime, maxPointers, minY} or null
-let _maxSeenY = 1871;          // Self-calibrating canvas height (A5X/Nomad default;
-                               // any device with a taller canvas calibrates on first touch)
 
 // --- Three-finger double tap state ---
 // Separate tracking path from long-press/lasso.
@@ -224,6 +219,9 @@ export function initGestureDetector() {
   }
 
   log('Gesture', 'Initializing gesture detector');
+  updateSwipeDimensions();
+  _dimensionSub = Dimensions.addEventListener('change', updateSwipeDimensions);
+  _rotationSub = DeviceEventEmitter.addListener('plugin_event_rotation', updateSwipeDimensions);
 
   // Load gesture config (quick-add mode + bezel swipe toggle)
   loadConfig().then(config => {
@@ -234,6 +232,12 @@ export function initGestureDetector() {
   _sub = PluginManager.registerMotionListener(1, {
     onMsg: (msg) => {
       _eventCount++;
+      const swipeAction = msg.action & 255;
+      if (swipeAction === 0) _edgeStream = _bezelEnabled && _strictSwipe.height > 0 && msg.pointers?.[0]?.y >= _strictSwipe.height * 0.96;
+      const edgeStream = _edgeStream;
+      const strictLaunch = _strictSwipe.feed(msg, _bezelEnabled, isViewOpen() || _actionInProgress);
+      if (swipeAction === 1 || swipeAction === 3) _edgeStream = false;
+      if (strictLaunch) { cancelGesture(); openTaskHome('two-finger edge swipe'); return; }
 
       // B-031: pen strokes made while our full-screen view is up COMMIT ink
       // to the note underneath (the EMR pen is a separate input plane; the
@@ -267,10 +271,6 @@ export function initGestureDetector() {
         // 2026-07-24, B-028) and look like multi-touch -- poison any bezel or
         // multi-tap tracking so palm+pen can never open the plugin.
         _lastPenTime = Date.now();
-        if (_bezelTracking) {
-          log('Gesture', 'PEN during bezel tracking -- cancelled (writing, not swiping)');
-          _bezelTracking = null;
-        }
         if (_multiTapTracking && !_multiTapTracking.penSeen) {
           log('Gesture', 'PEN during multi-tap tracking -- poisoned (palm + pen writing)');
           _multiTapTracking.penSeen = true;
@@ -313,35 +313,8 @@ export function initGestureDetector() {
 
       const baseAction = msg.action & 0xff;
 
-      // Self-calibrate canvas height from the event stream (no SDK calls)
-      if (msg.y > _maxSeenY) _maxSeenY = msg.y;
-
-      // --- Bezel swipe tracking path ---
-      if (_bezelTracking) {
-        if (baseAction === 2) {
-          // Continuity filter (B-028): a real swipe advances ~60-80px between
-          // MOVE events. A bigger jump is the stream switching between contact
-          // points, not motion -- track it but never count it as displacement.
-          if (Math.abs(msg.y - _bezelTracking.lastY) <= BEZEL_MAX_STEP) {
-            if (msg.y < _bezelTracking.minY) _bezelTracking.minY = msg.y;
-          }
-          _bezelTracking.lastY = msg.y;
-        } else if (baseAction === 5) {
-          const ptrIdx = (msg.action >> 8) & 0xff;
-          // Spatial gate (B-028): all fingers of a real bezel swipe start near
-          // the bottom edge. A new contact far above the band is palm+finger.
-          if (msg.y < _maxSeenY * BEZEL_PTR_BAND) {
-            log('Gesture', `Bezel cancelled: PTR_DOWN[${ptrIdx}] at y=${Math.round(msg.y)} above bottom band`);
-            _bezelTracking = null;
-          } else {
-            _bezelTracking.maxPointers = Math.max(_bezelTracking.maxPointers, ptrIdx + 1);
-            _bezelTracking.lastY = msg.y;
-          }
-        } else if (baseAction === 1 || baseAction === 3) {
-          onBezelEnd(msg.y, baseAction === 3);
-        }
-        return;
-      }
+      // Edge streams never fall back to a long press, lasso or loose multi-tap.
+      if (edgeStream) { resetState(); _multiTapTracking = null; return; }
 
       // --- Multi-tap tracking path (three-finger double tap) ---
       if (_multiTapTracking) {
@@ -397,6 +370,8 @@ export function destroyGestureDetector() {
     _sub = null;
   }
   cancelGesture();
+  _dimensionSub?.remove(); _dimensionSub = null;
+  _rotationSub?.remove(); _rotationSub = null;
   log('Gesture', 'Destroyed');
 }
 
@@ -413,6 +388,8 @@ function applyGestureConfig(config) {
   const input = config?.lassoGestureInput;
   _gestureMode = input === 'pen-lasso' ? 'pen-lasso' : input === 'finger' ? 'finger' : 'off';
   _bezelEnabled = config?.bezelSwipeEnabled === true;
+  _strictSwipe.reset();
+  _edgeStream = false;
   // Hidden 2026-09-06 (SNDEV-73 / B-035): the three-finger double tap does
   // not fire on Chauvet 3.29.44. Forced off regardless of saved config and
   // removed from Settings until it is fixed or formally retired (SNDEV-20).
@@ -445,14 +422,6 @@ function onFingerDown(x, y) {
   const MIXED_COOLDOWN_MS = 500;
   if (Date.now() - _mixedCancelTime < MIXED_COOLDOWN_MS) {
     log('Gesture', `DOWN suppressed: within ${MIXED_COOLDOWN_MS}ms of mixed-input cancel`);
-    return;
-  }
-
-  // Bezel swipe: a DOWN in the bottom edge zone is a swipe candidate, not a
-  // long-press/lasso start (nothing linkable lives in the bottom 4%).
-  if (_bezelEnabled && y > _maxSeenY * BEZEL_ZONE_START) {
-    _bezelTracking = {downY: y, downTime: Date.now(), maxPointers: 1, minY: y, lastY: y};
-    log('Gesture', `BEZEL tracking started at y=${Math.round(y)} (zone > ${Math.round(_maxSeenY * BEZEL_ZONE_START)})`);
     return;
   }
 
@@ -584,45 +553,10 @@ function resetState() {
 function cancelGesture() {
   resetState();
   _multiTapTracking = null;
-  _bezelTracking = null;
+  _strictSwipe.reset();
+  _edgeStream = false;
   // Note: _threeFingerTap is NOT cleared here -- it must persist across
   // gesture cycles so the second tap of a double-tap can be detected.
-}
-
-// --- Bezel swipe detection (F-021) ---
-
-function isBezelSwipe(maxPointers, downY, minY, downTime) {
-  if (!_bezelEnabled || maxPointers < 2) return false;
-  const disp = downY - minY;
-  const needed = maxPointers >= 3 ? BEZEL_MIN_DISP_RELAXED : BEZEL_MIN_DISP;
-  return disp >= needed && Date.now() - downTime <= BEZEL_MAX_MS;
-}
-
-function onBezelEnd(finalY, cancelled) {
-  const t = _bezelTracking;
-  _bezelTracking = null;
-  if (!t || cancelled) return;
-
-  // Pen cooldown (B-028): a bezel swipe within 1.5s of pen activity is a
-  // hand shuffle around writing, not a deliberate open.
-  const sincePen = Date.now() - _lastPenTime;
-  if (sincePen < PEN_COOLDOWN_MS) {
-    log('Gesture', `Bezel end ignored: pen active ${sincePen}ms ago (writing)`);
-    return;
-  }
-
-  // Same continuity filter as MOVE: an UP that jumps far from the last
-  // tracked position is a contact switch, not swipe travel.
-  const minY = Math.abs(finalY - t.lastY) <= BEZEL_MAX_STEP
-    ? Math.min(t.minY, finalY)
-    : t.minY;
-  const duration = Date.now() - t.downTime;
-  if (isBezelSwipe(t.maxPointers, t.downY, minY, t.downTime)) {
-    log('Gesture', `BEZEL SWIPE DETECTED: ${t.maxPointers} fingers, ${Math.round(t.downY - minY)}px up in ${duration}ms`);
-    openTaskHome('bezel swipe');
-  } else {
-    log('Gesture', `Bezel end: ptrs=${t.maxPointers} disp=${Math.round(t.downY - minY)}px dur=${duration}ms -- not a swipe`);
-  }
 }
 
 // --- Three-finger double tap detection ---
