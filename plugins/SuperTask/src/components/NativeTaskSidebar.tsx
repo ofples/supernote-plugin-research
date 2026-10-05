@@ -39,10 +39,10 @@ export default function NativeTaskSidebar({activeView, projects, onViewChange, n
     const selected = activeView === key;
     const count = countLabel(counts[countKey]);
     return (
-      <View key={key} style={styles.itemWrap}>
+      <View key={key} style={[styles.itemWrap, key === 'done' && styles.noDivider]}>
         <Pressable accessibilityRole="button" accessibilityLabel={label}
-          accessibilityState={{selected}} onPress={() => onViewChange(key)}
-          style={[styles.item, selected ? styles.itemSelected : styles.itemIdle]}>
+          accessibilityState={{selected, disabled: key === 'note' && !noteAvailable}} disabled={key === 'note' && !noteAvailable} onPress={() => onViewChange(key)}
+          style={({pressed}) => [styles.item, selected ? styles.itemSelected : styles.itemIdle, pressed && {backgroundColor: '#eeeeee'}]}>
           <Text numberOfLines={1} style={[styles.label, {fontSize: Math.round(16 * scale)}, selected && styles.labelSelected]}>{label}</Text>
           {count ? <Text style={[styles.count, {fontSize: Math.round(13 * scale)}, selected && styles.countSelected]}>{count}</Text> : null}
         </Pressable>
@@ -54,7 +54,7 @@ export default function NativeTaskSidebar({activeView, projects, onViewChange, n
     <View style={styles.sidebar}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {NAV_ITEMS.map(item => renderItem(item.key, item.label))}
-        {noteAvailable ? renderItem('note', 'This Note') : null}
+        {renderItem('note', 'This Note')}
         {renderItem('device', 'On Device')}
         {renderItem('done', 'Done')}
         <View accessibilityRole="header" style={styles.projectsHeader}>
@@ -77,6 +77,7 @@ const styles = StyleSheet.create({
   scroll: {flex: 1},
   content: {paddingHorizontal: 8, paddingTop: 10, paddingBottom: 6},
   itemWrap: {flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
+  noDivider: {borderBottomWidth: 0},
   item: {flex: 1, minHeight: 48, marginVertical: 2, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   itemIdle: {backgroundColor: '#ffffff'},
   itemSelected: {backgroundColor: '#ffffff'},
@@ -84,7 +85,7 @@ const styles = StyleSheet.create({
   labelSelected: {fontWeight: '700'},
   count: {marginLeft: 8, fontWeight: '700', color: '#000000'},
   countSelected: {color: '#000000'},
-  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderTopWidth: 2, borderTopColor: '#000000', borderStyle: 'solid'},
+  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
   headerLabel: {fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.4, textTransform: 'uppercase'},
   footer: {borderTopWidth: 1, borderTopColor: '#999999', borderStyle: 'dotted', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: '#ffffff'},
   newProject: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12},

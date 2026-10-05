@@ -70,7 +70,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   return (
     <View style={styles.rowHost} onLayout={event => setRowWidth(event.nativeEvent.layout.width)}>
     <Pressable
-      style={[styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered]}
+      style={({pressed}) => [styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered, pressed && {backgroundColor: '#eeeeee'}]}
       onLongPress={() => onLongPress?.(task)}
       onPress={() => { log('TaskRow', `ROW pressed id=${task.id}`); onPress(task); }}>
       <Pressable

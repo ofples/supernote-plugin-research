@@ -7,7 +7,7 @@ export function useLocations(fallbackProjects: any[] = []) {
   useEffect(() => {
     let alive = true;
     const unsubscribe = subscribeCache((value: any) => {if (alive) setData(value);});
-    initTaskCache().then(value => {if (alive && value) setData(value);});
+    initTaskCache().then((value: any) => {if (alive && value) setData(value);});
     return () => {alive = false; unsubscribe();};
   }, []);
   return {projects: data?.projects || fallbackProjects, sections: data?.sections || []};
