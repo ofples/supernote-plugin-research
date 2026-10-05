@@ -68,15 +68,15 @@ export default function TaskSidebar({activeView, projects, onViewChange, noteAva
 }
 
 const styles = StyleSheet.create({
-  sidebar: {width: 216, flexGrow: 0, flexShrink: 0, backgroundColor: '#ffffff', borderRightWidth: 2, borderRightColor: '#000000'},
+  sidebar: {width: 216, flexGrow: 0, flexShrink: 0, backgroundColor: '#ffffff', borderRightWidth: 1, borderRightColor: '#000000'},
   content: {paddingHorizontal: 8, paddingVertical: 10},
-  item: {minHeight: 48, marginVertical: 3, paddingHorizontal: 12, borderRadius: 2, borderWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  item: {minHeight: 48, marginVertical: 3, paddingHorizontal: 12, borderRadius: 0, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   itemIdle: {backgroundColor: '#ffffff', borderColor: '#ffffff'},
   itemSelected: {backgroundColor: '#000000', borderColor: '#000000'},
   label: {flex: 1, fontSize: 16, fontWeight: '600', color: '#000000'},
   labelSelected: {color: '#ffffff', fontWeight: '700'},
   count: {marginLeft: 8, fontWeight: '700', color: '#000000'},
   countSelected: {color: '#ffffff'},
-  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 2, borderBottomColor: '#000000'},
+  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: '#000000'},
   headerLabel: {fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.4, textTransform: 'uppercase'},
 });

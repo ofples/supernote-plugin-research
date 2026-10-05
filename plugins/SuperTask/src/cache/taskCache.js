@@ -1,47 +1,68 @@
 /** Private durable cache facade. Invalidating never deletes queued work. */
-import {offlineData, subscribeOffline, syncOffline} from '../offline/service';
+import {offlineData, completedData, subscribeOffline, syncOffline} from '../offline/service';
 import {log} from '../utils/debug';
-const model = require('../offline/model');
+const {projectCommittedSnapshot, shareSnapshot} = require('./committedSnapshot.cjs');
 let cache = null;
 let inflight = null;
+let hydration = null;
 let accountEpoch = 0;
+let publicationSequence = 0;
+let rawAccount = null;
+let rawRevision = null;
 const listeners = new Set();
 function publish(data) {
-  cache = data;
-  for (const listener of listeners) { try { listener(data); } catch {} }
-  return data;
+  if (!data) {return cache;}
+  if (data.accountKey && cache?.accountKey === data.accountKey && Number.isSafeInteger(data.revision) && Number.isSafeInteger(cache.revision) && data.revision < cache.revision) {return cache;}
+  const shared = shareSnapshot(cache, data);
+  cache = shared.snapshot;
+  publicationSequence++;
+  if (shared.changed) {for (const listener of listeners) {try {listener(cache);} catch { /* UI failures never affect the durable writer. */ }}}
+  return cache;
 }
 subscribeOffline(state => {
-  const allTasks = model.privateTasks(state);
-  const sections = model.mergedSections?.(state) || state.sections || [];
-  publish({tasks: model.mergedTasks(state).filter(t => !t.completed && !t.deleted), allTasks, projects: state.projects, sections,
-    timestamp: state.lastSync, pendingCount: state.outbox.length,
-    pendingTaskCount: new Set(state.outbox.filter(op => op.kind !== 'collection_create').map(op => op.localId)).size,
-    pendingCollectionCount: state.outbox.filter(op => op.kind === 'collection_create').length,
-    pendingChanges: state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state,
-      error: op.error, task: state.tasks[op.localId], collection: sections.find(section => section.id === op.localId)})),
-    syncNotices: state.syncNotices || [],
-    errorCount: state.outbox.filter(op => op.state === 'attention').length, syncError: state.syncError,
-    warning: cache?.warning, otherAccountStores: cache?.otherAccountStores});
-});
-export function subscribeCache(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; }
-export function getCache() { return cache; }
-export async function initTaskCache() {
-  const epoch = accountEpoch;
-  try {
-    const data = await offlineData();
-    return epoch === accountEpoch ? publish(data) : cache;
+  if (state.accountKey === rawAccount && state.revision === rawRevision) {return;}
+  if (cache?.accountKey === state.accountKey && Number.isSafeInteger(cache.revision) && state.revision < cache.revision) {return;}
+  if (cache?.accountKey && state.accountKey !== cache.accountKey) {
+    accountEpoch++; cache = null; inflight = null; hydration = null;
   }
-  catch (error) { log('Cache', `Private cache unavailable: ${error.message}`); return null; }
+  rawAccount = state.accountKey; rawRevision = state.revision;
+  publish(projectCommittedSnapshot(state, {warning: cache?.warning, otherAccountStores: cache?.otherAccountStores}));
+});
+export function subscribeCache(listener) {listeners.add(listener); return () => {listeners.delete(listener);};}
+export function getCache() {return cache;}
+/** Returns only complete, already committed workspace data; performs no reads. */
+export function getCachedWorkspace(expectedAccountKey = null) {
+  return cache && Array.isArray(cache.completedTasks) && (!expectedAccountKey || cache.accountKey === expectedAccountKey) ? cache : null;
+}
+async function completeSnapshot(data) {
+  if (!Array.isArray(data?.completedTasks) && typeof completedData === 'function') {
+    return {...data, completedTasks: await completedData()};
+  }
+  return data;
+}
+export function initTaskCache() {
+  if (hydration) {return hydration;}
+  const epoch = accountEpoch, sequence = publicationSequence;
+  const pending = Promise.resolve().then(offlineData).then(completeSnapshot).then(data => {
+    // A disk hydration must not repaint over a newer committed event, even
+    // within the same account. Current UI intent remains outside this cache.
+    return epoch === accountEpoch && sequence === publicationSequence ? publish(data) : cache;
+  }).catch(error => {log('Cache', `Private cache unavailable: ${error.message}`); return null;})
+    .finally(() => {if (hydration === pending) {hydration = null;}});
+  hydration = pending;
+  return pending;
 }
 export function fetchTaskData() {
-  if (inflight) return inflight;
+  if (inflight) {return inflight;}
   const epoch = accountEpoch;
-  const pending = syncOffline().then(data => {
-    if (epoch !== accountEpoch) throw new Error('Configured account changed. Refresh the current account.');
+  const pending = syncOffline().then(completeSnapshot).then(data => {
+    if (epoch !== accountEpoch) {throw new Error('Configured account changed. Refresh the current account.');}
     return publish(data);
-  }).finally(() => { if (inflight === pending) inflight = null; });
+  }).finally(() => {if (inflight === pending) {inflight = null;}});
   inflight = pending;
   return pending;
 }
-export function invalidateCache() { accountEpoch++; cache = null; inflight = null; initTaskCache(); }
+export function invalidateCache() {
+  accountEpoch++; cache = null; inflight = null; hydration = null; rawAccount = null; rawRevision = null;
+  initTaskCache();
+}

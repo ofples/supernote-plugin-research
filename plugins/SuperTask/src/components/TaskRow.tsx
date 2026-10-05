@@ -1,6 +1,6 @@
 /** Shared task row: checkbox completes, body opens details, sync symbol opens status. */
 
-import React from 'react';
+import React, {useState} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {log} from '../utils/debug';
 import Chip from './Chip';
@@ -30,10 +30,15 @@ type Props = {
   roundCheck?: boolean;
   onSyncPress?: () => void;
   disabled?: boolean;
+  selectionMode?: boolean;
+  onLongPress?: (task: any) => void;
+  rightAccessory?: React.ReactNode;
+  outlineSelected?: boolean;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress, rightAccessory, outlineSelected = false}: Props) {
   const scale = useFontScale();
+  const [rowWidth, setRowWidth] = useState(0);
 
   const handleCheckPress = (event?: any) => {
     event?.stopPropagation?.();
@@ -47,14 +52,14 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   const isOverdue = !checked && dueDate && dueDate < today;
   const isToday = dueDate === today;
 
-  const chips: Array<{label: string; inverted?: boolean}> = [];
+  const chips: Array<{label: string; inverted?: boolean; quiet?: boolean}> = [];
   if (completedAt) chips.push({label: `Done ${formatDate(completedAt.slice(0, 10))}`});
   if (isOverdue) chips.push({label: `Overdue ${formatDate(dueDate)}`, inverted: true});
   else if (isToday) chips.push({label: 'Today'});
   else if (dueDate) chips.push({label: formatDate(dueDate)});
   if (priorityLabel) chips.push({label: priorityLabel});
   if (showProject) chips.push({label: showProject});
-  if (showCollection) chips.push({label: showCollection});
+  if (showCollection) chips.push({label: showCollection, quiet: true});
   if (pageNum !== undefined) chips.push({label: `p.${pageNum}`});
   const syncPending = task.syncState === 'pending' || task._registryOnly || task.awaitingRecurrence || task.occurrencePending;
   const syncAttention = task.syncState === 'attention';
@@ -63,31 +68,33 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   const hasMeta = chips.length > 0;
 
   return (
+    <View style={styles.rowHost} onLayout={event => setRowWidth(event.nativeEvent.layout.width)}>
     <Pressable
-      style={[styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered]}
+      style={({pressed}) => [styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered, pressed && {backgroundColor: '#eeeeee'}]}
+      onLongPress={() => onLongPress?.(task)}
       onPress={() => { log('TaskRow', `ROW pressed id=${task.id}`); onPress(task); }}>
       <Pressable
         style={[styles.checkTarget, !hasMeta && styles.checkTargetCentered]}
         onPress={handleCheckPress}
         disabled={disabled}
         accessibilityRole="checkbox"
-        accessibilityLabel={`${checked ? 'Reopen' : 'Complete'} ${task.content}`}
+        accessibilityLabel={`${selectionMode ? 'Select' : checked ? 'Reopen' : 'Complete'} ${task.content}`}
         accessibilityState={{checked: !!checked || !!selected, disabled}}
         hitSlop={6}>
-        <Check checked={!!checked || !!selected} round={roundCheck} />
+        <Check checked={!!checked || !!selected} round={selectionMode ? false : roundCheck} />
       </Pressable>
       <View style={styles.content}>
         <Text style={[styles.title, {fontSize: Math.round(16 * scale), lineHeight: Math.round(22 * scale)}]}>{task.content}</Text>
         {chips.length > 0 && (
           <View style={styles.meta}>
             {chips.map((c, i) => (
-              <Chip key={i} label={c.label} inverted={c.inverted} />
+              <Chip key={i} label={c.label} inverted={c.inverted} quiet={c.quiet} />
             ))}
           </View>
         )}
       </View>
       {syncPending || syncAttention ? <Pressable style={styles.syncTarget} accessibilityRole="button"
-        accessibilityLabel={syncAttention ? 'Sync needs attention' : task.awaitingRecurrence ? 'Waiting for next recurring occurrence' : 'Waiting to sync'}
+        accessibilityLabel={task.savingLocally ? 'Saving locally' : syncAttention ? 'Save needs attention' : task.awaitingRecurrence ? 'Waiting for next recurring occurrence' : 'Saved on device, waiting to sync'}
         onPress={event => {event.stopPropagation(); onSyncPress ? onSyncPress() : onPress(task);}}>
         <Text style={styles.syncSymbol}>{syncAttention ? '!' : '↥'}</Text>
       </Pressable> : null}
@@ -100,6 +107,11 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
         </Pressable>
       ) : null}
     </Pressable>
+    {outlineSelected ? <View pointerEvents="none" style={styles.selectedOutline} /> : null}
+    {rightAccessory ? <View pointerEvents="box-none" style={styles.accessoryOverlay}>
+      {React.isValidElement(rightAccessory) ? React.cloneElement(rightAccessory as React.ReactElement<any>, {maxWidth: Math.max(0, rowWidth - 82)}) : rightAccessory}
+    </View> : null}
+    </View>
   );
 }
 
@@ -110,6 +122,8 @@ function formatDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
+  rowHost: {position: 'relative'},
+  accessoryOverlay: {position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center', backgroundColor: '#ffffff', zIndex: 2},
   syncTarget: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 4},
   syncSymbol: {fontSize: 23, fontWeight: '700', color: '#000'},
   row: {
@@ -117,11 +131,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingVertical: 14,
     paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#999999',
+    borderStyle: 'dotted',
   },
   rowCentered: {
     alignItems: 'center',
   },
   compactRow: {paddingVertical: 6, paddingHorizontal: 12, minHeight: 56},
+  selectedOutline: {position: 'absolute', top: 0, left: 2, right: 0, bottom: 0, borderWidth: 1, borderBottomWidth: 0, borderColor: '#000000', borderStyle: 'solid', zIndex: 1},
   checkTarget: {
     width: 44,
     minHeight: 44,
@@ -148,9 +166,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   noteBtn: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     paddingVertical: 8,
     paddingHorizontal: 10,
     marginLeft: 8,

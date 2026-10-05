@@ -15,9 +15,10 @@ type Props = {
   selectedSectionId?: string | null;
   onSectionChange?: (sectionId: string | null) => void;
   onCreateCollection?: (projectId: string, name: string) => Promise<any>;
+  requireExplicit?: boolean;
 };
 
-export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection}: Props) {
+export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection, requireExplicit = false}: Props) {
   const scale = useFontScale();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -32,7 +33,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
 
   if (!projects.length) return null;
   const inbox = projects.find((p: any) => p.inbox_project || p.is_inbox_project);
-  const effectiveId = selectedId || inbox?.id;
+  const effectiveId = selectedId || (requireExplicit ? null : inbox?.id);
   const selectedProject = projects.find(p => p.id === effectiveId);
   const collections: Section[] = selectedProject ? projectSections(sections, selectedProject.id) : [];
 
@@ -107,7 +108,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
         {!creating ? <Pressable accessibilityRole="button" accessibilityLabel={`New collection in ${selectedProject.name}`} style={styles.action} onPress={beginCreate}>
           <Text style={[styles.text, {fontSize: Math.round(14 * scale)}]}>New collection</Text>
         </Pressable> : <View style={styles.createForm}>
-          <TextInput accessibilityLabel="New collection name" style={[styles.input, {fontSize: Math.round(15 * scale)}]} value={name}
+          <View style={styles.inputRow}><TextInput accessibilityLabel="New collection name" style={[styles.input, {fontSize: Math.round(15 * scale)}]} value={name}
             onChangeText={value => {setName(value); setError('');}} editable={!saving} autoCorrect={false} returnKeyType="done"
             onSubmitEditing={saveCollection} />
           <View style={styles.row}>
@@ -118,6 +119,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
             <Pressable accessibilityRole="button" accessibilityLabel="Cancel new collection" style={styles.action} disabled={saving} onPress={cancelCreate}>
               <Text style={[styles.text, {fontSize: Math.round(14 * scale)}]}>Cancel</Text>
             </Pressable>
+          </View>
           </View>
           {!!error && <Text accessibilityRole="alert" style={[styles.text, styles.error]}>{error}</Text>}
         </View>}
@@ -130,12 +132,13 @@ const styles = StyleSheet.create({
   root: {gap: 10},
   collections: {paddingTop: 2, gap: 8},
   row: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
-  choice: {paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#000000', borderRadius: 4},
+  choice: {paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#000000', borderRadius: 0},
   choiceSelected: {backgroundColor: '#000000'},
-  action: {alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#000000', borderRadius: 4},
+  action: {alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#000000', borderRadius: 0},
   disabled: {opacity: 0.5},
   createForm: {gap: 8},
-  input: {minHeight: 44, borderWidth: 1, borderColor: '#000000', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 8, color: '#000000'},
+  inputRow: {flexDirection: 'row', gap: 8, alignItems: 'center'},
+  input: {flex: 1, minWidth: 80, minHeight: 44, borderWidth: 1, borderColor: '#000000', borderRadius: 0, paddingHorizontal: 10, paddingVertical: 8, color: '#000000'},
   text: {fontSize: 14, color: '#000000'},
   textSelected: {color: '#ffffff', fontWeight: '700'},
   error: {fontWeight: '600'},

@@ -67,20 +67,7 @@ async function idGenerator(count) {
 export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
-  const allTasks = model.privateTasks(state);
-  const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state, attempts: op.attempts, occurrenceKey: op.occurrenceKey || null,
-    error: op.error, task: state.tasks[op.localId],
-    project: op.kind.startsWith('project_') ? locations.find(state, 'project', op.localId) : null,
-    collection: op.kind.startsWith('collection_') ? locations.find(state, 'collection', op.localId) : null}));
-  return {tasks: model.mergedTasks(state).filter(task => !task.completed && !task.deleted), allTasks, projects: locations.mergedProjects(state), sections: model.mergedSections?.(state) || state.sections || [], timestamp: state.lastSync,
-    pendingCount: state.outbox.length, errorCount: state.outbox.filter(op => op.state === 'attention').length,
-    pendingTaskCount: new Set(state.outbox.filter(op => !locations.locationKind(op)).map(op => op.localId)).size,
-    pendingCollectionCount: state.outbox.filter(op => op.kind.startsWith('collection_')).length,
-    pendingProjectCount: state.outbox.filter(op => op.kind.startsWith('project_')).length,
-    pendingOtherCount: state.outbox.filter(op => op.kind.startsWith('project_')).length,
-    pendingChanges, syncNotices: state.syncNotices || [],
-    syncError: state.syncError, warning: current.store.getWarning(),
-    otherAccountStores: current.identity.otherAccountStores};
+  return require('../cache/committedSnapshot.cjs').projectCommittedSnapshot(state, {warning: current.store.getWarning(), otherAccountStores: current.identity.otherAccountStores});
 }
 
 export async function saveOfflineBatch(drafts, source = null, capturedAt = Date.now(), request = {}) {

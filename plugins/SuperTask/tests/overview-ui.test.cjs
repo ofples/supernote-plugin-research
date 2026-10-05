@@ -46,7 +46,7 @@ test('inline expansion is independent; task/project actions and density remain r
 test('Expand all shows every project; Collapse all removes concealed selections', async () => {
   const Overview = component(); let tree; const deselected = [];
   await act(async () => {tree = create(React.createElement(Overview, {projects, tasks, selectedIds: ['one'],
-    onSelect: id => deselected.push(id), onTask() {}, onProject() {}}));});
+    onSelect: () => assert.fail('Collapsing must not invoke completion'), onDeselect: ids => deselected.push(...ids), onTask() {}, onProject() {}}));});
   await act(async () => {byText(tree.root, 'Expand all').props.onPress();});
   assert.equal(tree.root.findAllByType('Task').length, 2);
   await act(async () => {byText(tree.root, 'Collapse all').props.onPress();});

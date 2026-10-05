@@ -51,10 +51,19 @@ async function fixture(initial = {}) {
   };
   const Batch = compiled('../src/screens/BatchAdd.tsx', formOverrides).default;
   const Single = compiled('../src/screens/TaskAdd.tsx', formOverrides).default;
-  const Home = ({nav}) => React.createElement('Home', {nav},
+  const Home = ({nav}) => {
+    const [draft, setDraft] = React.useState('Initial workspace draft');
+    const [listPosition, setListPosition] = React.useState('List at top');
+    return React.createElement('Home', {nav},
+    React.createElement('Text', null, draft), React.createElement('Text', null, listPosition),
+    press('Edit workspace draft', () => setDraft('Unsaved workspace draft')),
+    press('Scroll workspace list', () => setListPosition('List scrolled')),
+    press('Open workspace detail', () => nav.push('task-detail', {task: {id: 'workspace', content: 'Workspace task'}, projects})),
+    press('Open workspace settings', () => nav.push('ai-settings')),
     press('Start batch', () => nav.push('task-batch', {projects, initialContent: 'Task one\nTask two'})),
     press('Start single', () => nav.push('task-add', {projects, initialContent: 'Single title'})),
     press('Start capture', () => nav.push('capture-lasso')));
+  };
   const Detail = ({nav, task}) => React.createElement('Detail', {nav, task}, press('Detail Back', nav.pop));
   const Settings = ({nav}) => React.createElement('Settings', {nav}, press('Settings Back', nav.pop),
     press('Save AI key', () => configModule.saveConfig({aiApiKey: 'updated-test-key'})));
@@ -107,6 +116,28 @@ test('real App retains batch saved list through task details and Back without an
     assert.equal(hiddenWrapper(form).props.pointerEvents, 'auto'); assert.equal(hiddenWrapper(form).props.accessibilityElementsHidden, false);
     assert.equal(f.calls.batches.length, 1); assert.equal(f.tree.root.findAllByType('Input').length, 0, 'confirmation must not become an empty draft');
     await f.tap('Add another'); assert.ok(byLabel(f.tree, 'Save 1 task'));
+  } finally {await f.dispose();}
+});
+
+test('App retains the native workspace and its draft and list position behind task details and Settings', async () => {
+  const f = await fixture();
+  try {
+    const home = f.tree.root.findByType('Home');
+    await f.tap('Edit workspace draft'); await f.tap('Scroll workspace list');
+    assert.ok(f.tree.root.findAllByType('Text').some(text => text.props.children === 'Unsaved workspace draft'));
+    assert.ok(f.tree.root.findAllByType('Text').some(text => text.props.children === 'List scrolled'));
+    await f.tap('Open workspace detail');
+    assert.equal(f.tree.root.findByType('Home'), home, 'workspace component instance stays mounted under task details');
+    assertHidden(home);
+    await f.tap('Detail Back');
+    assert.equal(f.tree.root.findByType('Home'), home);
+    await f.tap('Open workspace settings');
+    assert.equal(f.tree.root.findByType('Home'), home, 'workspace component instance stays mounted under Settings');
+    assertHidden(home);
+    await f.tap('Settings Back');
+    assert.equal(f.tree.root.findByType('Home'), home);
+    assert.ok(f.tree.root.findAllByType('Text').some(text => text.props.children === 'Unsaved workspace draft'));
+    assert.ok(f.tree.root.findAllByType('Text').some(text => text.props.children === 'List scrolled'));
   } finally {await f.dispose();}
 });
 

@@ -53,7 +53,9 @@ function editRow(row, field, value) {
   const changes = field === 'location'
     ? {projectId: value.projectId || null, sectionId: value.sectionId || null}
     : {[field]: copy(value)};
-  return {...row, ...changes, overrides: {...row.overrides, [field]: true}};
+  const fieldProvenance = ['content', 'description'].includes(field)
+    ? {...row.fieldProvenance, [field]: 'manual'} : row.fieldProvenance;
+  return {...row, ...changes, fieldProvenance, overrides: {...row.overrides, [field]: true}};
 }
 
 function resetRowField(row, field, defaults) {
@@ -70,6 +72,8 @@ function resetRowField(row, field, defaults) {
 
 function copyOverridesToSplit(source, parts) {
   return parts.map(part => ({...part, overrides: {...source.overrides}, instructions: {...source.instructions},
+    fieldProvenance: {...source.fieldProvenance}, sourceText: source.sourceText || part.sourceText,
+    sourceRowIds: [...(source.sourceRowIds || part.sourceRowIds || [])],
     labels: Array.isArray(source.labels) ? [...source.labels] : part.labels}));
 }
 
@@ -131,7 +135,8 @@ function reconcileRefinement(rows, proposals) {
       sources = [];
     }
 
-    const next = {...proposal};
+    const next = {...proposal, fieldProvenance: {...proposal.fieldProvenance}};
+    if (sources.length) next.sourceText = sources.map(row => row.sourceText || row.content).join('\n');
     const overrides = {};
     for (const field of Object.keys(FIELDS)) {
       const manual = sources.filter(row => row.overrides?.[field]);
@@ -143,6 +148,7 @@ function reconcileRefinement(rows, proposals) {
       }
       if (field === 'content' && manual.length) {
         next.content = manual.map(row => String(row.content || '').trim()).filter(Boolean).join(' ');
+        next.fieldProvenance.content = 'manual';
         overrides.content = true;
         continue;
       }
@@ -152,8 +158,12 @@ function reconcileRefinement(rows, proposals) {
         throw new Error(`AI combined rows with different ${kind} ${LABELS[field]} choices. Original rows were kept.`);
       }
       Object.assign(next, first);
+      if (manual.length && ['content', 'description'].includes(field)) next.fieldProvenance[field] = 'manual';
       if (manual.length) overrides[field] = true;
       else overrides.__instructions = {...overrides.__instructions, [field]: true};
+    }
+    for (const field of ['content', 'description']) {
+      if (!next.fieldProvenance[field]) next.fieldProvenance[field] = 'ai-proposal';
     }
     const sourceId = sources.length === 1 ? String(sources[0].rowId) : '';
     const instructions = {...next.instructions, ...overrides.__instructions};

@@ -297,7 +297,7 @@ const st = StyleSheet.create({
     paddingVertical: 14,
   },
   sectionRule: {
-    borderTopWidth: 2,
+    borderTopWidth: 1,
     borderTopColor: '#000000',
     marginTop: 4,
   },
@@ -372,7 +372,7 @@ const st = StyleSheet.create({
     gap: 0,
   },
   segment: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -394,7 +394,7 @@ const st = StyleSheet.create({
     color: '#ffffff',
   },
   checkBox: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
@@ -451,9 +451,9 @@ const st = StyleSheet.create({
     padding: 24,
   },
   inputField: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: '#000000',
@@ -466,9 +466,9 @@ const st = StyleSheet.create({
     marginTop: 16,
   },
   inputBtn: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     paddingVertical: 10,
     paddingHorizontal: 18,
     backgroundColor: '#ffffff',
@@ -490,7 +490,7 @@ const st = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderWidth: 3,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     padding: 20,
   },
   sheetTitle: {
@@ -526,9 +526,9 @@ const st = StyleSheet.create({
   },
   sheetClose: {
     marginTop: 16,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     paddingVertical: 10,
     alignItems: 'center',
   },
