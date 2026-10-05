@@ -98,7 +98,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [cfg0] = useState(getCachedConfig);
   const [cached0] = useState(() => getCachedWorkspace());
   const [baseTasks, setTasks] = useState<any[]>(cached0?.tasks || []);
-  const [, setProjectMap] = useState<ProjectMap>({});
   const [baseProjects, setProjectList] = useState<any[]>(cached0?.projects || []);
   const [baseCollections, setCollectionList] = useState<any[]>(cached0?.sections || []);
   const [, setCollectionRevision] = useState(0);
@@ -310,17 +309,17 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   // (complete/reopen) bypass this via setTasks directly, which leaves the
   // fingerprint stale in the safe direction -- the next fetch differs from
   // it and repaints.
+  const dataRefs = useRef(cached0 ? [cached0.tasks, cached0.projects, cached0.sections] : []);
   const dataFp = useRef(cached0 ? JSON.stringify([cached0.tasks, cached0.projects, cached0.sections]) : '');
   const applyData = useCallback((fetchedTasks: any[], fetchedProjects: any[], fetchedSections: any[] = []) => {
-    const fp = JSON.stringify([fetchedTasks, fetchedProjects, fetchedSections]);
+    if (dataRefs.current[0] === fetchedTasks && dataRefs.current[1] === fetchedProjects && dataRefs.current[2] === fetchedSections) return;
+    dataRefs.current = [fetchedTasks, fetchedProjects, fetchedSections];
+    const fp = JSON.stringify(dataRefs.current);
     if (fp === dataFp.current) {
       log('TaskHome', 'Fetched data unchanged -- skipping repaint');
       return;
     }
     dataFp.current = fp;
-    const pMap: ProjectMap = {};
-    (fetchedProjects || []).forEach((p: any) => { pMap[p.id] = p.name; });
-    setProjectMap(pMap);
     setProjectList(fetchedProjects || []);
     setCollectionList(fetchedSections || []);
     setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted && !task.remoteMissing));
