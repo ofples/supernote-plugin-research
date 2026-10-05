@@ -724,9 +724,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             />
           );
         }}
-        ItemSeparatorComponent={({leadingItem}) =>
-          leadingItem?.type !== 'header' ? <View style={styles.separator} /> : null
-        }
       />
     );
   };
@@ -779,9 +776,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             />
           );
         }}
-        ItemSeparatorComponent={({leadingItem}) =>
-          leadingItem?.type !== 'header' ? <View style={styles.separator} /> : null
-        }
       />
     );
   };
@@ -832,9 +826,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             />
           );
         }}
-        ItemSeparatorComponent={({leadingItem}) =>
-          leadingItem?.type !== 'header' ? <View style={styles.separator} /> : null
-        }
       />
     );
   };
@@ -926,9 +917,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             />
           );
         }}
-        ItemSeparatorComponent={({leadingItem}) =>
-          leadingItem?.type !== 'header' ? <View style={styles.separator} /> : null
-        }
       />
     );
   };
