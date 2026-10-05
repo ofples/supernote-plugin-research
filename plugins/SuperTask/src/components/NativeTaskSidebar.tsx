@@ -77,7 +77,7 @@ export default function NativeTaskSidebar({activeView, projects, onViewChange, n
 }
 
 const styles = StyleSheet.create({
-  sidebar: {width: 216, flexGrow: 0, flexShrink: 0, backgroundColor: '#ffffff', borderRightWidth: 2, borderRightColor: '#000000'},
+  sidebar: {width: 216, flexGrow: 0, flexShrink: 0, backgroundColor: '#ffffff', borderRightWidth: 1, borderRightColor: '#000000'},
   scroll: {flex: 1},
   content: {paddingHorizontal: 8, paddingTop: 10, paddingBottom: 6},
   itemWrap: {flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   countSelected: {color: '#000000'},
   menuButton: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center'},
   menuGlyph: {fontWeight: '700', color: '#000000'},
-  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
+  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
   headerLabel: {fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.4, textTransform: 'uppercase'},
   footer: {borderTopWidth: 1, borderTopColor: '#999999', borderStyle: 'dotted', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: '#ffffff'},
   newProject: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12},

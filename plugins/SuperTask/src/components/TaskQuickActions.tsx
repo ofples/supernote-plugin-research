@@ -35,7 +35,7 @@ export default function TaskQuickActions(props: TaskQuickActionsProps) {
       return <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.label}
         accessibilityState={{disabled}} disabled={disabled} onPress={props[action.callback] as () => void}
         style={[styles.action, action.key === 'delete' && styles.deleteAction, disabled && styles.disabled]}>
-        <Text style={[styles.glyph, {fontSize: Math.round(17 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.glyph}</Text>
+        <Text style={[styles.glyph, {fontSize: Math.round(17 * scale), lineHeight: Math.round(21 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.glyph}</Text>
         <Text style={[styles.label, {fontSize: Math.round(12 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.key === 'up' ? 'Up' : action.key === 'down' ? 'Down' : action.label.replace(' task', '')}</Text>
       </Pressable>;
     })}

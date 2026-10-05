@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   addButton: {minWidth: 64, minHeight: 48, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, backgroundColor: '#000000'},
   addText: {fontWeight: '700', color: '#ffffff'},
   disabled: {opacity: 0.45},
-  destination: {minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4},
+  destination: {minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4},
   destinationText: {flex: 1, color: '#000000'},
   destinationPrefix: {fontWeight: '700'},
   destinationArrow: {fontSize: 20, color: '#000000', paddingHorizontal: 8},

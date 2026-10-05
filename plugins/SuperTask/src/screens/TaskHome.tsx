@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
@@ -22,19 +23,26 @@ import {saveConfig} from '../utils/config';
 import {useFontScale} from '../utils/useFontScale';
 import {loadConfig, getCachedConfig, resolveDefaultTab} from '../utils/config';
 import {getSessionTab, setSessionTab} from '../utils/viewState';
-import {reopenTask, getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
-import {getCache, fetchTaskData, invalidateCache, initTaskCache, subscribeCache} from '../cache/taskCache';
-import {completedData, offlineData, retryOffline} from '../offline/service';
+import {getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
+import {getCache, fetchTaskData, initTaskCache, subscribeCache} from '../cache/taskCache';
+import {completedData, offlineData, retryOffline, subscribeOffline, saveOfflineBatch} from '../offline/service';
+const workspaceService = require('../offline/service');
+const {projectTasks, composerDefaults, sameScope, projectContainers, projectContainerTasks} = require('../workspace/intents');
+import useWorkspaceMutations from '../workspace/useWorkspaceMutations';
 const {syncStatusMessage} = require('../offline/status');
 const {visibleProjectIds, isProjectVisible} = require('../utils/projectVisibility');
 const {collectionGroups} = require('../collections/model');
 const {localDate} = require('../offline/model');
+const {splitTitleDescription} = require('../batch/descriptionParser');
 import {log, logError} from '../utils/debug';
-import TaskSidebar from '../components/TaskSidebar';
-import TaskRow from '../components/TaskRow';
+import TaskSidebar from '../components/NativeTaskSidebar';
+import TaskRow, {WorkspaceContext} from '../workspace/WorkspaceTaskRow';
+import InlineTaskComposer from '../components/InlineTaskComposer';
+import WorkspaceSelectionBar from '../components/WorkspaceSelectionBar';
+import DatePicker from '../components/DatePicker';
+import ProjectPicker from '../components/ProjectPicker';
+import PriorityPicker from '../components/PriorityPicker';
 import ProjectOverview from '../components/ProjectOverview';
-import SelectionBar from '../components/SelectionBar';
-import {useTaskSelection} from '../utils/useTaskSelection';
 import SectionHeader from '../components/SectionHeader';
 import Chip from '../components/Chip';
 
@@ -49,6 +57,7 @@ type Props = {
   nav: Nav;
   initialView?: string;
   focusTab?: string; // deep-link target tab; overrides the config default
+  active?: boolean;
 };
 
 const VIEW_KEYS = ['today', 'tomorrow', 'upcoming', 'inbox', 'note', 'projects', 'device', 'done'];
@@ -64,7 +73,7 @@ export function syncChangeLabel(kind: string): string {
 
 type ProjectMap = Record<string, string>;
 
-export default function TaskHome({nav, focusTab, initialView}: Props) {
+export default function TaskHome({nav, focusTab, initialView, active = true}: Props) {
   const scale = useFontScale();
   // Saved-config snapshot for the FIRST render. On any warm open the config
   // cache is populated, so the tab, filters, and Log button paint correctly
@@ -73,10 +82,14 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
   // and the loadConfig().then below corrects them (usually behind the
   // loading screen, so still no visible jump).
   const [cfg0] = useState(getCachedConfig);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [projectMap, setProjectMap] = useState<ProjectMap>({});
-  const [projectList, setProjectList] = useState<any[]>([]);
-  const [collectionList, setCollectionList] = useState<any[]>([]);
+  const [baseTasks, setTasks] = useState<any[]>([]);
+  const [, setProjectMap] = useState<ProjectMap>({});
+  const [baseProjects, setProjectList] = useState<any[]>([]);
+  const [baseCollections, setCollectionList] = useState<any[]>([]);
+  const [containerIntents, setContainerIntents] = useState<any[]>([]);
+  const projectList: any[] = projectContainers(baseProjects, containerIntents, 'project');
+  const collectionList: any[] = projectContainers(baseCollections, containerIntents, 'collection');
+  const projectMap: ProjectMap = Object.fromEntries(projectList.map(project => [String(project.id), project.name]));
   const collectionName = (task: any) => task.section_id ? collectionList.find(section => section.id === task.section_id)?.name || 'Unavailable collection' : undefined;
   // Tab resolution (F-038): session memory > deep-link focusTab > configured
   // default ('last' resolves to the persisted lastOpenedTab). Session memory
@@ -109,7 +122,33 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
   const [doneFetched, setDoneFetched] = useState(false);
   // F-030: footer toggle -- show completed-today tasks inline on the Today
   // tab, same row pattern as the Done tab (filled box, Done chip, reopen)
-  const [showDone, setShowDone] = useState(cfg0?.showDoneTasks === true);
+  const [showDone, setShowDone] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [composer, setComposer] = useState({value: '', projectId: null as string | null, sectionId: null as string | null, dueDate: '', explicit: false});
+  const [creatingDrafts, setCreatingDrafts] = useState<any[]>([]);
+  const [actionSheet, setActionSheet] = useState<any>(null);
+  const [actionName, setActionName] = useState('');
+  const [actionLocation, setActionLocation] = useState({projectId: null as string | null, sectionId: null as string | null});
+  const [actionDate, setActionDate] = useState('');
+  const [containerProof, setContainerProof] = useState<any>(null);
+  const submissions = useRef(new Map<string, any>());
+  const containerIdentity = useRef<any>(null);
+  const submissionSequence = useRef(0);
+  const mutations = useWorkspaceMutations(async () => {
+    const data = await offlineData(); setSyncInfo(data); dataFp.current = '';
+    applyData(data.tasks, data.projects, data.sections);
+    setDoneTasks(await completedData());
+  }, setError);
+  const projected: any[] = projectContainerTasks(projectTasks([...baseTasks, ...creatingDrafts], mutations.intents), containerIntents);
+  const tasks: any[] = projected.filter((task: any) => !task.deleted && !task.completed);
+  const projectedDone: any[] = projectContainerTasks(projectTasks(doneTasks, mutations.intents), containerIntents).filter((task: any) => task.completed !== false && !task.deleted);
+  const optimisticDone: any[] = projected.filter((task: any) => task.completed && !task.deleted);
+  useEffect(() => {
+    if (!active) return;
+    loadConfig().then(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);}).catch(() => {});
+  }, [active]);
 
   // B-033 (SNDEV-69): the plugin view appears via partial refresh, and the
   // mostly-white first frames leave the note's top half ghosting through
@@ -155,7 +194,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
         setActiveTab(normalizeTaskView(resolveDefaultTab(config)));
       }
       setVisibilityConfig(config);
-      setShowDone(config.showDoneTasks === true);
+      
       setDebugModeOn(config.debugMode === true);
     });
 
@@ -382,55 +421,16 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
     })();
   }, [activeTab, showDone, doneFetched, doneLoading]);
 
-  const toggleShowDone = () => {
-    const v = !showDone;
-    setShowDone(v);
-    saveConfig({showDoneTasks: v}).catch(() => {});
-    log('TaskHome', `Show done: ${v ? 'on' : 'off'}`);
-  };
+  const handleReopen = (id: string) => mutations.mutate([id], {kind: 'complete', completed: false});
 
-  const handleReopen = async (taskId: string) => {
-    log('TaskHome', `REOPEN pressed taskId=${taskId}`);
-    try {
-      await reopenTask(taskId);
-      log('TaskHome', `REOPEN success taskId=${taskId}`);
-      setDoneTasks(prev => prev.filter(t => t.id !== taskId));
-      invalidateCache();
-      fetchData(true); // pull the reopened task back into the active lists
-    } catch (err: any) {
-      logError('TaskHome', err);
-      const message = err?.code === 'RECURRING_UNDO_UNSUPPORTED'
-        ? 'This recurring completion has already synced. Undo it in Todoist; the next occurrence stays active.'
-        : 'Could not reopen this task. Your task state is preserved; retry when sync is available.';
-      setDoneError(message); setError(message);
-    }
-  };
-
-  const sel = useTaskSelection('TaskHome', {
-    onCompleted: async ids => {
-      dataFp.current = '';
-      setTasks(prev => prev.filter(task => !ids.includes(task.id)));
-      setDeviceTasks(prev => prev.filter(task => !ids.includes(task.id)));
-      setRegistryNoteTasks(prev => prev.filter(task => !ids.includes(task.id)));
-      // The authoritative state retains note references and recurring series.
-      // Read it again after persistence so a server-provided next occurrence
-      // can reappear immediately, even if the completion callback ran last.
-      const data = await offlineData().catch(() => null);
-      if (data) {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}
-      completedData().then(setDoneTasks).catch(() => {});
-      getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
-      if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
-    },
-    onUndone: async () => {
-      dataFp.current = '';
-      const data = await offlineData().catch(() => null);
-      if (data) {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}
-      completedData().then(setDoneTasks).catch(() => {});
-      getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
-      if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
-    },
-    onError: msg => setError(msg),
-  });
+  const toggleSelection = (id: string) => setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
+  const clearSelection = () => {setSelectionMode(false); setSelectedIds([]);};
+  const sel = {selectedIds, busy: false, clearSelection,
+    completeOne: (id: string) => selectionMode ? toggleSelection(id) : mutations.mutate([id], {kind: 'complete', completed: true})};
+  useEffect(() => {const unsubscribe = subscribeOffline(() => {
+    offlineData().then(data => {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}).catch(() => {});
+    completedData().then(setDoneTasks).catch(() => {});
+  }); return () => {unsubscribe();};}, [applyData]);
 
   // Jump straight into a note at a task's page. Registry pages are 0-based,
   // the intent is 1-based; openNote() closes the plugin view itself.
@@ -481,12 +481,6 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
   const handleTaskPress = (task: any) => {
     log('TaskHome', `TASK pressed id=${task.id}`);
     nav.push('task-detail', {task, projects: projectList});
-  };
-
-  const handleAddTask = async () => {
-    log('TaskHome', 'ADD TASK pressed');
-    const config = await loadConfig();
-    nav.push('task-add', {projects: projectList, defaultProjectId: config.defaultProjectId, defaultSectionId: config.defaultSectionId});
   };
 
   const today = localDate(new Date());
@@ -629,7 +623,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
         </View>
       );
     }
-    const visibleDone = projectFiltered(doneTasks).filter(task => !task.deleted);
+    const visibleDone = projectFiltered(projectedDone).filter(task => !task.deleted);
     if (visibleDone.length === 0) {
       return (
         <View style={styles.centered}>
@@ -675,30 +669,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
       return due && due <= today;
     });
 
-    const doneTodayCount = showDone
-      ? projectFiltered(doneTasks).filter(t => (t.completed_at || '').slice(0, 10) === today).length
-      : 0;
-    if (todayTasks.length === 0 && doneTodayCount === 0) {
-      return (
-        <View style={styles.centered}>
-          <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No tasks due today</Text>
-        </View>
-      );
-    }
-
-    // Group by project
     const groups: any[] = groupByProject(todayTasks, projectMap);
-
-    // F-030: completed-today section, same pattern as the Done tab
-    if (showDone) {
-      const doneToday = projectFiltered(doneTasks).filter(
-        t => (t.completed_at || '').slice(0, 10) === today,
-      );
-      if (doneToday.length > 0) {
-        groups.push({key: 'header-done-today', type: 'header', title: 'Completed Today', count: doneToday.length});
-        doneToday.forEach(t => groups.push({key: `done-${t.id}`, type: 'doneTask', task: t}));
-      }
-    }
 
     return (
       <FlatList
@@ -801,7 +772,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
 
   const renderProjectsTab = () => {
     const filtered = projectList.filter(project => shownProjectIds.includes(String(project.id)));
-    return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={[]}
+    return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={selectedIds} TaskComponent={TaskRow}
       onSelect={sel.completeOne} onTask={handleTaskPress} busy={sel.busy} onSyncPress={() => setSyncSheetOpen(true)}
       onProject={project => changeView(`project:${project.id}`)} />;
   };
@@ -899,9 +870,115 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
   const inboxProject = projectList.find(project => project.is_inbox_project || project.inbox_project || project.isInbox || String(project.name).toLowerCase() === 'inbox');
   const nextDay = new Date(); nextDay.setDate(nextDay.getDate() + 1);
   const tomorrow = localDate(nextDay);
+  const defaults = composerDefaults(activeTab, projectList, today, tomorrow, visibilityConfig);
+  const requestedLocation = composer.explicit ? composer : defaults;
+  const composerLocation = {...requestedLocation,
+    projectId: projectList.find(project => project.id === requestedLocation.projectId || project.localId === requestedLocation.projectId)?.id || requestedLocation.projectId,
+    sectionId: collectionList.find(section => section.id === requestedLocation.sectionId || section.localId === requestedLocation.sectionId)?.id || requestedLocation.sectionId};
+  const destinationLabel = [projectMap[composerLocation.projectId] || 'Inbox',
+    collectionList.find(section => section.id === composerLocation.sectionId)?.name].filter(Boolean).join(' / ');
+  const contextTasks = activeTab.startsWith('project:') ? tasks.filter(task => String(task.project_id) === activeTab.slice(8)) :
+    activeTab === 'inbox' ? tasks.filter(task => !task.project_id || String(task.project_id) === String(inboxProject?.id)) :
+    activeTab === 'today' ? projectFiltered(tasks).filter(task => task.due?.date && task.due.date.slice(0, 10) <= today) :
+    activeTab === 'tomorrow' ? projectFiltered(tasks).filter(task => task.due?.date?.slice(0, 10) === tomorrow) :
+    activeTab === 'upcoming' ? projectFiltered(tasks).filter(task => !task.due?.date || task.due.date.slice(0, 10) > today) :
+    activeTab === 'note' ? noteTasks.map(item => item.task) : activeTab === 'device' ? deviceTasks.filter(isActiveRegistryTask) :
+    activeTab === 'done' ? projectedDone : projectFiltered(tasks);
+  const selectableTasks = contextTasks.filter((task: any) => !String(task.id).startsWith('ui:'));
+  const completedItems = [...projectedDone, ...optimisticDone].filter((task, index, list) =>
+    list.findIndex(value => String(value.id) === String(task.id)) === index).filter(task => {
+      if (activeTab.startsWith('project:')) return String(task.project_id) === activeTab.slice(8);
+      if (activeTab === 'inbox') return !task.project_id || String(task.project_id) === String(inboxProject?.id);
+      if (activeTab === 'today') return task.completed_at?.slice(0, 10) === today;
+      if (activeTab === 'tomorrow') return task.due?.date?.slice(0, 10) === tomorrow;
+      if (activeTab === 'note') return registryNoteTasks.some(value => value.id === task.id);
+      if (activeTab === 'device') return deviceTasks.some(value => value.id === task.id);
+      return isProjectVisible(visibilityConfig, task.project_id, projectList);
+    });
+  const openTaskAction = (kind: string, ids: string[]) => {
+    if (!ids.length) {setError('Select one or more tasks first.'); return;}
+    const task = tasks.find(value => String(value.id) === ids[0]);
+    setActionDate(task?.due?.date?.slice(0, 10) || '');
+    setActionLocation({projectId: task?.project_id || inboxProject?.id || null, sectionId: task?.section_id || null});
+    setActionSheet({kind, ids: [...ids]}); setError('');
+  };
+  const openContainerAction = (kind: 'project' | 'collection', id?: string, projectId?: string) => {
+    if (id?.startsWith('ui:') || projectId?.startsWith('ui:')) {setError('This container is still being saved on your device.'); return;}
+    const container = id && (kind === 'project' ? projectList : collectionList).find(value => String(value.id) === id);
+    setActionName(container?.name || ''); setContainerProof(null);
+    const sheet = {kind: 'container', containerKind: kind, id, projectId, request: {}, identity: {}};
+    containerIdentity.current = sheet.identity;
+    setActionSheet(sheet);
+    if (id) workspaceService.inspectOfflineContainer(kind, id).then((proof: any) => {if (containerIdentity.current === sheet.identity) setContainerProof(proof);}).catch((cause: any) => setError(cause.message));
+  };
+  const performContainerAction = async (action: string, mode?: string) => {
+    const sheet = actionSheet; setActionSheet(null);
+    const operation = {sequence: ++submissionSequence.current, scope: sheet.containerKind,
+      action: action === 'delete' ? 'delete' : sheet.id ? 'rename' : 'create', id: String(sheet.id || `ui:container:${submissionSequence.current}`),
+      name: actionName.trim(), projectId: sheet.projectId, mode,
+      destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId};
+    setContainerIntents(previous => [...previous, operation]);
+    try {
+      if (action === 'save') {
+        if (sheet.id) await (sheet.containerKind === 'project' ? workspaceService.renameOfflineProject : workspaceService.renameOfflineCollection)(sheet.id, actionName.trim(), sheet.request);
+        else if (sheet.containerKind === 'project') await workspaceService.createOfflineProject(actionName.trim(), {}, sheet.request);
+        else await workspaceService.createOfflineCollection(sheet.projectId, actionName.trim(), sheet.request);
+      } else await workspaceService.deleteOfflineContainer(sheet.containerKind, sheet.id, {mode,
+        destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId,
+        confirmCount: containerProof.count, scopeToken: containerProof.scopeToken, includeUncached: mode === 'delete'}, sheet.request);
+      await refreshSyncSheet();
+    } catch (cause: any) {setError(cause.message); await refreshSyncSheet().catch(() => {}); setActionSheet((current: any) => current || sheet);}
+    finally {setContainerIntents(previous => previous.filter(value => value.sequence !== operation.sequence));}
+  };
+  const saveComposer = () => {
+    if (!composer.value.trim()) return;
+    const id = `ui:${++submissionSequence.current}`;
+    let parsed;
+    try {parsed = splitTitleDescription(composer.value);} catch (cause: any) {setError(cause.message); return;}
+    const draft = {content: parsed.content, description: parsed.description, projectId: composerLocation.projectId,
+      sectionId: composerLocation.sectionId, dueDate: composerLocation.dueDate, dueString: composerLocation.dueDate, priority: 1};
+    const submission = {draft, request: {}, capturedAt: Date.now()};
+    submissions.current.set(id, submission);
+    setCreatingDrafts(previous => [...previous, {...draft, id, project_id: draft.projectId, section_id: draft.sectionId,
+      due: draft.dueDate ? {date: draft.dueDate} : null, syncState: 'pending'}]);
+    setComposer(previous => ({...previous, value: ''}));
+    persistComposer(id);
+  };
+  const persistComposer = async (id: string) => {
+    const submission = submissions.current.get(id); if (!submission || submission.saving) return;
+    submission.saving = true;
+    try {
+      await saveOfflineBatch([submission.draft], null, submission.capturedAt, submission.request);
+      await refreshSyncSheet();
+      setCreatingDrafts(previous => previous.filter(task => task.id !== id)); submissions.current.delete(id);
+    } catch {
+      setCreatingDrafts(previous => previous.map(task => task.id === id ? {...task, syncState: 'attention'} : task));
+      setError('A new task could not be confirmed on disk. Tap its sync symbol to retry the same save; your draft is retained.');
+    } finally {submission.saving = false;}
+  };
+  const canOrder = (task: any, direction: string) => {
+    if (!activeTab.startsWith('project:') && activeTab !== 'inbox') return false;
+    const siblings = tasks.filter(value => String(value.project_id) === String(task.project_id) &&
+      String(value.section_id || '') === String(task.section_id || '') && String(value.parent_id || '') === String(task.parent_id || ''));
+    const index = siblings.findIndex(value => value.id === task.id);
+    return !!task.order_key && (direction === 'up' ? index > 0 : index >= 0 && index < siblings.length - 1);
+  };
+  const workspace = {selectedIds, selectionMode, expandedId, toggle: toggleSelection,
+    project: (task: any) => projectTasks([task], mutations.intents)[0],
+    select: (id: string) => {setSelectionMode(true); setSelectedIds(previous => previous.includes(id) ? previous : [...previous, id]);},
+    expand: (id: string) => setExpandedId(previous => previous === id ? null : id),
+    complete: (id: string, completed: boolean) => String(id).startsWith('ui:') ? persistComposer(id) : mutations.mutate([id], {kind: 'complete', completed}),
+    edit: handleTaskPress, action: openTaskAction, canOrder,
+    retryCreate: persistComposer,
+    order: (id: string, direction: string) => {
+      const task = tasks.find(value => String(value.id) === id); if (!task) return;
+      mutations.mutate(tasks.filter(value => sameScope(value, task)).map(value => String(value.id)), {kind: 'order', taskId: id, direction});
+    }};
   const changeView = (view: string) => {
     const next = normalizeTaskView(view);
     sel.clearSelection(); setActiveTab(next); setSessionTab(next);
+    setExpandedId(null);
+    setComposer(previous => previous.value.trim() ? previous : {...previous, explicit: false});
     saveConfig({lastOpenedTab: next}).catch(() => {});
   };
   const counts: Record<string, number> = {today: 0, tomorrow: 0, upcoming: 0, inbox: 0, note: noteTasks.length,
@@ -942,61 +1019,35 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
     ]);
     return <View style={styles.body}>
       <View style={styles.projectHeading}><Text style={styles.projectTitle}>{name}</Text>
-        <Pressable style={styles.headerButton} accessibilityLabel={`Add task to ${name}`} onPress={() => nav.push('task-add', {projects: projectList, defaultProjectId: id})}><Text style={styles.headerButtonText}>+ Task</Text></Pressable></View>
+        <Pressable style={styles.headerButton} accessibilityLabel={`Project menu for ${name}`} onPress={() => openContainerAction('project', id)}><Text style={styles.headerButtonText}>•••</Text></Pressable></View>
       <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
         <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
-          <Pressable style={styles.headerButton} accessibilityLabel={`Add task to ${item.group.name}`} onPress={() => nav.push('task-add', {projects: projectList, defaultProjectId: id, defaultSectionId: item.group.id || null})}><Text style={styles.headerButtonText}>+ Task</Text></Pressable>} /> :
+          <View style={{flexDirection: 'row'}}><Pressable style={styles.headerButton} accessibilityLabel={`New task in ${item.group.name}`} onPress={() => setComposer(previous => ({...previous, explicit: true, projectId: id || null, sectionId: item.group.id || null}))}><Text style={styles.headerButtonText}>To here</Text></Pressable>
+            {!!item.group.id && <Pressable style={styles.headerButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>}</View>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
-        <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />} />
+        <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
+        ListFooterComponent={<Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>} />
     </View>;
   };
 
   return (
+    <WorkspaceContext.Provider value={workspace}>
     <View style={styles.container}>
       {/* Keep the header height stable when the undo action replaces its controls. */}
       <View style={[styles.header, {minHeight: Math.round(22 * scale * 1.3) + 32}]}>
-        {/* Undo remains available until dismissed or the view changes. */}
-        {sel.active ? (
-          <SelectionBar
-            count={sel.selectedIds.length}
-            undoCount={sel.undoIds.length}
-            busy={sel.busy}
-            onComplete={sel.completeSelected}
-            onClear={sel.clearSelection}
-            onUndo={sel.undo}
-            onDismiss={sel.dismissUndo}
-          />
-        ) : (
-          <>
-            <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
-            <View style={styles.headerButtons}>
-              {/* Primary action is the only inverted button. Log/Diag moved to
-                  Settings > Debugging -- five identical header buttons had no
-                  hierarchy (design-home-v2.md). Debug mode restores the Log
-                  button here (its Settings hint promises exactly that). */}
-              <Pressable style={[styles.headerButton, styles.headerButtonPrimary]} onPress={handleAddTask}>
-                <Text style={[styles.headerButtonText, styles.headerButtonPrimaryText]}>+ New</Text>
-              </Pressable>
-              <Pressable style={styles.headerButton} onPress={async () => {
-                const config = await loadConfig();
-                nav.push('task-batch', {projects: projectList, defaultProjectId: config.defaultProjectId, defaultSectionId: config.defaultSectionId});
-              }}>
-                <Text style={styles.headerButtonText}>+ Batch</Text>
-              </Pressable>
-              {debugMode && (
-                <Pressable style={styles.headerButton} onPress={() => { log('TaskHome', 'LOG pressed'); nav.push('debug'); }}>
-                  <Text style={styles.headerButtonText}>Log</Text>
-                </Pressable>
-              )}
-              <Pressable style={styles.headerButton} onPress={() => { log('TaskHome', 'SETTINGS pressed'); nav.push('config'); }}>
-                <Text style={styles.headerButtonText}>Settings</Text>
-              </Pressable>
-              <Pressable style={styles.headerButton} onPress={() => { log('TaskHome', 'CLOSE pressed'); closePlugin(); }}>
-                <Text style={styles.headerButtonText}>Close</Text>
-              </Pressable>
-            </View>
-          </>
-        )}
+        {selectionMode ? <WorkspaceSelectionBar count={selectedIds.length}
+          allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
+          onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
+          onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
+          onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => String(task.id)))} /> : <>
+          <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
+          <View style={styles.headerButtons}>
+            <Pressable style={styles.headerButton} onPress={() => setSelectionMode(true)} accessibilityLabel="Select tasks"><Text style={styles.headerButtonText}>Select</Text></Pressable>
+            {debugMode && <Pressable style={styles.headerButton} onPress={() => nav.push('debug')}><Text style={styles.headerButtonText}>Log</Text></Pressable>}
+            <Pressable style={styles.headerButton} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
+            <Pressable style={styles.headerButton} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
+          </View>
+        </>}
       </View>
 
       {jumpError ? (
@@ -1008,8 +1059,24 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
       {error ? <View style={styles.jumpError}><Text style={styles.jumpErrorText}>{error}</Text></View> : null}
       <View style={styles.workspace}>
         <TaskSidebar activeView={activeTab} projects={projectList} visibleProjectIds={shownProjectIds}
-          noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView} />
-        <View style={styles.body}>{renderContent()}</View>
+          noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
+          onCreateProject={() => openContainerAction('project')} onProjectMenu={id => openContainerAction('project', String(id))} />
+        <View style={styles.body}>
+          {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
+            onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true}))} dueDate={composerLocation.dueDate}
+            destinationLabel={destinationLabel} onSubmit={saveComposer}
+            onChooseDate={() => {setActionDate(composerLocation.dueDate); setActionSheet({kind: 'composer-date'});}}
+            onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
+          {renderContent()}
+          {activeTab !== 'done' && <View style={{maxHeight: '40%'}}>
+            <Pressable style={styles.headerButton} accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}} onPress={() => setShowDone(value => !value)}>
+              <Text style={styles.headerButtonText}>{showDone ? '⌄' : '›'} Completed · {completedItems.length}</Text>
+            </Pressable>
+            {showDone && <FlatList data={completedItems} keyExtractor={task => `completed:${task.id}`} renderItem={({item}) =>
+              <TaskRow task={item} checked completedAt={item.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress} />} />}
+            {showDone && doneError ? <Text style={styles.errorText}>{doneError}</Text> : null}
+          </View>}
+        </View>
       </View>
 
       <View style={styles.footer}>
@@ -1018,11 +1085,6 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
           {syncMessage ? <Text style={styles.footerText}>{syncMessage}</Text> : null}
         </Pressable>
         <View style={styles.footerRight}>
-          <Pressable style={[styles.headerButton, showDone && styles.headerButtonPrimary]}
-            accessibilityRole="button" accessibilityLabel="Show done" accessibilityState={{selected: showDone}}
-            onPress={toggleShowDone}>
-            <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}, showDone && styles.headerButtonPrimaryText]}>Show done</Text>
-          </Pressable>
           <Pressable style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
             sel.clearSelection();
             fetchData(true);
@@ -1034,6 +1096,52 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
           </Pressable>
         </View>
       </View>
+      <Modal visible={!!actionSheet} transparent onRequestClose={() => setActionSheet(null)}>
+        <View style={styles.sheetBackdrop}><View style={styles.sheet}>
+          <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
+            <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
+          <ScrollView contentContainerStyle={styles.sheetContent}>
+            {actionSheet?.kind === 'container' ? <>
+              <TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
+              <Pressable style={styles.headerButton} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable>
+              {!!actionSheet.id && <>
+                <Text style={styles.sheetText}>{containerProof ? containerProof.countIsMinimum ? `At least ${containerProof.count} saved tasks. Deleting all includes uncached and completed tasks in this ${actionSheet.containerKind}.` : `${containerProof.count} tasks in this ${actionSheet.containerKind}.` : 'Checking saved contents…'}</Text>
+                {!!containerProof?.reason && <Text style={styles.sheetText}>{containerProof.reason}</Text>}
+                {!containerProof?.canKeep && !!containerProof?.keepReason && <Text style={styles.sheetText}>{containerProof.keepReason}</Text>}
+                {!containerProof?.canKeep && <Pressable style={styles.headerButton} onPress={() => {
+                  const sheet = actionSheet;
+                  workspaceService.verifyOfflineContainer(sheet.containerKind, sheet.id).then(setContainerProof).catch((cause: any) => setError(cause.message));
+                }}><Text style={styles.headerButtonText}>Verify full contents online</Text></Pressable>}
+                <Pressable style={styles.headerButton} disabled={!containerProof?.canKeep} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>{actionSheet.containerKind === 'project' ? 'Delete project; move tasks to Inbox' : 'Delete collection; keep tasks in project'}</Text></Pressable>
+                <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable>
+                {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : 'Confirm deleting this container while keeping its tasks in the destination shown above.'}</Text>
+                  <Pressable style={styles.headerButton} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
+              </>}
+            </> : null}
+            {(actionSheet?.kind === 'date' || actionSheet?.kind === 'composer-date') && <DatePicker value={actionDate} onClose={() => setActionSheet(null)} onChange={date => {
+              if (actionSheet.kind === 'composer-date') setComposer(previous => ({...previous, ...composerLocation, dueDate: date, explicit: true}));
+              else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {due: date ? {date, is_recurring: false} : null}});
+            }} />}
+            {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
+              <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
+                onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
+              <Pressable style={styles.headerButton} disabled={!actionLocation.projectId} onPress={() => {
+                if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, ...actionLocation, explicit: true}));
+                else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: actionLocation.projectId, section_id: actionLocation.sectionId}});
+                setActionSheet(null);
+              }}><Text style={styles.headerButtonText}>Use this location</Text></Pressable>
+            </>}
+            {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
+            {actionSheet?.kind === 'more' && <>
+              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'priority'}))}><Text style={styles.headerButtonText}>Priority</Text></Pressable>
+              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: activeTab !== 'done'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{activeTab === 'done' ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
+              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'delete'}))}><Text style={styles.headerButtonText}>Delete selected</Text></Pressable>
+            </>}
+            {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
+              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
+          </ScrollView>
+        </View></View>
+      </Modal>
       <Modal visible={syncSheetOpen} transparent onRequestClose={() => setSyncSheetOpen(false)}>
         <View style={styles.sheetBackdrop}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>Sync summary</Text>
@@ -1057,6 +1165,7 @@ export default function TaskHome({nav, focusTab, initialView}: Props) {
       </Modal>
 
     </View>
+    </WorkspaceContext.Provider>
   );
 }
 
@@ -1282,8 +1391,9 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
   separator: {
-    height: 1,
-    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderStyle: 'dotted',
+    borderColor: '#999999',
     marginLeft: 66,
   },
   projectRow: {

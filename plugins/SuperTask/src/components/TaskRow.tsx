@@ -30,9 +30,11 @@ type Props = {
   roundCheck?: boolean;
   onSyncPress?: () => void;
   disabled?: boolean;
+  selectionMode?: boolean;
+  onLongPress?: (task: any) => void;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress}: Props) {
   const scale = useFontScale();
 
   const handleCheckPress = (event?: any) => {
@@ -65,16 +67,17 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   return (
     <Pressable
       style={[styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered]}
+      onLongPress={() => onLongPress?.(task)}
       onPress={() => { log('TaskRow', `ROW pressed id=${task.id}`); onPress(task); }}>
       <Pressable
         style={[styles.checkTarget, !hasMeta && styles.checkTargetCentered]}
         onPress={handleCheckPress}
         disabled={disabled}
         accessibilityRole="checkbox"
-        accessibilityLabel={`${checked ? 'Reopen' : 'Complete'} ${task.content}`}
+        accessibilityLabel={`${selectionMode ? 'Select' : checked ? 'Reopen' : 'Complete'} ${task.content}`}
         accessibilityState={{checked: !!checked || !!selected, disabled}}
         hitSlop={6}>
-        <Check checked={!!checked || !!selected} round={roundCheck} />
+        <Check checked={!!checked || !!selected} round={selectionMode ? false : roundCheck} />
       </Pressable>
       <View style={styles.content}>
         <Text style={[styles.title, {fontSize: Math.round(16 * scale), lineHeight: Math.round(22 * scale)}]}>{task.content}</Text>
