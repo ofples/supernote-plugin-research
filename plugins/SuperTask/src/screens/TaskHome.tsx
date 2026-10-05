@@ -662,7 +662,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       );
     }
 
-    if (activeTab === 'note') return <ScrollView>{renderThisNote()}</ScrollView>;
+    if (activeTab === 'note') return <ScrollView onScrollBeginDrag={() => setExpandedId(null)}>{renderThisNote()}{renderCompletedSection()}</ScrollView>;
     if (activeTab === 'tomorrow') return renderSimpleTasks(projectFiltered(tasks).filter(task => (task.due?.date || '').slice(0, 10) === tomorrow), 'No tasks due tomorrow');
     if (activeTab === 'inbox') return renderProjectTasks(inboxProject?.id, 'Inbox');
     if (resolvedTab.startsWith('project:')) {
@@ -706,7 +706,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       <FlatList
         data={items}
         keyExtractor={item => item.key}
-        ListFooterComponent={<Pressable style={styles.headerButton} disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Load more'}</Text></Pressable>}
+        ListFooterComponent={<Pressable style={styles.historyLink} accessibilityLabel="Load older completed tasks" disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>}
         renderItem={({item}) => {
           if (item.type === 'header') {
             return <SectionHeader title={item.title} count={item.count} />;
@@ -740,6 +740,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     return (
       <FlatList
         data={groups}
+        ListFooterComponent={renderCompletedSection()}
+        onScrollBeginDrag={() => setExpandedId(null)}
         keyExtractor={item => item.key}
         renderItem={({item}) => {
           if (item.type === 'header') {
@@ -794,9 +796,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
 
     if (upcoming.length === 0 && noDue.length === 0) {
       return (
-        <View style={styles.centered}>
+        <ScrollView><View style={styles.emptyList}>
           <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No upcoming tasks</Text>
-        </View>
+        </View>{renderCompletedSection()}</ScrollView>
       );
     }
 
@@ -809,6 +811,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     return (
       <FlatList
         data={buckets}
+        ListFooterComponent={renderCompletedSection()}
+        onScrollBeginDrag={() => setExpandedId(null)}
         keyExtractor={item => item.key}
         renderItem={({item}) => {
           if (item.type === 'header') {
@@ -832,7 +836,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
 
   const renderProjectsTab = () => {
     const filtered = projectList.filter(project => shownProjectIds.includes(String(project.id)));
-    return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={selectedIds} TaskComponent={TaskRow}
+    return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={selectedIds} TaskComponent={TaskRow} footer={renderCompletedSection()} onScrollBeginDrag={() => setExpandedId(null)}
       onDeselect={ids => setSelectedIds(previous => previous.filter(id => !ids.includes(id)))}
       onSelect={sel.completeOne} onTask={handleTaskPress} busy={sel.busy} onSyncPress={() => setSyncSheetOpen(true)}
       onProject={project => changeView(`project:${project.id}`)} />;
@@ -847,9 +851,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }
     if (deviceEntries.length === 0) {
       return (
-        <View style={styles.centered}>
+        <ScrollView><View style={styles.emptyList}>
           <Text style={[styles.emptyText, {fontSize: Math.round(18 * scale)}]}>No tasks captured on this device</Text>
-        </View>
+        </View>{renderCompletedSection()}</ScrollView>
       );
     }
 
@@ -892,6 +896,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     return (
       <FlatList
         data={items}
+        ListFooterComponent={renderCompletedSection()}
+        onScrollBeginDrag={() => setExpandedId(null)}
         keyExtractor={item => item.key}
         renderItem={({item}) => {
           if (item.type === 'header') {
@@ -1143,11 +1149,23 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     catch {setSyncRetryError('Could not retry this change. It remains saved on your device.');}
     finally {setSyncRetrying(false);}
   };
+  const renderCompletedSection = () => <View accessibilityLabel="Completed section">
+    <Pressable accessibilityRole="button" accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}}
+      onPress={() => {setExpandedId(null); setShowDone(value => !value);}}>
+      <SectionHeader title={`${showDone ? '⌄' : '›'} Completed`} count={completedItems.length} />
+    </Pressable>
+    {showDone && completedItems.slice(0, historyLimit).map(task => <TaskRow key={rowIdentity(task)} task={task} checked
+      completedAt={task.occurrenceCompletedAt || task.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress}
+      onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[task.project_id]} showCollection={collectionName(task)} />)}
+    {!!doneError && <Text accessibilityRole="alert" style={styles.sheetText}>{doneError}</Text>}
+    {showDone && <Pressable accessibilityRole="button" accessibilityLabel="Load older completed tasks" style={styles.historyLink}
+      disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.historyLinkText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>}
+  </View>;
   const renderSimpleTasks = (items: any[], empty: string) => items.length ?
-    <FlatList data={items} keyExtractor={task => task.id} renderItem={({item}) =>
+    <FlatList data={items} ListFooterComponent={renderCompletedSection()} onScrollBeginDrag={() => setExpandedId(null)} keyExtractor={task => task.id} renderItem={({item}) =>
       <TaskRow task={item} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress}
         onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[item.project_id]} showCollection={collectionName(item)} />} /> :
-    <View style={styles.centered}><Text style={styles.emptyText}>{empty}</Text></View>;
+    <ScrollView><View style={styles.emptyList}><Text style={styles.emptyText}>{empty}</Text></View>{renderCompletedSection()}</ScrollView>;
   const renderProjectTasks = (id: string | undefined, name: string) => {
     if (id && !isProjectVisible(visibilityConfig, id, projectList)) {
       return <View style={styles.centered}><Text style={styles.emptyText}>This project is hidden in Settings. Choose a visible project from the sidebar.</Text></View>;
@@ -1164,7 +1182,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
         <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
-        ListFooterComponent={<Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>} />
+        ListFooterComponent={<><Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>{renderCompletedSection()}</>} onScrollBeginDrag={() => setExpandedId(null)} />
     </View>;
   };
 
@@ -1209,8 +1227,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
           noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
           onCreateProject={() => openContainerAction('project')} />
-        <View style={styles.body}>
-          <View style={styles.projectHeading}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
+        <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
+          <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
             <Pressable style={styles.headerButton} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
           {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
             onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
@@ -1219,15 +1237,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             onChooseDate={() => {setActionDate(composerLocation.dueDate); setActionSheet({kind: 'composer-date'});}}
             onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
           {renderContent()}
-          {activeTab !== 'done' && <View style={{maxHeight: '40%'}}>
-            <Pressable style={styles.completedHeading} accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}} onPress={() => setShowDone(value => !value)}>
-              <Text style={styles.headerButtonText}>{showDone ? '⌄' : '›'} Completed · {completedItems.length}</Text>
-            </Pressable>
-            {showDone && <FlatList data={completedItems.slice(0, historyLimit)} keyExtractor={rowIdentity} renderItem={({item}) =>
-              <TaskRow task={item} checked completedAt={item.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress} />} />}
-            {showDone && <Pressable style={styles.headerButton} disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Load more'}</Text></Pressable>}
-            {showDone && doneError ? <Text style={styles.errorText}>{doneError}</Text> : null}
-          </View>}
+
         </View>
       </View>
 
@@ -1248,7 +1258,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           </Pressable>
         </View>
       </View>
-      <Modal visible={!!actionSheet} transparent onRequestClose={() => setActionSheet(null)}>
+      <Modal visible={!!actionSheet} transparent={false} animationType="none" presentationStyle="fullScreen" onRequestClose={() => setActionSheet(null)}>
         <View style={styles.sheetBackdrop}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
@@ -1315,7 +1325,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           </ScrollView>
         </View></View>
       </Modal>
-      <Modal visible={syncSheetOpen} transparent onRequestClose={() => setSyncSheetOpen(false)}>
+      <Modal visible={syncSheetOpen} transparent={false} animationType="none" presentationStyle="fullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
         <View style={styles.sheetBackdrop}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>Sync summary</Text>
             <Pressable style={styles.headerButton} onPress={() => setSyncSheetOpen(false)} accessibilityLabel="Close sync summary"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
@@ -1453,8 +1463,8 @@ const styles = StyleSheet.create({
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   syncSummary: {flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
-  sheetBackdrop: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end'},
-  sheet: {backgroundColor: '#fff', maxHeight: '80%', borderWidth: 1, borderColor: '#000'},
+  sheetBackdrop: {flex: 1, backgroundColor: '#fff'},
+  sheet: {flex: 1, width: '100%', backgroundColor: '#fff'},
   sheetContent: {padding: 16, gap: 12},
   sheetText: {fontSize: 16, color: '#000'},
   queuedChange: {paddingVertical: 12, borderTopWidth: 1, borderColor: '#000', gap: 8},
@@ -1480,7 +1490,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconButton: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center'},
-  completedHeading: {minHeight: 48, justifyContent: 'center', borderTopWidth: 1, borderColor: '#aaa'},
+  emptyList: {padding: 24},
+  historyLink: {minHeight: 48, alignSelf: 'flex-end', justifyContent: 'center', paddingHorizontal: 16},
+  historyLinkText: {fontSize: 14, color: '#555'},
   actionRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center'},
   inputRow: {flexDirection: 'row', gap: 12, alignItems: 'center'},
   headerButton: {

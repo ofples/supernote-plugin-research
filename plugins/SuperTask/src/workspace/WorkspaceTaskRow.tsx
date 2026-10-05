@@ -27,6 +27,7 @@ export default function WorkspaceTaskRow(props: any) {
       rightAccessory={expanded && !creating && !protectedHistory ? <TaskQuickActions onEdit={() => workspace.edit(task)}
         onDate={() => workspace.action('date', [id])} onMove={() => workspace.action('move', [id])}
         onPriority={() => workspace.action('priority', [id])} onDelete={() => workspace.action('delete', [id])}
+        onDismiss={() => workspace.expand(id)}
         canMoveUp={!checked && workspace.canOrder(task, 'up')} canMoveDown={!checked && workspace.canOrder(task, 'down')}
         onMoveUp={() => workspace.order(id, 'up')} onMoveDown={() => workspace.order(id, 'down')}
         disabledActions={{date: !!checked, move: !!checked, priority: !!checked}} /> : null} />

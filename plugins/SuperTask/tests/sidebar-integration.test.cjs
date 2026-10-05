@@ -18,8 +18,8 @@ function load(file, overrides = {}) {
 }
 const native = {TextInput: 'TextInput', View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null,
-  StyleSheet: {create: value => value}, FlatList: ({data, renderItem}) => React.createElement('List', {}, data.map(item =>
-    React.createElement('ListItem', {key: item.key || item.id}, renderItem({item}))))};
+  StyleSheet: {create: value => value}, FlatList: ({data, renderItem, ListFooterComponent, ...props}) => React.createElement('List', props, data.map(item =>
+    React.createElement('ListItem', {key: item.key || item.id}, renderItem({item}))), ListFooterComponent)};
 function workspace(config = {}, note = false, extraTasks = []) {
   const today = require('../src/offline/model').localDate(new Date());
   const next = new Date(); next.setDate(next.getDate() + 1);
@@ -98,7 +98,7 @@ test('project sidebar choice preserves navigation and groups collections in the 
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   await switchTo(tree, 'project:p');
   assert.equal(tree.root.findByType('Sidebar').props.activeView, 'project:p');
-  assert.deepEqual(tree.root.findAllByType('Section').map(n => n.props.title), ['No collection', 'Writing']);
+  assert.deepEqual(tree.root.findAllByType('Section').map(n => n.props.title), ['No collection', 'Writing', '⌄ Completed']);
   assert.equal(tree.root.findAllByType('TaskRow').length, 2); assert.equal(model.navCalls.length, 0);
   await switchTo(tree, 'tomorrow'); assert.deepEqual(tree.root.findAllByType('TaskRow').map(n => n.props.task.id), ['two']);
   await switchTo(tree, 'inbox'); assert.deepEqual(tree.root.findAllByType('TaskRow').map(n => n.props.task.id), ['inbox']);
@@ -421,5 +421,23 @@ test('Note and Device retain a protected recurring history row beside its active
     await act(async () => occurrence.props.onCheckPress());
     assert.deepEqual(model.reopened, []); assert.deepEqual(model.completed, []);
   }
+  await act(async () => tree.unmount());
+});
+
+
+test('completed tasks are inside the active list scroll flow and action pages never dim', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await switchTo(tree, 'project:p');
+  const completed = tree.root.findByProps({accessibilityLabel: 'Completed section'});
+  let parent = completed.parent;
+  while (parent && parent.type !== 'List') parent = parent.parent;
+  assert.ok(parent, 'completed group belongs to the main list footer');
+  assert.equal(tree.root.findAllByType('List').length, 1, 'no independent completed scroller');
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'List menu'}).props.onPress());
+  const page = tree.root.findByType('Modal');
+  assert.equal(page.props.transparent, false);
+  assert.equal(page.props.animationType, 'none');
+  assert.equal(page.props.presentationStyle, 'fullScreen');
   await act(async () => tree.unmount());
 });
