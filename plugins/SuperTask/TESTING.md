@@ -98,3 +98,12 @@ Runtime `a53119dc`; workspace feature `59b9cc5`. Artifact `build/outputs/SuperTa
 Plugin Manager confirms beta.15 installed and enabled ON. Existing Note is full-screen with toolbar hidden; user asked to open SuperTask. No task/note edits.
 
 Pending device checks: runtime startup, remote history refresh and exact error if any, one selected task row with no height increase, narrow/large-font icon scrolling, quiet collection headers/no double left divider, name/save and delete choices side by side, project menus absent in sidebar. Preserve actual tasks/configuration; no real task deletion for layout checks.
+
+
+## Beta.16 list flow and dialogs - 5 October 2026
+
+Beta.15 hardware evidence: installed/enabled, startup rendered, Refresh completed without history error; 22 active tasks/0 queued. Screen inspection confirmed the independent completed scroller squeezing the active list and oversized action-overlay region. No task/note edits.
+
+Beta.16 runtime `09759e4`, workspace `db84c09`. Artifact `build/outputs/SuperTask-native-beta16.snplg`: 7,586,813 bytes, SHA256 `581c8c22b60e31a85e03da8bd5aa507ccff88d97421777b65a465e2438654bc2`. 241 tests, TypeScript, lint zero errors, full native package verification and Hermes compilation pass. Tests verify Completed belongs to one main scroll list, full-page undimmed/nonanimated modals, bounded right-aligned bordered row controls and explicit dismissal.
+
+Pending: install/enable beta.16; scroll Inbox to Completed as part of the list, collapse/expand, quiet history pagination; verify stronger Projects separator; select a task and inspect right-aligned borders/trash/close glyphs and dismiss; open calendar/list actions and confirm white full-size first frame (no corner expansion or dark overlay). No real task mutations are needed. Other device workflows remain at the previously recorded coverage.

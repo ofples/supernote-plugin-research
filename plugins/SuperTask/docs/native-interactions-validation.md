@@ -38,3 +38,8 @@ Paid scratch AI request ledger: **1 of 100** used across the goal sessions. No r
 ### Beta.15 polish follow-up
 
 239 tests plus type/lint/native package/Hermes checks pass. Icon overlays keep row height; arrows remain scroll-accessible at narrow widths. Collection headers have one faint divider and no count box; project menus appear only in the pane. Dialog buttons size to content, with adjacent name/save and labels/apply controls. History uses numeric HTTP status and bounded 89-day windows. Configured account history endpoint succeeds from the computer; device refresh remains pending.
+
+
+### Beta.16 list-flow follow-up
+
+Beta.15 remote history refresh is hardware-confirmed (22 active/0 queued). Beta.16 has 241 passing tests and package/Hermes checks. Completed is in the same list flow; white full-page action/calendar dialogs are undimmed/nonanimated; row icon borders align right with explicit Close; Projects has a solid divider. Device layout/first-frame checks pending coordinated screen availability.
