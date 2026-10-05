@@ -120,3 +120,8 @@ Cleanup: removed 9 obsolete installer files under MyStyle, replaced Plugins/Supe
 Beta.17/code22 runtime `3be6650`, feature `fe8d299`. Artifact `build/outputs/SuperTask-native-beta17.snplg`, 7,586,889 bytes, SHA256 `39624c1a4566ec349464e2df3e4f17e8dd9b8f8c8c9ab0b4f8e84e33c6a5d8d0`. 242 tests, type/lint, full native package verification and Hermes pass. Test confirms a successful retry clears an earlier history warning. Dialog panels now have explicit screen-sized transparent backdrops and fixed smaller white sheets.
 
 Pending: install beta.17, update canonical package/remove beta.16 installer, verify floating calendar/menu background remains unchanged/undimmed and no size entrance jump, retry history and record exact cause if failure persists.
+
+
+### Beta.17 connected verification
+
+Plugin Manager version beta.17 and enabled ON confirmed. After the Note initializes registrations, Plugin Manager -> SuperTask -> Settings -> Tasks opens the workspace even with the note toolbar hidden. Floating calendar and List menu inspected: white panel, undimmed visible list behind, stable bounded dimensions, close/cancel worked; no task/note edits. Transient first-paint animation was not recorded. Only MyStyle/SuperTask-native-beta17.snplg and MyStyle/Plugins/SuperTask.snplg remain; canonical SHA256 matches `39624c1a4566ec349464e2df3e4f17e8dd9b8f8c8c9ab0b4f8e84e33c6a5d8d0`. Beta.16 installer removed. Refresh displayed 22 active/0 queued and no history warning in this check. Older-history fetch transitioned from Loading history back to its link with no error warning. Inbox restored; no modal left open.
