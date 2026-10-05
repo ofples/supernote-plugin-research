@@ -256,6 +256,33 @@ test('BatchAdd merge action keeps the joined titles when both rows were manually
   await act(async () => tree.unmount());
 });
 
+test('BatchAdd merge keeps an edited description together with the next transcription description', async () => {
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+    'react-native': rn, 'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/useFontScale': {useFontScale: () => 1}, '../utils/closePlugin': {closePlugin() {}},
+    '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})}, '../offline/service': {saveOfflineBatch: async () => []},
+    '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+    '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+  }).default;
+  const rows = [
+    {rowId: 'A', content: 'Prepare', description: 'Keep this detail', projectId: 'house', sectionId: null, selected: true,
+      priority: 1, dueString: '', labels: [], sourceText: 'Prepare - original detail', fieldProvenance: {content: 'transcription', description: 'manual'}, overrides: {description: true}},
+    {rowId: 'B', content: 'Supplies', description: 'Bring the folder', projectId: 'house', sectionId: null, selected: true,
+      priority: 1, dueString: '', labels: [], sourceText: 'Supplies - bring the folder', fieldProvenance: {content: 'transcription', description: 'transcription'}},
+  ];
+  let tree;
+  await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [{id: 'house', name: 'House'}], initialRows: rows}));});
+  const details = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Details'));
+  await act(async () => details.props.onPress());
+  const merge = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Merge next'));
+  await act(async () => merge.props.onPress());
+  assert.deepEqual(tree.root.findAllByType('Input').map(input => input.props.value), ['Prepare Supplies', 'Keep this detail\nBring the folder', '']);
+  await act(async () => tree.unmount());
+});
+
 test('BatchAdd scales text and inputs while keeping batch controls reachable outside the row scroller', async () => {
   for (const scale of [1.5, 2]) {
     let styles;
