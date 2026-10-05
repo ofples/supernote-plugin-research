@@ -39,6 +39,13 @@ with zipfile.ZipFile(artifact) as plugin:
         for marker in [b'item_close', b'section_add', b'sourceRowIds', b'explicitFields',
                        b'projectVisibility', b'Sync summary', b'Cancel AI / Use device OCR', b'New collection']:
             assert marker in bundle, f'Missing feedback workflow implementation: {marker}'
+    if (root / 'src/workspace/intents.js').exists():
+        for marker in [b'Enter task', b'Task actions', b'Confirm delete', b'Use this location',
+                       b'New project', b'Completed', b'project_update', b'section_delete', b'order_key']:
+            assert marker in bundle, f'Missing native task interaction implementation: {marker}'
+    if (root / 'src/launcher/service.js').exists():
+        for marker in [b'SuperTaskLauncherTap', b'launcherEnabled', b'scopedPenProtection']:
+            assert marker in bundle, f'Missing launcher implementation: {marker}'
     with zipfile.ZipFile(io.BytesIO(plugin.read('app.npk'))) as native:
         libs = [name for name in native.namelist() if name.startswith('lib/') and name.endswith('.so')]
         assert libs == ['lib/arm64-v8a/libnative-lib.so'], libs
@@ -46,6 +53,8 @@ with zipfile.ZipFile(artifact) as plugin:
         for marker in [b'Lcom/supertask/TaskStorageModule;', b'Lcom/supertask/NoteOpenerPackage;',
                        b'Lorg/linusu/RNGetRandomValuesModule;']:
             assert marker in dex, f'Missing native implementation: {marker}'
+        if (root / 'src/launcher/service.js').exists():
+            assert b'Lcom/supertask/TaskLauncherModule;' in dex, 'Missing native edge launcher'
 print('Verified', config['versionName'], 'identity, icon, JS, native registration, classes and ARM64 library')
 print('Bytes:', artifact.stat().st_size)
 print('SHA256:', hashlib.sha256(artifact.read_bytes()).hexdigest())
