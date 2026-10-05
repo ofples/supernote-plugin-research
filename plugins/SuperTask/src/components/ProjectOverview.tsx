@@ -3,6 +3,7 @@ import {View, Text, Pressable, FlatList, StyleSheet} from 'react-native';
 import BaseTaskRow from './TaskRow';
 import {useFontScale} from '../utils/useFontScale';
 const {projectGroups, overviewRows, collapsingSelection} = require('../overview/model');
+const {isCollectionExpanded, toggleCollectionExpanded, setProjectCollectionsExpanded} = require('../collections/collapse');
 
 // View preferences only: no tasks, titles or credentials are retained here.
 let sessionExpanded: Record<string, boolean> = {};
@@ -14,8 +15,22 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
   const scale = useFontScale();
   const [expanded, setExpanded] = useState(sessionExpanded);
   const [compact, setCompact] = useState(sessionCompact);
-  const groups = projectGroups(projects, tasks, sections);
-  const rows = overviewRows(groups, expanded);
+  const [, setCollectionRevision] = useState(0);
+  const sourceGroups = projectGroups(projects, tasks, sections);
+  const groups = sourceGroups.map((group: any) => ({...group, collections: group.collections.map((collection: any) => ({
+    ...collection,
+    isExpanded: isCollectionExpanded(group.project.id, collection.id),
+  }))}));
+  const allRows = overviewRows(groups, expanded);
+  let hideCollectionTasks = false;
+  const rows = allRows.filter((row: any) => {
+    if (row.type === 'project') hideCollectionTasks = false;
+    if (row.type === 'collection') {
+      hideCollectionTasks = !row.isExpanded;
+      return true;
+    }
+    return !hideCollectionTasks;
+  });
   const total = groups.reduce((count: number, group: any) => count + group.tasks.length, 0);
   const changeExpanded = (value: Record<string, boolean>) => {sessionExpanded = value; setExpanded(value);};
   const toggle = (id: string) => {
@@ -26,12 +41,20 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
     onDeselect?.(collapsingSelection(groups, null, selectedIds));
     changeExpanded({});
   };
+  const expandAllCollections = (value: boolean) => {
+    for (const group of groups) setProjectCollectionsExpanded(group.project.id, group.collections, value);
+    setCollectionRevision(revision => revision + 1);
+  };
+  const toggleCollection = (projectId: string, collectionId: string) => {
+    toggleCollectionExpanded(projectId, collectionId);
+    setCollectionRevision(revision => revision + 1);
+  };
   return <View style={s.page}>
     <View style={s.controls}>
       <Text style={[s.summary, {fontSize: Math.round(14 * scale)}]}>{groups.length} projects · {total} tasks</Text>
       <View style={s.actions}>
-        <Pressable style={s.control} onPress={() => changeExpanded(Object.fromEntries(projects.map(project => [String(project.id), true])))}><Text style={s.action}>Expand all</Text></Pressable>
-        <Pressable style={s.control} onPress={collapseAll}><Text style={s.action}>Collapse all</Text></Pressable>
+        <Pressable style={s.control} onPress={() => {changeExpanded(Object.fromEntries(projects.map(project => [String(project.id), true]))); expandAllCollections(true);}}><Text style={s.action}>Expand all</Text></Pressable>
+        <Pressable style={s.control} onPress={() => {collapseAll(); expandAllCollections(false);}}><Text style={s.action}>Collapse all</Text></Pressable>
         <Pressable style={s.control} accessibilityRole="button" accessibilityLabel={`Task density: ${compact ? 'compact' : 'comfortable'}`} onPress={() => {sessionCompact = !compact; setCompact(!compact);}}><Text style={s.action}>{compact ? 'Compact' : 'Comfortable'}</Text></Pressable>
       </View>
       <Text style={s.hint}>Tap a project to show tasks. Check a task to complete it; tap its title for actions.</Text>
@@ -47,7 +70,13 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
               <Text style={[s.count, {fontSize: Math.round(15 * scale)}]}>{item.tasks.length}</Text>
             </Pressable>
             <Pressable style={s.open} accessibilityLabel={`Open ${item.project.name} project view`} onPress={() => onProject(item.project)}><Text style={s.action}>Open</Text></Pressable>
-          </View> : item.type === 'collection' ? <View style={s.collection}><Text style={{fontSize: Math.round(16 * scale), fontWeight: '600', color: '#000'}}>{item.name} · {item.tasks.length}</Text></View> :
+          </View> : item.type === 'collection' ? <Pressable style={s.collection} accessibilityRole="button"
+            accessibilityLabel={`${item.isExpanded ? 'Collapse' : 'Expand'} ${item.name}`} accessibilityState={{expanded: item.isExpanded}}
+            onPress={() => toggleCollection(item.projectId, item.id)}>
+            <Text style={s.collectionChevron}>{item.isExpanded ? '⌄' : '›'}</Text>
+            <Text style={{fontSize: Math.round(16 * scale), fontWeight: '600', color: '#000', flex: 1}}>{item.name}</Text>
+            <Text style={s.collectionCount}>{item.tasks.length}</Text>
+          </Pressable> :
             item.type === 'empty' ? <Text style={s.emptyProject}>No active tasks{item.collection ? ' in this collection' : ''}</Text> :
             <View style={s.task}><TaskComponent task={item.task} selected={selectedIds.includes(item.task.id)} onCheckPress={onSelect}
               onPress={onTask} compact={compact} disabled={busy} onSyncPress={onSyncPress} /></View>}
@@ -64,5 +93,6 @@ const s = StyleSheet.create({page: {flex: 1}, controls: {padding: 12, gap: 8, bo
   count: {color: '#000'}, open: {paddingHorizontal: 16, minHeight: 48, justifyContent: 'center'},
   task: {marginLeft: 20},
   emptyProject: {padding: 16, marginLeft: 38, fontSize: 15, color: '#000'},
-  collection: {padding: 12, paddingLeft: 50, alignSelf: 'stretch', borderBottomWidth: 1, borderColor: '#dddddd'},
+  collection: {minHeight: 48, paddingHorizontal: 14, paddingLeft: 50, flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch', borderBottomWidth: 1, borderColor: '#dddddd'},
+  collectionChevron: {fontSize: 22, width: 20, color: '#000'}, collectionCount: {fontSize: 14, color: '#555'},
   empty: {flex: 1, justifyContent: 'center', alignItems: 'center'}, emptyText: {fontSize: 18, color: '#000'}});
