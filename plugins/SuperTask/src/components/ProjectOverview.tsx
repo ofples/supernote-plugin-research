@@ -9,8 +9,8 @@ let sessionExpanded: Record<string, boolean> = {};
 let sessionCompact = true;
 type Props = {projects: any[]; tasks: any[]; sections?: any[]; selectedIds: string[];
   onSelect: (id: string) => void; onTask: (task: any) => void; onProject: (project: any) => void; busy?: boolean; onSyncPress?: () => void;
-  TaskComponent?: React.ComponentType<any>; onDeselect?: (ids: string[]) => void};
-export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress, TaskComponent = BaseTaskRow, onDeselect}: Props) {
+  footer?: React.ReactElement | null; onScrollBeginDrag?: () => void; TaskComponent?: React.ComponentType<any>; onDeselect?: (ids: string[]) => void};
+export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress, TaskComponent = BaseTaskRow, onDeselect, footer, onScrollBeginDrag}: Props) {
   const scale = useFontScale();
   const [expanded, setExpanded] = useState(sessionExpanded);
   const [compact, setCompact] = useState(sessionCompact);
@@ -36,8 +36,8 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
       </View>
       <Text style={s.hint}>Tap a project to show tasks. Check a task to complete it; tap its title for actions.</Text>
     </View>
-    {!projects.length ? <View style={s.empty}><Text style={s.emptyText}>No projects</Text></View> :
-      <FlatList data={rows} keyExtractor={(item: any) => item.key} extraData={{selectedIds, compact}}
+    {!projects.length ? <View><View style={s.empty}><Text style={s.emptyText}>No projects</Text></View>{footer}</View> :
+      <FlatList ListFooterComponent={footer} onScrollBeginDrag={onScrollBeginDrag} data={rows} keyExtractor={(item: any) => item.key} extraData={{selectedIds, compact}}
         renderItem={({item}: any) => item.type === 'project' ?
           <View style={s.project}>
             <Pressable style={s.projectToggle} accessibilityRole="button" accessibilityLabel={`${item.expanded ? 'Collapse' : 'Expand'} ${item.project.name}`}
