@@ -15,20 +15,21 @@ export default function WorkspaceTaskRow(props: any) {
   const creating = id.startsWith('ui:');
   const protectedHistory = workspace.protectedHistory(task);
   const excludedFromSelection = workspace.selectionMode && !workspace.canSelect(task);
-  return <View style={expanded ? {borderWidth: 1, borderColor: '#000'} : undefined}>
+  return <View>
     <TaskRow {...props} task={task} checked={workspace.selectionMode ? false : checked} selected={workspace.selectionMode && selected}
+      outlineSelected={expanded}
       selectionMode={workspace.selectionMode} roundCheck={!workspace.selectionMode}
       disabled={creating || protectedHistory || excludedFromSelection}
       onSyncPress={creating ? () => workspace.retryCreate(id) : props.onSyncPress}
       onCheckPress={() => workspace.selectionMode ? (!excludedFromSelection && workspace.toggle(id)) : (!protectedHistory && workspace.complete(id, !checked))}
       onLongPress={() => {if (!creating && !protectedHistory) workspace.select(id);}}
-      onPress={() => creating ? workspace.retryCreate(id) : workspace.selectionMode ? (!excludedFromSelection && workspace.toggle(id)) : workspace.expand(id)} />
+      onPress={() => creating ? workspace.retryCreate(id) : workspace.selectionMode ? (!excludedFromSelection && workspace.toggle(id)) : workspace.expand(id)}
+      rightAccessory={expanded && !creating && !protectedHistory ? <TaskQuickActions onEdit={() => workspace.edit(task)}
+        onDate={() => workspace.action('date', [id])} onMove={() => workspace.action('move', [id])}
+        onPriority={() => workspace.action('priority', [id])} onDelete={() => workspace.action('delete', [id])}
+        canMoveUp={!checked && workspace.canOrder(task, 'up')} canMoveDown={!checked && workspace.canOrder(task, 'down')}
+        onMoveUp={() => workspace.order(id, 'up')} onMoveDown={() => workspace.order(id, 'down')}
+        disabledActions={{date: !!checked, move: !!checked, priority: !!checked}} /> : null} />
     {protectedHistory && <Text style={{color: '#000', padding: 8}}>Change this recurring occurrence in Todoist. Its next occurrence is separate.</Text>}
-    {expanded && !creating && !protectedHistory && <TaskQuickActions onEdit={() => workspace.edit(task)}
-      onDate={() => workspace.action('date', [id])} onMove={() => workspace.action('move', [id])}
-      onPriority={() => workspace.action('priority', [id])} onDelete={() => workspace.action('delete', [id])}
-      canMoveUp={!checked && workspace.canOrder(task, 'up')} canMoveDown={!checked && workspace.canOrder(task, 'down')}
-      onMoveUp={() => workspace.order(id, 'up')} onMoveDown={() => workspace.order(id, 'down')}
-      disabledActions={{date: !!checked, move: !!checked, priority: !!checked}} />}
   </View>;
 }

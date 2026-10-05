@@ -1,5 +1,5 @@
 import React from 'react';
-import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {Text, Pressable, ScrollView, StyleSheet} from 'react-native';
 import {useFontScale} from '../utils/useFontScale';
 
 export type TaskQuickAction = 'edit' | 'date' | 'move' | 'priority' | 'up' | 'down' | 'delete';
@@ -14,6 +14,7 @@ export type TaskQuickActionsProps = {
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   disabledActions?: Partial<Record<TaskQuickAction, boolean>>;
+  maxWidth?: number;
 };
 
 const ACTIONS: Array<{key: TaskQuickAction; label: string; glyph: string; callback: keyof TaskQuickActionsProps}> = [
@@ -28,26 +29,27 @@ const ACTIONS: Array<{key: TaskQuickAction; label: string; glyph: string; callba
 
 export default function TaskQuickActions(props: TaskQuickActionsProps) {
   const scale = useFontScale();
-  return <View accessibilityLabel="Task actions" style={styles.container}>
-    {ACTIONS.map(action => {
+  const actions = ACTIONS;
+  return <ScrollView horizontal accessibilityLabel="Task actions" showsHorizontalScrollIndicator={false}
+    style={[styles.container, props.maxWidth !== undefined && {width: Math.max(0, props.maxWidth)}]} contentContainerStyle={styles.actions}>
+    {actions.map(action => {
       const orderUnavailable = (action.key === 'up' && props.canMoveUp === false) || (action.key === 'down' && props.canMoveDown === false);
       const disabled = !!props.disabledActions?.[action.key] || orderUnavailable;
       return <Pressable key={action.key} accessibilityRole="button" accessibilityLabel={action.label}
         accessibilityState={{disabled}} disabled={disabled} onPress={props[action.callback] as () => void}
         style={[styles.action, action.key === 'delete' && styles.deleteAction, disabled && styles.disabled]}>
-        <Text style={[styles.glyph, {fontSize: Math.round(17 * scale), lineHeight: Math.round(21 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.glyph}</Text>
-        <Text style={[styles.label, {fontSize: Math.round(12 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.key === 'up' ? 'Up' : action.key === 'down' ? 'Down' : action.label.replace(' task', '')}</Text>
+        <Text style={[styles.glyph, {fontSize: Math.round(19 * scale), lineHeight: Math.round(23 * scale)}, action.key === 'delete' && styles.deleteText]}>{action.glyph}</Text>
       </Pressable>;
     })}
-  </View>;
+  </ScrollView>;
 }
 
 const styles = StyleSheet.create({
-  container: {flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingTop: 6, paddingBottom: 2},
-  action: {minWidth: 52, minHeight: 48, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#777777', backgroundColor: '#ffffff'},
+  container: {backgroundColor: '#ffffff', flexGrow: 0, flexShrink: 1},
+  actions: {flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff'},
+  action: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff'},
   glyph: {fontWeight: '700', color: '#000000', lineHeight: 19},
-  label: {fontWeight: '600', color: '#000000', textAlign: 'center'},
-  deleteAction: {borderColor: '#000000'},
+  deleteAction: {},
   deleteText: {fontWeight: '700'},
   disabled: {opacity: 0.35},
 });
