@@ -1,5 +1,9 @@
 # SuperTask progress
 
+## Collection polish and stable sync footer - 5 October 2026
+
+Beta.18/code 23 is installed/enabled. New collection matches the plain New project action across the main pane; collection chips have faint square borders and regular-weight labels. Sync summary is one ellipsized line with full accessible text and a fixed footer height. Runtime `5dcccc1`, workspace `dd406a7`; 243 tests, TypeScript/lint, native package and Hermes checks pass. Nomad House view inspected; sync text bounds were identical before/after Refresh. Canonical and current installer hashes match; beta.17 installer removed. Inbox restored; no task/note edits or paid AI requests.
+
 ## Undimmed floating dialogs and installer cleanup - 5 October 2026
 
 User clarified that dialogs should overlay the existing screen rather than fill it. Beta.17/code 22 uses a fixed-size white floating panel on a transparent backdrop, with explicit screen dimensions and no animation. Successful history retries now clear stale warnings, and failed initial refreshes show the actual error. Runtime `3be6650`, workspace `fe8d299`; 242 tests, type/lint/native package/Hermes checks pass. Beta.17 is installed/enabled; floating calendar/menu and undimmed underlying list were inspected on the Nomad. The registered Plugin Manager Settings -> Tasks route opens the workspace without requiring the hidden note toolbar. Current canonical package and installer hashes match; beta.16 installer removed. Runtime Refresh and older-history fetch both settled without an error warning (22 active tasks/0 queued). Inbox restored; no modal left open. No task/note edits.

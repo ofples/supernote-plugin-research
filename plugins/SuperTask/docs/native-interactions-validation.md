@@ -48,3 +48,7 @@ Beta.15 remote history refresh is hardware-confirmed (22 active/0 queued). Beta.
 ### Beta.17 clarification and hardware caveat
 
 Beta.16 row actions, dismissal and normal Completed flow passed hardware checks; a history warning recurred, so prior no-error observations do not prove remote history success. Beta.17 floating undimmed panels and successful-retry warning cleanup have 242 passing tests plus native/Hermes verification. Device dialog/history checks pending. Nine old installers removed; beta.16 canonical package hash verified, no task/note edits.
+
+### Beta.18 collection/footer verification
+
+Beta.18/code23 runtime `5dcccc1751558113d7697b54d80a11fc2d4b8d64`, workspace `dd406a7`. Artifact `build/outputs/SuperTask-native-beta18.snplg`, 7,587,153 bytes; SHA256 `4ae0e3b893a7bc5cd903fed597f926c2db113d831c6286c1eca974505c640e1e`. All 243 tests, TypeScript/lint, native package inspection and Hermes pass. One-line/ellipsis/fixed-height/accessibility/footer-opening regression passes. Nomad Plugin Manager confirms version and ON; House screenshot confirms full-width plain New collection and faint collection chip borders. Sync text bounds `[23,1791][1211,1825]` unchanged before/after Refresh. Long-message behavior covered by regression, not forced on hardware. Current canonical/installer hashes match; beta.17 installer removed. Inbox restored, no modal left open, no task/note changes or new AI calls. Existing broader pending workflow checks remain.
