@@ -1481,6 +1481,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
+    // The host Home control occupies the top-right corner above this view.
+    paddingRight: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
