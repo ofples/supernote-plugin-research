@@ -120,7 +120,7 @@ async function todoistFetch(path, options = {}) {
       throw lastError;
     }
 
-    if (!response.ok) {
+    if (!(response.status >= 200 && response.status < 300)) {
       const error = new Error(`Todoist request failed (HTTP ${response.status}).`);
       error.status = response.status;
       throw error;
@@ -228,12 +228,19 @@ export async function reopenTask(taskId) {
  * Items carry completed_at plus the usual task fields.
  */
 async function fetchCompletedTasks(days = 30) {
-  const until = new Date();
-  const since = new Date(until.getTime() - days * 86400000);
-  const params =
-    `since=${encodeURIComponent(since.toISOString())}` +
-    `&until=${encodeURIComponent(until.toISOString())}`;
-  const items = await fetchAllPages('/tasks/completed/by_completion_date', params);
+  // Todoist limits each completed-history request to a three-month window.
+  // Load-more can extend further back, so page each bounded window separately.
+  const end = Date.now();
+  const start = end - Math.max(1, days) * 86400000;
+  let until = end;
+  const items = [];
+  while (until > start) {
+    const since = Math.max(start, until - 89 * 86400000);
+    const params = `since=${encodeURIComponent(new Date(since).toISOString())}` +
+      `&until=${encodeURIComponent(new Date(until).toISOString())}`;
+    items.push(...await fetchAllPages('/tasks/completed/by_completion_date', params));
+    until = since;
+  }
   log('API', `getCompletedTasks(${days}d): ${items.length} tasks`);
   return items;
 }

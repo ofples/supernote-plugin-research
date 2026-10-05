@@ -1,6 +1,6 @@
 /** Shared task row: checkbox completes, body opens details, sync symbol opens status. */
 
-import React from 'react';
+import React, {useState} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {log} from '../utils/debug';
 import Chip from './Chip';
@@ -32,10 +32,13 @@ type Props = {
   disabled?: boolean;
   selectionMode?: boolean;
   onLongPress?: (task: any) => void;
+  rightAccessory?: React.ReactNode;
+  outlineSelected?: boolean;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress, rightAccessory, outlineSelected = false}: Props) {
   const scale = useFontScale();
+  const [rowWidth, setRowWidth] = useState(0);
 
   const handleCheckPress = (event?: any) => {
     event?.stopPropagation?.();
@@ -65,6 +68,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   const hasMeta = chips.length > 0;
 
   return (
+    <View style={styles.rowHost} onLayout={event => setRowWidth(event.nativeEvent.layout.width)}>
     <Pressable
       style={[styles.row, compact && styles.compactRow, !hasMeta && styles.rowCentered]}
       onLongPress={() => onLongPress?.(task)}
@@ -103,6 +107,11 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
         </Pressable>
       ) : null}
     </Pressable>
+    {outlineSelected ? <View pointerEvents="none" style={styles.selectedOutline} /> : null}
+    {rightAccessory ? <View pointerEvents="box-none" style={styles.accessoryOverlay}>
+      {React.isValidElement(rightAccessory) ? React.cloneElement(rightAccessory as React.ReactElement<any>, {maxWidth: Math.max(0, rowWidth - 82)}) : rightAccessory}
+    </View> : null}
+    </View>
   );
 }
 
@@ -113,6 +122,8 @@ function formatDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
+  rowHost: {position: 'relative'},
+  accessoryOverlay: {position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center', backgroundColor: '#ffffff', zIndex: 2},
   syncTarget: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 4},
   syncSymbol: {fontSize: 23, fontWeight: '700', color: '#000'},
   row: {
@@ -128,6 +139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   compactRow: {paddingVertical: 6, paddingHorizontal: 12, minHeight: 56},
+  selectedOutline: {position: 'absolute', top: 0, left: 2, right: 0, bottom: 0, borderWidth: 1, borderBottomWidth: 0, borderColor: '#000000', borderStyle: 'solid', zIndex: 1},
   checkTarget: {
     width: 44,
     minHeight: 44,

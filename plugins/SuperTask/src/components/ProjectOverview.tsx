@@ -62,7 +62,7 @@ const s = StyleSheet.create({page: {flex: 1}, controls: {padding: 12, gap: 8, bo
   projectToggle: {flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: 14, gap: 12},
   chevron: {fontSize: 24, width: 24, color: '#000'}, name: {flex: 1, fontWeight: '600', color: '#000'},
   count: {color: '#000'}, open: {paddingHorizontal: 16, minHeight: 48, justifyContent: 'center'},
-  task: {marginLeft: 20, borderBottomWidth: 1, borderStyle: 'dotted', borderColor: '#777'},
+  task: {marginLeft: 20},
   emptyProject: {padding: 16, marginLeft: 38, fontSize: 15, color: '#000'},
-  collection: {padding: 12, paddingLeft: 50, alignSelf: 'stretch', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#000'},
+  collection: {padding: 12, paddingLeft: 50, alignSelf: 'stretch', borderBottomWidth: 1, borderColor: '#dddddd'},
   empty: {flex: 1, justifyContent: 'center', alignItems: 'center'}, emptyText: {fontSize: 18, color: '#000'}});
