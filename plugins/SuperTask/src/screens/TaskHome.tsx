@@ -27,7 +27,7 @@ import {getCompletedTasks, refreshCompletedTasks} from '../api/todoist';
 import {getCache, fetchTaskData, initTaskCache, subscribeCache} from '../cache/taskCache';
 import {completedData, offlineData, retryOffline, subscribeOffline, saveOfflineBatch} from '../offline/service';
 const workspaceService = require('../offline/service');
-const {projectTasks, composerDefaults, sameScope, projectContainers, projectContainerTasks} = require('../workspace/intents');
+const {projectTasks, composerDefaults, sameScope, projectContainers, projectContainerTasks, resolveContainerId, rowIdentity, protectedOccurrence, orderedTasks} = require('../workspace/intents');
 import useWorkspaceMutations from '../workspace/useWorkspaceMutations';
 const {syncStatusMessage} = require('../offline/status');
 const {visibleProjectIds, isProjectVisible} = require('../utils/projectVisibility');
@@ -72,6 +72,11 @@ export function syncChangeLabel(kind: string): string {
 }
 
 type ProjectMap = Record<string, string>;
+function withCurrentAccount(callback: (value: any) => any) {
+  const account = getCachedConfig()?.apiToken;
+  return (value: any) => {if (account === getCachedConfig()?.apiToken) return callback(value);};
+}
+
 
 export default function TaskHome({nav, focusTab, initialView, active = true}: Props) {
   const scale = useFontScale();
@@ -112,7 +117,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [deviceTasks, setDeviceTasks] = useState<any[]>([]);
   const [deviceLoaded, setDeviceLoaded] = useState(false);
   const [visibilityConfig, setVisibilityConfig] = useState<any>(cfg0 || {});
-  const [debugMode, setDebugModeOn] = useState(cfg0?.debugMode === true);
+  const [, setDebugModeOn] = useState(cfg0?.debugMode === true);
 
   // Done tab: fetched lazily on first visit (separate endpoint, not part of
   // the main cache -- completed history changes rarely and can be large)
@@ -122,32 +127,48 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [doneFetched, setDoneFetched] = useState(false);
   // F-030: footer toggle -- show completed-today tasks inline on the Today
   // tab, same row pattern as the Done tab (filled box, Done chip, reopen)
-  const [showDone, setShowDone] = useState(false);
+  const [completedExpanded, setCompletedExpanded] = useState<Record<string, boolean>>({});
+  const [historyDays, setHistoryDays] = useState(30);
+  const [historyLimit, setHistoryLimit] = useState(20);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionHistory, setSelectionHistory] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [composer, setComposer] = useState({value: '', projectId: null as string | null, sectionId: null as string | null, dueDate: '', explicit: false});
+  const [composer, setComposer] = useState({value: '', projectId: null as string | null, sectionId: null as string | null, dueDate: '', explicit: false, source: null as any});
+  const composerSubmission = useRef<any>(null);
   const [creatingDrafts, setCreatingDrafts] = useState<any[]>([]);
   const [actionSheet, setActionSheet] = useState<any>(null);
   const [actionName, setActionName] = useState('');
   const [actionLocation, setActionLocation] = useState({projectId: null as string | null, sectionId: null as string | null});
   const [actionDate, setActionDate] = useState('');
+  const [actionLabels, setActionLabels] = useState('');
   const [containerProof, setContainerProof] = useState<any>(null);
   const submissions = useRef(new Map<string, any>());
   const containerIdentity = useRef<any>(null);
   const submissionSequence = useRef(0);
   const mutations = useWorkspaceMutations(async () => {
-    const data = await offlineData(); setSyncInfo(data); dataFp.current = '';
+    const account = getCachedConfig()?.apiToken;
+    const data = await offlineData(); if (account !== getCachedConfig()?.apiToken) return;
+    setSyncInfo(data); dataFp.current = '';
     applyData(data.tasks, data.projects, data.sections);
-    setDoneTasks(await completedData());
-  }, setError);
-  const projected: any[] = projectContainerTasks(projectTasks([...baseTasks, ...creatingDrafts], mutations.intents), containerIntents);
+    const history = await completedData(); if (account === getCachedConfig()?.apiToken) setDoneTasks(history);
+  }, setError, () => getCachedConfig()?.apiToken);
+  const accountRef = useRef(getCachedConfig()?.apiToken);
+  const resolvedTab = activeTab.startsWith('project:') ? `project:${resolveContainerId(activeTab.slice(8), projectList)}` : activeTab;
+  const activeProject = resolvedTab.startsWith('project:') ? projectList.find(project => String(project.id) === resolvedTab.slice(8)) : null;
+  const completedViewKey = activeProject ? `project:${activeProject.localId || activeProject.id}` : resolvedTab;
+  const showDone = completedExpanded[completedViewKey] !== false;
+  const setShowDone = (update: (value: boolean) => boolean) => setCompletedExpanded(previous => ({...previous, [completedViewKey]: update(previous[completedViewKey] !== false)}));
+  const seedTasks = [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
+    .filter((task, index, list) => list.findIndex(value => rowIdentity(value) === rowIdentity(task)) === index);
+  const projected: any[] = projectContainerTasks(projectTasks(orderedTasks(seedTasks), mutations.intents), containerIntents);
   const tasks: any[] = projected.filter((task: any) => !task.deleted && !task.completed);
   const projectedDone: any[] = projectContainerTasks(projectTasks(doneTasks, mutations.intents), containerIntents).filter((task: any) => task.completed !== false && !task.deleted);
   const optimisticDone: any[] = projected.filter((task: any) => task.completed && !task.deleted);
   useEffect(() => {
     if (!active) return;
-    loadConfig().then(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);}).catch(() => {});
+    loadConfig().then(withCurrentAccount(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);})).catch(() => {});
   }, [active]);
 
   // B-033 (SNDEV-69): the plugin view appears via partial refresh, and the
@@ -187,7 +208,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     // Cold-start corrector: on warm opens these all match the cfg0-seeded
     // initial state, and every setter bails without a re-render (primitives
     // compare equal; the array setter returns prev on deep-equality).
-    loadConfig().then(config => {
+    loadConfig().then(withCurrentAccount(config => {
       // Cold-start default-tab corrector. A deep-link focusTab or live
       // session tab wins over the config default (F-038).
       if (!initialView && !focusTab && !getSessionTab()) {
@@ -196,21 +217,23 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       setVisibilityConfig(config);
       
       setDebugModeOn(config.debugMode === true);
-    });
+    }));
 
     // Device-tab data is a fast local registry read, independent of note
     // context -- run it immediately and in parallel. It used to be
     // serialized BEHIND the ~3s getElements scan below, leaving the
     // (possibly default) Device tab on a false "no tasks" empty state.
     (async () => {
+      const account = getCachedConfig()?.apiToken;
       try {
         const allReg = await getAllRegistryTasks();
+        if (account !== getCachedConfig()?.apiToken) return;
         setDeviceTasks(allReg);
         log('TaskHome', `Registry: ${allReg.length} total device tasks`);
       } catch (e: any) {
         log('TaskHome', `Device registry read failed: ${e.message}`);
       } finally {
-        setDeviceLoaded(true);
+        if (account === getCachedConfig()?.apiToken) setDeviceLoaded(true);
       }
     })();
 
@@ -224,6 +247,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         if (!fp?.success || !pn?.success || !filePath.toLowerCase().endsWith('.note')) return;
 
         const fileName = filePath.split('/').pop()?.replace('.note', '') || '';
+        const account = getCachedConfig()?.apiToken;
         log('TaskHome', 'Note context available');
 
         // B-033 mitigation A: read the (fast, local) registry FIRST and
@@ -238,7 +262,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           log('TaskHome', `Registry read failed: ${e.message}`);
         }
         setNoteCtx({fileName, pageNum, filePath});
-        setRegistryNoteTasks(regTasks);
+        if (account === getCachedConfig()?.apiToken) setRegistryNoteTasks(regTasks);
 
         // Scan page elements for supertask:// links
         try {
@@ -290,28 +314,42 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     setCollectionList(fetchedSections || []);
     setTasks((fetchedTasks || []).filter(task => !task.completed && !task.deleted && !task.remoteMissing));
   }, []);
+  useEffect(() => {
+    if (!active || accountRef.current === getCachedConfig()?.apiToken) return;
+    accountRef.current = getCachedConfig()?.apiToken;
+    mutations.cancel(); submissions.current.clear(); setCreatingDrafts([]); setContainerIntents([]);
+    setComposer({value: '', projectId: null, sectionId: null, dueDate: '', explicit: false, source: null});
+    setActionSheet(null); setSelectedIds([]); setSelectionMode(false); setExpandedId(null);
+    setDoneTasks([]); setDoneFetched(false); setTasks([]); setProjectList([]); setCollectionList([]); dataFp.current = '';
+    setSyncInfo(null); setDeviceTasks([]); setRegistryNoteTasks([]); setHistoryLoading(false); setHistoryDays(30); setHistoryLimit(20); setError(''); setDoneLoading(false);
+    const account = getCachedConfig()?.apiToken;
+    offlineData().then(data => {if (account === getCachedConfig()?.apiToken) {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}}).catch(() => {});
+    getAllRegistryTasks().then(items => {if (account === getCachedConfig()?.apiToken) setDeviceTasks(items);}).catch(() => {});
+    if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(items => {if (account === getCachedConfig()?.apiToken) setRegistryNoteTasks(items);}).catch(() => {});
+  }, [active, mutations, applyData, noteCtx?.filePath]);
   useEffect(() => subscribeCache((data: any) => {
     setSyncInfo(data); setError(''); setLoading(false);
     applyData(data.tasks, data.projects, data.sections);
-    getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
-    completedData().then(setDoneTasks).catch(() => {});
-    if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(setRegistryNoteTasks).catch(() => {});
+    getAllRegistryTasks().then(withCurrentAccount(setDeviceTasks)).catch(() => {});
+    completedData().then(withCurrentAccount(setDoneTasks)).catch(() => {});
+    if (noteCtx?.filePath) getTasksForNote(noteCtx.filePath).then(withCurrentAccount(setRegistryNoteTasks)).catch(() => {});
   }), [applyData, noteCtx?.filePath]);
 
   // Reconcile registry: remove entries for tasks no longer in Todoist,
   // then heal any note renames (B-005, once per session, fire-and-forget)
   const reconcileRegistry = useCallback(async (fetchedTasks: any[]) => {
+    const account = getCachedConfig()?.apiToken;
     healRenamedNotes(fetchedTasks)
       .then(healedCount => {
         if (healedCount > 0) {
           // Refresh Device tab data so healed paths/labels show immediately
-          getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
+          getAllRegistryTasks().then(withCurrentAccount(setDeviceTasks)).catch(() => {});
         }
       })
       .catch(() => {});
     try {
       const allReg = await getAllRegistryTasks();
-      setDeviceTasks(allReg);
+      if (account === getCachedConfig()?.apiToken) setDeviceTasks(allReg);
     } catch (syncErr: any) {
       log('TaskHome', `Registry sync failed (non-fatal): ${syncErr.message}`);
     }
@@ -319,10 +357,12 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
 
   // Fetch via cache layer (used by Refresh button)
   const fetchData = useCallback(async (silent = false) => {
+    const account = getCachedConfig()?.apiToken;
     if (!silent) setLoading(true);
     setError('');
     try {
       const data = await fetchTaskData();
+      if (account !== getCachedConfig()?.apiToken) return;
       if (data) {
         setSyncInfo(data);
         applyData(data.tasks, data.projects, data.sections);
@@ -332,16 +372,18 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         setError('No Todoist token yet. Tap Settings (top right), then the Setup tab, to add one.');
       }
     } catch (err: any) {
+      if (account !== getCachedConfig()?.apiToken) return;
       logError('TaskHome', err);
       setError(err.message);
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && account === getCachedConfig()?.apiToken) setLoading(false);
     }
   }, [applyData, reconcileRegistry]);
 
   // Mount: serve cached data immediately, then refresh in background
   useEffect(() => {
     log('TaskHome', 'MOUNT');
+    const account = getCachedConfig()?.apiToken;
 
     (async () => {
       // Stale-while-revalidate: render from cache if available. On a cold
@@ -353,6 +395,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       if (!cached) {
         cached = await initTaskCache();
       }
+      if (account !== getCachedConfig()?.apiToken) return;
       if (cached) {
         setSyncInfo(cached);
         log('TaskHome', `Cache hit: ${cached.tasks.length} tasks (age: ${Date.now() - cached.timestamp}ms)`);
@@ -367,7 +410,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         healRenamedNotes(cached.tasks)
           .then(healedCount => {
             if (healedCount > 0) {
-              getAllRegistryTasks().then(setDeviceTasks).catch(() => {});
+              getAllRegistryTasks().then(withCurrentAccount(setDeviceTasks)).catch(() => {});
             }
           })
           .catch(() => {});
@@ -376,6 +419,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       // Always fetch fresh data (deduplicates with any in-flight prefetch)
       fetchTaskData()
         .then((data: any) => {
+          if (account !== getCachedConfig()?.apiToken) return;
           if (data) {
             setSyncInfo(data);
             applyData(data.tasks, data.projects, data.sections);
@@ -387,6 +431,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           setLoading(false);
         })
         .catch((err: any) => {
+          if (account !== getCachedConfig()?.apiToken) return;
           logError('TaskHome', err);
           if (!cached) setError(err.message);
           setLoading(false);
@@ -399,37 +444,44 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   useEffect(() => {
     if ((activeTab !== 'done' && !showDone) || doneFetched || doneLoading) return;
     (async () => {
+      const account = getCachedConfig()?.apiToken;
       setDoneLoading(true);
       setDoneError('');
       try {
         const items = await getCompletedTasks(30);
+        if (account !== getCachedConfig()?.apiToken) return;
         setDoneTasks(items || []);
         setDoneFetched(true);
         log('TaskHome', `Done tab: ${items?.length ?? 0} completed tasks (30d)`);
         // Render durable history first, then refresh its remote cache. A fresh
         // installation's active snapshot cannot contain completed history.
         setDoneLoading(false);
-        refreshCompletedTasks(30).then(setDoneTasks).catch(() => {
-          setDoneError('Showing saved completed history. Todoist history could not be refreshed right now.');
+        refreshCompletedTasks(30).then(history => {if (account === getCachedConfig()?.apiToken) setDoneTasks(history);}).catch(() => {
+          if (account === getCachedConfig()?.apiToken) setDoneError('Showing saved completed history. Todoist history could not be refreshed right now.');
         });
       } catch (err: any) {
+        if (account !== getCachedConfig()?.apiToken) return;
         logError('TaskHome', err);
         setDoneError(`Could not load completed tasks: ${err.message}`);
       } finally {
-        setDoneLoading(false);
+        if (account === getCachedConfig()?.apiToken) setDoneLoading(false);
       }
     })();
   }, [activeTab, showDone, doneFetched, doneLoading]);
 
-  const handleReopen = (id: string) => mutations.mutate([id], {kind: 'complete', completed: false});
+  const historyProtected = (task: any) => protectedOccurrence(task, syncInfo?.pendingChanges || []) &&
+    !(!task.occurrenceHistory && !task.awaitingRecurrence && mutations.intents.some(intent => intent.kind === 'complete' && intent.completed && intent.ids.includes(String(task.id))));
+  const findWorkspaceTask = (id: string) => [...tasks, ...projectedDone, ...optimisticDone].find(task => rowIdentity(task) === id);
+  const mutationIds = (ids: string[]) => ids.map(id => findWorkspaceTask(id)).filter(task => task && !historyProtected(task)).map(task => String(task.id));
+  const handleReopen = (id: string) => mutations.mutate(mutationIds([id]), {kind: 'complete', completed: false});
 
   const toggleSelection = (id: string) => setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
-  const clearSelection = () => {setSelectionMode(false); setSelectedIds([]);};
+  const clearSelection = () => {setSelectionMode(false); setSelectionHistory(false); setSelectedIds([]);};
   const sel = {selectedIds, busy: false, clearSelection,
     completeOne: (id: string) => selectionMode ? toggleSelection(id) : mutations.mutate([id], {kind: 'complete', completed: true})};
   useEffect(() => {const unsubscribe = subscribeOffline(() => {
-    offlineData().then(data => {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);}).catch(() => {});
-    completedData().then(setDoneTasks).catch(() => {});
+    offlineData().then(withCurrentAccount(data => {setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);})).catch(() => {});
+    completedData().then(withCurrentAccount(setDoneTasks)).catch(() => {});
   }); return () => {unsubscribe();};}, [applyData]);
 
   // Jump straight into a note at a task's page. Registry pages are 0-based,
@@ -597,8 +649,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     if (activeTab === 'note') return <ScrollView>{renderThisNote()}</ScrollView>;
     if (activeTab === 'tomorrow') return renderSimpleTasks(projectFiltered(tasks).filter(task => (task.due?.date || '').slice(0, 10) === tomorrow), 'No tasks due tomorrow');
     if (activeTab === 'inbox') return renderProjectTasks(inboxProject?.id, 'Inbox');
-    if (activeTab.startsWith('project:')) {
-      const id = activeTab.slice('project:'.length);
+    if (resolvedTab.startsWith('project:')) {
+      const id = resolvedTab.slice('project:'.length);
       return renderProjectTasks(id, projectMap[id] || 'Unavailable project');
     }
     if (activeTab === 'today') return renderTodayTab();
@@ -609,7 +661,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   };
 
   const renderDoneTab = () => {
-    if (doneLoading) {
+      if (doneLoading && !doneTasks.length) {
       return (
         <View style={styles.centered}>
           <Text style={[styles.loadingText, {fontSize: Math.round(16 * scale)}]}>Loading completed tasks...</Text>
@@ -632,12 +684,13 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       );
     }
 
-    const items = groupDoneByBucket(visibleDone, today);
+    const items = groupDoneByBucket(visibleDone.sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || '')).slice(0, historyLimit), today);
 
     return (
       <FlatList
         data={items}
         keyExtractor={item => item.key}
+        ListFooterComponent={<Pressable style={styles.headerButton} disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Load more'}</Text></Pressable>}
         renderItem={({item}) => {
           if (item.type === 'header') {
             return <SectionHeader title={item.title} count={item.count} />;
@@ -773,6 +826,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const renderProjectsTab = () => {
     const filtered = projectList.filter(project => shownProjectIds.includes(String(project.id)));
     return <ProjectOverview projects={filtered} tasks={projectFiltered(tasks)} sections={collectionList} selectedIds={selectedIds} TaskComponent={TaskRow}
+      onDeselect={ids => setSelectedIds(previous => previous.filter(id => !ids.includes(id)))}
       onSelect={sel.completeOne} onTask={handleTaskPress} busy={sel.busy} onSyncPress={() => setSyncSheetOpen(true)}
       onProject={project => changeView(`project:${project.id}`)} />;
   };
@@ -870,114 +924,160 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const inboxProject = projectList.find(project => project.is_inbox_project || project.inbox_project || project.isInbox || String(project.name).toLowerCase() === 'inbox');
   const nextDay = new Date(); nextDay.setDate(nextDay.getDate() + 1);
   const tomorrow = localDate(nextDay);
-  const defaults = composerDefaults(activeTab, projectList, today, tomorrow, visibilityConfig);
+  const defaults = composerDefaults(resolvedTab, projectList, today, tomorrow, visibilityConfig);
   const requestedLocation = composer.explicit ? composer : defaults;
   const composerLocation = {...requestedLocation,
-    projectId: projectList.find(project => project.id === requestedLocation.projectId || project.localId === requestedLocation.projectId)?.id || requestedLocation.projectId,
-    sectionId: collectionList.find(section => section.id === requestedLocation.sectionId || section.localId === requestedLocation.sectionId)?.id || requestedLocation.sectionId};
+    projectId: resolveContainerId(requestedLocation.projectId, projectList),
+    sectionId: resolveContainerId(requestedLocation.sectionId, collectionList)};
   const destinationLabel = [projectMap[composerLocation.projectId] || 'Inbox',
     collectionList.find(section => section.id === composerLocation.sectionId)?.name].filter(Boolean).join(' / ');
-  const contextTasks = activeTab.startsWith('project:') ? tasks.filter(task => String(task.project_id) === activeTab.slice(8)) :
+  const contextTasks = resolvedTab.startsWith('project:') ? tasks.filter(task => String(task.project_id) === resolvedTab.slice(8)) :
     activeTab === 'inbox' ? tasks.filter(task => !task.project_id || String(task.project_id) === String(inboxProject?.id)) :
     activeTab === 'today' ? projectFiltered(tasks).filter(task => task.due?.date && task.due.date.slice(0, 10) <= today) :
     activeTab === 'tomorrow' ? projectFiltered(tasks).filter(task => task.due?.date?.slice(0, 10) === tomorrow) :
     activeTab === 'upcoming' ? projectFiltered(tasks).filter(task => !task.due?.date || task.due.date.slice(0, 10) > today) :
     activeTab === 'note' ? noteTasks.map(item => item.task) : activeTab === 'device' ? deviceTasks.filter(isActiveRegistryTask) :
-    activeTab === 'done' ? projectedDone : projectFiltered(tasks);
-  const selectableTasks = contextTasks.filter((task: any) => !String(task.id).startsWith('ui:'));
+    activeTab === 'done' ? projectFiltered(projectedDone) : projectFiltered(tasks);
   const completedItems = [...projectedDone, ...optimisticDone].filter((task, index, list) =>
-    list.findIndex(value => String(value.id) === String(task.id)) === index).filter(task => {
-      if (activeTab.startsWith('project:')) return String(task.project_id) === activeTab.slice(8);
+    list.findIndex(value => rowIdentity(value) === rowIdentity(task)) === index).filter(task => {
+      if (resolvedTab.startsWith('project:')) return String(task.project_id) === resolvedTab.slice(8);
       if (activeTab === 'inbox') return !task.project_id || String(task.project_id) === String(inboxProject?.id);
-      if (activeTab === 'today') return task.completed_at?.slice(0, 10) === today;
+      if (activeTab === 'today') return !!task.due?.date && task.due.date.slice(0, 10) <= today;
       if (activeTab === 'tomorrow') return task.due?.date?.slice(0, 10) === tomorrow;
       if (activeTab === 'note') return registryNoteTasks.some(value => value.id === task.id);
       if (activeTab === 'device') return deviceTasks.some(value => value.id === task.id);
+      if (activeTab === 'upcoming') return Object.prototype.hasOwnProperty.call(task, 'due') && (!task.due?.date || task.due.date.slice(0, 10) > today);
       return isProjectVisible(visibilityConfig, task.project_id, projectList);
-    });
+    }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
+  const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
+  const selectableKey = selectableTasks.map((task: any) => rowIdentity(task)).join('|');
+  useEffect(() => {if (selectionMode) setSelectedIds(previous => previous.filter(id => selectableKey.split('|').includes(id)));}, [selectionMode, selectableKey]);
+  const loadMoreHistory = () => {
+    const total = activeTab === 'done' ? projectFiltered(projectedDone).length : completedItems.length;
+    if (historyLimit < total) {setHistoryLimit(value => value + 20); return;}
+    if (historyLoading) return;
+    const account = getCachedConfig()?.apiToken, days = historyDays + 30;
+    setHistoryLoading(true);
+    refreshCompletedTasks(days).then(items => {
+      if (account !== getCachedConfig()?.apiToken) return;
+      setHistoryDays(days); setDoneTasks(items); setHistoryLimit(value => value + 20);
+    }).catch(() => {if (account === getCachedConfig()?.apiToken) setDoneError('Older history is unavailable. Saved tasks remain visible.');})
+      .finally(() => {if (account === getCachedConfig()?.apiToken) setHistoryLoading(false);});
+  };
   const openTaskAction = (kind: string, ids: string[]) => {
     if (!ids.length) {setError('Select one or more tasks first.'); return;}
-    const task = tasks.find(value => String(value.id) === ids[0]);
+    const task = findWorkspaceTask(ids[0]);
+    const targets = mutationIds(ids);
+    if (!targets.length) {setError('These recurring occurrences must be changed in Todoist.'); return;}
     setActionDate(task?.due?.date?.slice(0, 10) || '');
     setActionLocation({projectId: task?.project_id || inboxProject?.id || null, sectionId: task?.section_id || null});
-    setActionSheet({kind, ids: [...ids]}); setError('');
+    setActionLabels(task?.labels?.join(', ') || '');
+    setActionSheet({kind, ids: targets}); setError('');
   };
   const openContainerAction = (kind: 'project' | 'collection', id?: string, projectId?: string) => {
     if (id?.startsWith('ui:') || projectId?.startsWith('ui:')) {setError('This container is still being saved on your device.'); return;}
     const container = id && (kind === 'project' ? projectList : collectionList).find(value => String(value.id) === id);
+    const parent = kind === 'project' ? container : projectList.find(project => String(project.id) === String(projectId || container?.project_id));
+    if (parent && (parent.is_inbox_project || parent.inbox_project || parent.isInbox) && kind === 'project') {setError('Inbox is protected from rename and deletion.'); return;}
+    if ([container, parent].some(value => value && (value.is_read_only || value.is_frozen || value.can_edit === false || value.role === 'viewer' || ((value.is_shared || value.workspace_id) && value.can_edit !== true)))) {setError('This location requires verified edit permissions.'); return;}
     setActionName(container?.name || ''); setContainerProof(null);
-    const sheet = {kind: 'container', containerKind: kind, id, projectId, request: {}, identity: {}};
+    id = resolveContainerId(id, kind === 'project' ? projectList : collectionList) || undefined;
+    projectId = resolveContainerId(projectId, projectList) || undefined;
+    const sheet = {kind: 'container', containerKind: kind, id, projectId, request: {}, identity: {}, account: getCachedConfig()?.apiToken};
     containerIdentity.current = sheet.identity;
     setActionSheet(sheet);
-    if (id) workspaceService.inspectOfflineContainer(kind, id).then((proof: any) => {if (containerIdentity.current === sheet.identity) setContainerProof(proof);}).catch((cause: any) => setError(cause.message));
+    if (id) workspaceService.inspectOfflineContainer(kind, id).then((proof: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setContainerProof(proof);}).catch(withCurrentAccount((cause: any) => setError(cause.message)));
   };
   const performContainerAction = async (action: string, mode?: string) => {
-    const sheet = actionSheet; setActionSheet(null);
+    const sheet = actionSheet;
+    if (sheet.account !== getCachedConfig()?.apiToken) {setActionSheet(null); return;}
+    if (!sheet.frozen) sheet.frozen = {action, mode, name: actionName.trim(), proof: containerProof};
+    const frozen = sheet.frozen; action = frozen.action; mode = frozen.mode;
+    setActionSheet(null);
     const operation = {sequence: ++submissionSequence.current, scope: sheet.containerKind,
       action: action === 'delete' ? 'delete' : sheet.id ? 'rename' : 'create', id: String(sheet.id || `ui:container:${submissionSequence.current}`),
-      name: actionName.trim(), projectId: sheet.projectId, mode,
+      name: frozen.name, projectId: sheet.projectId, mode,
       destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId};
     setContainerIntents(previous => [...previous, operation]);
     try {
+      let created: any;
       if (action === 'save') {
-        if (sheet.id) await (sheet.containerKind === 'project' ? workspaceService.renameOfflineProject : workspaceService.renameOfflineCollection)(sheet.id, actionName.trim(), sheet.request);
-        else if (sheet.containerKind === 'project') await workspaceService.createOfflineProject(actionName.trim(), {}, sheet.request);
-        else await workspaceService.createOfflineCollection(sheet.projectId, actionName.trim(), sheet.request);
+        if (sheet.id) await (sheet.containerKind === 'project' ? workspaceService.renameOfflineProject : workspaceService.renameOfflineCollection)(sheet.id, frozen.name, sheet.request);
+        else if (sheet.containerKind === 'project') created = await workspaceService.createOfflineProject(frozen.name, {}, sheet.request);
+        else created = await workspaceService.createOfflineCollection(sheet.projectId, frozen.name, sheet.request);
       } else await workspaceService.deleteOfflineContainer(sheet.containerKind, sheet.id, {mode,
         destinationProjectId: sheet.containerKind === 'project' ? inboxProject?.id : sheet.projectId,
-        confirmCount: containerProof.count, scopeToken: containerProof.scopeToken, includeUncached: mode === 'delete'}, sheet.request);
+        confirmCount: frozen.proof.count, scopeToken: frozen.proof.scopeToken, includeUncached: mode === 'delete'}, sheet.request);
+      if (sheet.account !== getCachedConfig()?.apiToken) return;
+      if (created?.id) {
+        const createdId = String(created.id);
+        setActiveTab(previous => previous === `project:${operation.id}` ? `project:${createdId}` : previous);
+        setComposer(previous => ({...previous, projectId: previous.projectId === operation.id ? createdId : previous.projectId,
+          sectionId: previous.sectionId === operation.id ? createdId : previous.sectionId}));
+      }
       await refreshSyncSheet();
-    } catch (cause: any) {setError(cause.message); await refreshSyncSheet().catch(() => {}); setActionSheet((current: any) => current || sheet);}
+    } catch (cause: any) {if (sheet.account !== getCachedConfig()?.apiToken) return; setError(cause.message); await refreshSyncSheet().catch(() => {}); setActionSheet((current: any) => current || sheet);}
     finally {setContainerIntents(previous => previous.filter(value => value.sequence !== operation.sequence));}
   };
   const saveComposer = () => {
     if (!composer.value.trim()) return;
+    if (composerSubmission.current === composer) return;
+    if (activeTab === 'upcoming' && !composerLocation.dueDate) {setError('Choose a calendar date for this Upcoming task.'); return;}
+    if (!composerLocation.projectId) {setError('Choose a task destination first.'); return;}
+    if (String(composerLocation.projectId).startsWith('ui:') || String(composerLocation.sectionId || '').startsWith('ui:')) {setError('This destination is still being saved locally. Your draft is retained.'); return;}
     const id = `ui:${++submissionSequence.current}`;
     let parsed;
     try {parsed = splitTitleDescription(composer.value);} catch (cause: any) {setError(cause.message); return;}
+    composerSubmission.current = composer;
     const draft = {content: parsed.content, description: parsed.description, projectId: composerLocation.projectId,
       sectionId: composerLocation.sectionId, dueDate: composerLocation.dueDate, dueString: composerLocation.dueDate, priority: 1};
-    const submission = {draft, request: {}, capturedAt: Date.now()};
+    const submission = {draft, request: {}, capturedAt: Date.now(), account: getCachedConfig()?.apiToken,
+      source: composer.source};
     submissions.current.set(id, submission);
     setCreatingDrafts(previous => [...previous, {...draft, id, project_id: draft.projectId, section_id: draft.sectionId,
-      due: draft.dueDate ? {date: draft.dueDate} : null, syncState: 'pending'}]);
-    setComposer(previous => ({...previous, value: ''}));
+      due: draft.dueDate ? {date: draft.dueDate} : null, syncState: 'pending', savingLocally: true}]);
+    setComposer(previous => ({...previous, value: '', source: null}));
     persistComposer(id);
   };
   const persistComposer = async (id: string) => {
     const submission = submissions.current.get(id); if (!submission || submission.saving) return;
+    if (submission.account !== getCachedConfig()?.apiToken) return;
     submission.saving = true;
     try {
-      await saveOfflineBatch([submission.draft], null, submission.capturedAt, submission.request);
+      await saveOfflineBatch([submission.draft], submission.source, submission.capturedAt, submission.request);
+      if (submission.account !== getCachedConfig()?.apiToken) return;
       await refreshSyncSheet();
       setCreatingDrafts(previous => previous.filter(task => task.id !== id)); submissions.current.delete(id);
     } catch {
-      setCreatingDrafts(previous => previous.map(task => task.id === id ? {...task, syncState: 'attention'} : task));
+      if (submission.account !== getCachedConfig()?.apiToken) return;
+      setCreatingDrafts(previous => previous.map(task => task.id === id ? {...task, syncState: 'attention', savingLocally: false} : task));
       setError('A new task could not be confirmed on disk. Tap its sync symbol to retry the same save; your draft is retained.');
     } finally {submission.saving = false;}
   };
   const canOrder = (task: any, direction: string) => {
-    if (!activeTab.startsWith('project:') && activeTab !== 'inbox') return false;
+    if (!resolvedTab.startsWith('project:') && activeTab !== 'inbox' && activeTab !== 'projects') return false;
     const siblings = tasks.filter(value => String(value.project_id) === String(task.project_id) &&
       String(value.section_id || '') === String(task.section_id || '') && String(value.parent_id || '') === String(task.parent_id || ''));
     const index = siblings.findIndex(value => value.id === task.id);
-    return !!task.order_key && (direction === 'up' ? index > 0 : index >= 0 && index < siblings.length - 1);
+    return siblings.every(value => !!value.order_key) && (direction === 'up' ? index > 0 : index >= 0 && index < siblings.length - 1);
   };
   const workspace = {selectedIds, selectionMode, expandedId, toggle: toggleSelection,
-    project: (task: any) => projectTasks([task], mutations.intents)[0],
-    select: (id: string) => {setSelectionMode(true); setSelectedIds(previous => previous.includes(id) ? previous : [...previous, id]);},
+    identity: rowIdentity, protectedHistory: historyProtected,
+    project: (task: any) => historyProtected(task) ? task : projectTasks([task], mutations.intents)[0],
+    canSelect: (task: any) => !historyProtected(task) && (!!task.completed === selectionHistory),
+    select: (id: string) => {setSelectionHistory(!!findWorkspaceTask(id)?.completed); setSelectionMode(true); setSelectedIds([id]);},
     expand: (id: string) => setExpandedId(previous => previous === id ? null : id),
-    complete: (id: string, completed: boolean) => String(id).startsWith('ui:') ? persistComposer(id) : mutations.mutate([id], {kind: 'complete', completed}),
+    complete: (id: string, completed: boolean) => String(id).startsWith('ui:') ? persistComposer(id) : mutations.mutate(mutationIds([id]), {kind: 'complete', completed}),
     edit: handleTaskPress, action: openTaskAction, canOrder,
     retryCreate: persistComposer,
     order: (id: string, direction: string) => {
-      const task = tasks.find(value => String(value.id) === id); if (!task) return;
-      mutations.mutate(tasks.filter(value => sameScope(value, task)).map(value => String(value.id)), {kind: 'order', taskId: id, direction});
+      const task = findWorkspaceTask(id); if (!task) return;
+      mutations.mutate(tasks.filter(value => sameScope(value, task)).map(value => String(value.id)), {kind: 'order', taskId: String(task.id), direction});
     }};
   const changeView = (view: string) => {
     const next = normalizeTaskView(view);
     sel.clearSelection(); setActiveTab(next); setSessionTab(next);
-    setExpandedId(null);
+    setExpandedId(null); setHistoryLimit(20);
     setComposer(previous => previous.value.trim() ? previous : {...previous, explicit: false});
     saveConfig({lastOpenedTab: next}).catch(() => {});
   };
@@ -993,7 +1093,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   }
   const syncMessage = syncStatusMessage(syncInfo || {});
   const refreshSyncSheet = async () => {
-    const data = await offlineData(); setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);
+    const account = getCachedConfig()?.apiToken;
+    const data = await offlineData(); if (account !== getCachedConfig()?.apiToken) return;
+    setSyncInfo(data); applyData(data.tasks, data.projects, data.sections);
   };
   const retryChange = async (id: string) => {
     if (syncRetrying) return;
@@ -1018,8 +1120,6 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       ...(group.tasks.length ? group.tasks.map((task: any) => ({key: task.id, type: 'task', task})) : [{key: `empty:${group.id}`, type: 'empty'}]),
     ]);
     return <View style={styles.body}>
-      <View style={styles.projectHeading}><Text style={styles.projectTitle}>{name}</Text>
-        <Pressable style={styles.headerButton} accessibilityLabel={`Project menu for ${name}`} onPress={() => openContainerAction('project', id)}><Text style={styles.headerButtonText}>•••</Text></Pressable></View>
       <FlatList data={rows} keyExtractor={(item: any) => item.key} renderItem={({item}: any) => item.type === 'collection' ?
         <SectionHeader title={item.group.name} count={item.group.tasks.length} action={item.group.id !== 'unavailable' &&
           <View style={{flexDirection: 'row'}}><Pressable style={styles.headerButton} accessibilityLabel={`New task in ${item.group.name}`} onPress={() => setComposer(previous => ({...previous, explicit: true, projectId: id || null, sectionId: item.group.id || null}))}><Text style={styles.headerButtonText}>To here</Text></Pressable>
@@ -1039,11 +1139,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
           onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
           onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
-          onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => String(task.id)))} /> : <>
+          onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} /> : <>
           <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
           <View style={styles.headerButtons}>
-            <Pressable style={styles.headerButton} onPress={() => setSelectionMode(true)} accessibilityLabel="Select tasks"><Text style={styles.headerButtonText}>Select</Text></Pressable>
-            {debugMode && <Pressable style={styles.headerButton} onPress={() => nav.push('debug')}><Text style={styles.headerButtonText}>Log</Text></Pressable>}
             <Pressable style={styles.headerButton} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
             <Pressable style={styles.headerButton} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
           </View>
@@ -1057,13 +1155,20 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       ) : null}
 
       {error ? <View style={styles.jumpError}><Text style={styles.jumpErrorText}>{error}</Text></View> : null}
+      {mutations.failures.map(failure => <View key={failure.sequence} style={{padding: 8, flexDirection: 'row', gap: 8}}>
+        <Text style={{color: '#000', flex: 1}}>{failure.error}</Text>
+        <Pressable style={styles.headerButton} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
+      </View>)}
       <View style={styles.workspace}>
-        <TaskSidebar activeView={activeTab} projects={projectList} visibleProjectIds={shownProjectIds}
+        <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
           noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
           onCreateProject={() => openContainerAction('project')} onProjectMenu={id => openContainerAction('project', String(id))} />
         <View style={styles.body}>
+          <View style={styles.projectHeading}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
+            <Pressable style={styles.headerButton} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
           {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
-            onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true}))} dueDate={composerLocation.dueDate}
+            onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
+              source: previous.value ? previous.source : activeTab === 'note' && noteCtx ? {filePath: noteCtx.filePath, pageNum: noteCtx.pageNum} : null}))} dueDate={composerLocation.dueDate}
             destinationLabel={destinationLabel} onSubmit={saveComposer}
             onChooseDate={() => {setActionDate(composerLocation.dueDate); setActionSheet({kind: 'composer-date'});}}
             onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
@@ -1072,8 +1177,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             <Pressable style={styles.headerButton} accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}} onPress={() => setShowDone(value => !value)}>
               <Text style={styles.headerButtonText}>{showDone ? '⌄' : '›'} Completed · {completedItems.length}</Text>
             </Pressable>
-            {showDone && <FlatList data={completedItems} keyExtractor={task => `completed:${task.id}`} renderItem={({item}) =>
+            {showDone && <FlatList data={completedItems.slice(0, historyLimit)} keyExtractor={rowIdentity} renderItem={({item}) =>
               <TaskRow task={item} checked completedAt={item.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress} />} />}
+            {showDone && <Pressable style={styles.headerButton} disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Load more'}</Text></Pressable>}
             {showDone && doneError ? <Text style={styles.errorText}>{doneError}</Text> : null}
           </View>}
         </View>
@@ -1089,7 +1195,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             sel.clearSelection();
             fetchData(true);
             if (activeTab === 'done' || showDone) {
-              refreshCompletedTasks(30).then(setDoneTasks).catch((err: any) => setDoneError(`History refresh failed: ${err.message}`));
+              refreshCompletedTasks(30).then(withCurrentAccount(setDoneTasks)).catch(withCurrentAccount((err: any) => setDoneError(`History refresh failed: ${err.message}`)));
             }
           }}>
             <Text style={[styles.headerButtonText, {fontSize: Math.round(14 * scale)}]}>Refresh</Text>
@@ -1101,7 +1207,16 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={styles.headerButton} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
           <ScrollView contentContainerStyle={styles.sheetContent}>
+            {actionSheet?.kind === 'list-menu' && <>
+              <Pressable style={styles.headerButton} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
+              {activeTab !== 'done' && <Pressable style={styles.headerButton} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
+              {resolvedTab.startsWith('project:') && <>
+                <Pressable style={styles.headerButton} onPress={() => openContainerAction('project', resolvedTab.slice(8))}><Text style={styles.headerButtonText}>Rename or delete project</Text></Pressable>
+                <Pressable style={styles.headerButton} onPress={() => openContainerAction('collection', undefined, resolvedTab.slice(8))}><Text style={styles.headerButtonText}>New collection</Text></Pressable>
+              </>}
+            </>}
             {actionSheet?.kind === 'container' ? <>
+              {!!actionSheet.frozen ? <Pressable style={styles.headerButton} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
               <TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
               <Pressable style={styles.headerButton} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable>
               {!!actionSheet.id && <>
@@ -1110,12 +1225,13 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
                 {!containerProof?.canKeep && !!containerProof?.keepReason && <Text style={styles.sheetText}>{containerProof.keepReason}</Text>}
                 {!containerProof?.canKeep && <Pressable style={styles.headerButton} onPress={() => {
                   const sheet = actionSheet;
-                  workspaceService.verifyOfflineContainer(sheet.containerKind, sheet.id).then(setContainerProof).catch((cause: any) => setError(cause.message));
+                  workspaceService.verifyOfflineContainer(sheet.containerKind, sheet.id).then((proof: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setContainerProof(proof);}).catch((cause: any) => {if (containerIdentity.current === sheet.identity && sheet.account === getCachedConfig()?.apiToken) setError(cause.message);});
                 }}><Text style={styles.headerButtonText}>Verify full contents online</Text></Pressable>}
                 <Pressable style={styles.headerButton} disabled={!containerProof?.canKeep} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'keep'}))}><Text style={styles.headerButtonText}>{actionSheet.containerKind === 'project' ? 'Delete project; move tasks to Inbox' : 'Delete collection; keep tasks in project'}</Text></Pressable>
                 <Pressable style={styles.headerButton} disabled={!containerProof?.allowed} onPress={() => setActionSheet((sheet: any) => ({...sheet, confirm: 'delete'}))}><Text style={styles.headerButtonText}>Delete container and ALL its tasks</Text></Pressable>
                 {!!actionSheet.confirm && <View style={{borderWidth: 1, padding: 12, gap: 8}}><Text style={styles.sheetText}>{actionSheet.confirm === 'delete' ? `Confirm permanent deletion of this ${actionSheet.containerKind} and ALL contained tasks, including any completed or uncached tasks. Other devices may still hold unsynced changes.` : 'Confirm deleting this container while keeping its tasks in the destination shown above.'}</Text>
                   <Pressable style={styles.headerButton} onPress={() => performContainerAction('delete', actionSheet.confirm)}><Text style={styles.headerButtonText}>Confirm deletion</Text></Pressable></View>}
+              </>}
               </>}
             </> : null}
             {(actionSheet?.kind === 'date' || actionSheet?.kind === 'composer-date') && <DatePicker value={actionDate} onClose={() => setActionSheet(null)} onChange={date => {
@@ -1134,8 +1250,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
             {actionSheet?.kind === 'more' && <>
               <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'priority'}))}><Text style={styles.headerButtonText}>Priority</Text></Pressable>
-              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: activeTab !== 'done'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{activeTab === 'done' ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
+              <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'labels'}))}><Text style={styles.headerButtonText}>Labels</Text></Pressable>
+              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'complete', completed: !selectionHistory}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>{selectionHistory ? 'Reopen selected' : 'Complete selected'}</Text></Pressable>
               <Pressable style={styles.headerButton} onPress={() => setActionSheet((sheet: any) => ({...sheet, kind: 'delete'}))}><Text style={styles.headerButtonText}>Delete selected</Text></Pressable>
+            </>}
+            {actionSheet?.kind === 'labels' && <>
+              <Text style={styles.sheetText}>Replace labels on selected tasks. Separate names with commas; leave empty to clear.</Text>
+              <TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
+              <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable>
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
               <Pressable style={styles.headerButton} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
@@ -1192,7 +1314,7 @@ function groupDoneByBucket(doneTasks: any[], today: string): any[] {
   const pushBucket = (key: string, title: string, arr: any[]) => {
     if (!arr.length) return;
     items.push({key: `header-${key}`, type: 'header', title, count: arr.length});
-    arr.forEach(t => items.push({key: `done-${t.id}`, type: 'task', task: t}));
+    arr.forEach(t => items.push({key: `done-${rowIdentity(t)}`, type: 'task', task: t}));
   };
   pushBucket('dtoday', 'Today', buckets.today);
   pushBucket('dyesterday', 'Yesterday', buckets.yesterday);

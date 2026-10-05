@@ -9,8 +9,8 @@ let sessionExpanded: Record<string, boolean> = {};
 let sessionCompact = true;
 type Props = {projects: any[]; tasks: any[]; sections?: any[]; selectedIds: string[];
   onSelect: (id: string) => void; onTask: (task: any) => void; onProject: (project: any) => void; busy?: boolean; onSyncPress?: () => void;
-  TaskComponent?: React.ComponentType<any>};
-export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress, TaskComponent = BaseTaskRow}: Props) {
+  TaskComponent?: React.ComponentType<any>; onDeselect?: (ids: string[]) => void};
+export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress, TaskComponent = BaseTaskRow, onDeselect}: Props) {
   const scale = useFontScale();
   const [expanded, setExpanded] = useState(sessionExpanded);
   const [compact, setCompact] = useState(sessionCompact);
@@ -19,11 +19,11 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
   const total = groups.reduce((count: number, group: any) => count + group.tasks.length, 0);
   const changeExpanded = (value: Record<string, boolean>) => {sessionExpanded = value; setExpanded(value);};
   const toggle = (id: string) => {
-    if (expanded[id]) collapsingSelection(groups, id, selectedIds).forEach(onSelect);
+    if (expanded[id]) onDeselect?.(collapsingSelection(groups, id, selectedIds));
     changeExpanded({...expanded, [id]: !expanded[id]});
   };
   const collapseAll = () => {
-    collapsingSelection(groups, null, selectedIds).forEach(onSelect);
+    onDeselect?.(collapsingSelection(groups, null, selectedIds));
     changeExpanded({});
   };
   return <View style={s.page}>

@@ -31,7 +31,8 @@ function workspace(config = {}, note = false, extraTasks = []) {
     sections: [{id: 's', name: 'Writing', project_id: 'p'}], pendingCount: 2, pendingTaskCount: 1, pendingCollectionCount: 1,
     pendingChanges: [{id: 'inbox', uuid: 'a', kind: 'create', state: 'attention', error: {status: 401}, task: tasks[2]},
       {id: 's', uuid: 'b', kind: 'collection_create', state: 'pending', collection: {name: 'Writing'}}]};
-  const completed = []; const reopened = []; const retries = []; const navCalls = [];
+  const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = [];
+  let finishProject; const projectGate = new Promise(resolve => {finishProject = resolve;});
   let session = null;
   const api = {completeTask: async id => {completed.push(id); data = {...data, tasks: data.tasks.filter(task => task.id !== id),
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
@@ -45,7 +46,8 @@ function workspace(config = {}, note = false, extraTasks = []) {
     subscribeOffline: () => () => {}, retryOffline: async id => {retries.push(id);},
     mutateOfflineTasks: async (ids, action) => {for (const id of ids) {
       if (action.kind === 'complete') await (action.completed ? api.completeTask : api.reopenTask)(id);
-    }}, saveOfflineBatch: async () => []};
+    }}, saveOfflineBatch: async (drafts, source, capturedAt, request) => {savedDrafts.push({drafts, source, request}); return [];},
+    createOfflineProject: async name => {await projectGate; const project = {id: 'saved-local-project', name}; data = {...data, projects: [...data.projects, project]}; return project;} };
   const mutations = load('../src/workspace/useWorkspaceMutations.ts', {'../offline/service': service}).default;
   const rowModule = load('../src/workspace/WorkspaceTaskRow.tsx', {'react-native': native,
     '../components/TaskRow': {__esModule: true, default: 'TaskRow'}, '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
@@ -72,8 +74,8 @@ function workspace(config = {}, note = false, extraTasks = []) {
     '../components/SectionHeader': {__esModule: true, default: 'Section'}, '../components/Chip': {__esModule: true, default: 'Chip'},
   });
   const nav = {push: (...args) => navCalls.push(args)};
-  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls,
-    freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
+  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, updateData: update => {data = update(data);},
+    finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
     markMissing: (id, leakIntoActive = false) => {
       data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
       data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted && (leakIntoActive || !task.remoteMissing));
@@ -114,9 +116,8 @@ test('checkbox completes immediately, title expands quick actions, and completed
   await act(async () => tree.root.findByType('QuickActions').props.onEdit());
   assert.equal(model.navCalls[0][0], 'task-detail');
   await act(async () => row.props.onCheckPress('one'));
-  assert.deepEqual(model.completed, ['one']); assert.equal(tree.root.findAllByType('TaskRow').length, 0);
+  assert.deepEqual(model.completed, ['one']); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
   assert.equal(tree.root.findAllByType('UndoBar').length, 0);
-  await act(async () => tree.root.findByProps({accessibilityLabel: 'Expand completed tasks'}).props.onPress());
   await act(async () => tree.root.findByType('TaskRow').props.onCheckPress('one'));
   assert.deepEqual(model.reopened, ['one']); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
   await switchTo(tree, 'device'); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
@@ -170,7 +171,7 @@ test('shared row checkbox and sync symbol stop propagation to detail action', as
     onCheckPress: id => checked.push(id), onPress: task => opened.push(task.id), onSyncPress: () => synced.push(true)}));});
   let stops = 0;
   tree.root.findByProps({accessibilityLabel: 'Complete Task'}).props.onPress({stopPropagation: () => {stops++;}});
-  tree.root.findByProps({accessibilityLabel: 'Waiting to sync'}).props.onPress({stopPropagation: () => {stops++;}});
+  tree.root.findByProps({accessibilityLabel: 'Saved on device, waiting to sync'}).props.onPress({stopPropagation: () => {stops++;}});
   assert.equal(stops, 2); assert.deepEqual(checked, ['a']); assert.equal(opened.length, 0); assert.equal(synced.length, 1);
   await act(async () => tree.unmount());
 });
@@ -231,5 +232,105 @@ test('All projects uses the same immediate checkbox action; collapsing projects 
   tree.root.findByType('TaskRow').props.onCheckPress('a'); assert.deepEqual(completed, ['a']);
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Collapse Work'}).props.onPress());
   assert.deepEqual(completed, ['a']);
+  await act(async () => tree.unmount());
+});
+test('inline draft survives a view change with note source and submits once under rapid duplicate events', async () => {
+  const model = workspace({defaultProjectId: 'p', defaultSectionId: 's'}, true); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Inbox');
+  await switchTo(tree, 'note');
+  await act(async () => tree.root.findByType('Composer').props.onChangeText('Draft — description'));
+  await switchTo(tree, 'tomorrow');
+  assert.equal(tree.root.findByType('Composer').props.value, 'Draft — description');
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Work / Writing');
+  const submit = tree.root.findByType('Composer').props.onSubmit;
+  await act(async () => {submit(); submit();});
+  assert.equal(model.savedDrafts.length, 1);
+  assert.deepEqual(model.savedDrafts[0].source, {filePath: '/note/Test.note', pageNum: 0});
+  assert.equal(model.savedDrafts[0].drafts[0].content, 'Draft');
+  assert.equal(model.savedDrafts[0].drafts[0].description, 'description');
+  assert.equal(model.savedDrafts[0].drafts[0].projectId, 'p');
+  await act(async () => tree.unmount());
+});
+test('Upcoming requires a chosen date; completed collapse state belongs to each view', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const footer = () => tree.root.findByProps({accessibilityLabel: 'Expand completed tasks'});
+  assert.equal(footer().props.accessibilityState.expanded, true);
+  await act(async () => footer().props.onPress());
+  await switchTo(tree, 'upcoming'); assert.equal(footer().props.accessibilityState.expanded, true);
+  await act(async () => tree.root.findByType('Composer').props.onChangeText('Task without a date'));
+  await act(async () => tree.root.findByType('Composer').props.onSubmit());
+  assert.equal(model.savedDrafts.length, 0);
+  assert.match(JSON.stringify(tree.toJSON()), /Choose a calendar date/);
+  await switchTo(tree, 'today'); assert.equal(footer().props.accessibilityState.expanded, false);
+  await act(async () => tree.unmount());
+});
+test('a syncing project alias keeps project rows and composer location available', async () => {
+  const model = workspace(); let tree;
+  model.updateData(data => ({...data, projects: [...data.projects, {id: 'local-project', name: 'Offline project'}], tasks: [...data.tasks, {id: 'local-task', project_id: 'local-project', content: 'Local task'}]}));
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await switchTo(tree, 'project:local-project');
+  await act(async () => tree.root.findByType('Composer').props.onChangeText('Preserved draft'));
+  model.updateData(data => ({...data, projects: data.projects.map(project => project.id === 'local-project' ? {...project, id: 'remote-project', localId: 'local-project'} : project),
+    tasks: data.tasks.map(task => task.project_id === 'local-project' ? {...task, project_id: 'remote-project'} : task)}));
+  await act(async () => pressRefresh(tree));
+  assert.equal(tree.root.findByType('Sidebar').props.activeView, 'project:remote-project');
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Offline project');
+  assert.equal(tree.root.findByType('TaskRow').props.task.content, 'Local task');
+  await act(async () => tree.root.findByType('Composer').props.onSubmit());
+  assert.equal(model.savedDrafts[0].drafts[0].projectId, 'remote-project');
+  await act(async () => tree.unmount());
+});
+test('completed recurring occurrence cannot be selected or reopened through the active next task', async () => {
+  const history = {id: 'one', project_id: 'p', content: 'Previous occurrence', completed: true, occurrenceHistory: true, completed_at: '2026-10-04', due: {date: '2026-10-04', is_recurring: true}};
+  const model = workspace({}, false, [history]); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const row = tree.root.findAllByType('TaskRow').find(value => value.props.task.occurrenceHistory);
+  assert.equal(row.props.disabled, true);
+  await act(async () => {row.props.onCheckPress(); row.props.onLongPress();});
+  assert.deepEqual(model.reopened, []); assert.deepEqual(model.completed, []);
+  assert.equal(tree.root.findAllByType('Selection').length, 0);
+  await act(async () => tree.unmount());
+});
+test('selection through pane menu never completes, including Select all across collapsed projects', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await switchTo(tree, 'projects');
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'List menu'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Select tasks'}).props.onPress());
+  await act(async () => tree.root.findByType('Selection').props.onSelectAll());
+  assert.equal(tree.root.findByType('Selection').props.count, 3);
+  assert.deepEqual(model.completed, []);
+  await act(async () => tree.unmount());
+});
+test('account switch cancels the old workspace draft when returning from Settings', async () => {
+  const model = workspace({apiToken: 'first-account'}); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav, active: true}));});
+  await act(async () => tree.root.findByType('Composer').props.onChangeText('Old account draft'));
+  await act(async () => tree.update(React.createElement(model.Home, {nav: model.nav, active: false})));
+  model.config.apiToken = 'second-account';
+  await act(async () => tree.update(React.createElement(model.Home, {nav: model.nav, active: true})));
+  assert.equal(tree.root.findByType('Composer').props.value, '');
+  assert.equal(model.savedDrafts.length, 0);
+  await act(async () => tree.unmount());
+});
+test('selecting an optimistic project before local commit preserves its draft and resolves the real local ID', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await act(async () => tree.root.findByType('Sidebar').props.onCreateProject());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'project name'}).props.onChangeText('Scratch project'));
+  const save = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Save name'));
+  await act(async () => {save.props.onPress();});
+  const placeholder = tree.root.findByType('Sidebar').props.projects.find(project => project.name === 'Scratch project');
+  await switchTo(tree, `project:${placeholder.id}`);
+  await act(async () => tree.root.findByType('Composer').props.onChangeText('Draft while location saves'));
+  await act(async () => tree.root.findByType('Composer').props.onSubmit());
+  assert.equal(model.savedDrafts.length, 0);
+  await act(async () => model.finishProject());
+  assert.equal(tree.root.findByType('Sidebar').props.activeView, 'project:saved-local-project');
+  assert.equal(tree.root.findByType('Composer').props.value, 'Draft while location saves');
+  await act(async () => tree.root.findByType('Composer').props.onSubmit());
+  assert.equal(model.savedDrafts[0].drafts[0].projectId, 'saved-local-project');
   await act(async () => tree.unmount());
 });

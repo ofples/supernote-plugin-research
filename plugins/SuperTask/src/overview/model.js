@@ -9,11 +9,9 @@ function projectGroups(projects, tasks, sections = []) {
     byId.get(String(projectId))?.tasks.push(task);
   }
   for (const group of groups) {
-    group.tasks.sort((a, b) => {
-    const aDate = a.due?.date?.slice(0, 10) || '9999-99-99';
-    const bDate = b.due?.date?.slice(0, 10) || '9999-99-99';
-    return aDate.localeCompare(bDate) || (b.priority || 1) - (a.priority || 1);
-    });
+    group.tasks = require('../workspace/intents').orderedTasks(group.tasks);
+    if (!group.tasks.some(task => task.order_key)) group.tasks.sort((a, b) =>
+      (a.due?.date?.slice(0, 10) || '9999-99-99').localeCompare(b.due?.date?.slice(0, 10) || '9999-99-99') || (b.priority || 1) - (a.priority || 1));
     group.collections = require('../collections/model').collectionGroups(group.project.id, group.tasks, sections);
     group.hasCollections = sections.some(s => String(s.project_id) === String(group.project.id) && !s.is_deleted && !s.is_archived) || group.tasks.some(t => t.section_id);
   }
@@ -38,7 +36,7 @@ function overviewRows(groups, expanded) {
 }
 function collapsingSelection(groups, projectId, selectedIds) {
   const hidden = new Set(groups.filter(group => projectId === null || String(group.project.id) === projectId)
-    .flatMap(group => group.tasks.map(task => task.id)));
+    .flatMap(group => group.tasks.map(task => require('../workspace/intents').rowIdentity(task))));
   return selectedIds.filter(id => hidden.has(id));
 }
 module.exports = {projectGroups, overviewRows, collapsingSelection};
