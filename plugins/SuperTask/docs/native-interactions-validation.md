@@ -33,3 +33,8 @@ ADB reported no connected device during final local integration. These checks re
 - Synthetic handwriting lasso/image preview, portrait/landscape/edge crops, concurrent OCR/AI, cancellation/timeout/fallback, dash title-description parsing, independent manual overrides and source-note return. Text-only earlier AI testing does not establish handwriting recognition.
 
 Paid scratch AI request ledger: **1 of 100** used across the goal sessions. No real-note submissions. Device unavailability does not pause local implementation and does not justify marking the above checks passed.
+
+
+### Beta.15 polish follow-up
+
+239 tests plus type/lint/native package/Hermes checks pass. Icon overlays keep row height; arrows remain scroll-accessible at narrow widths. Collection headers have one faint divider and no count box; project menus appear only in the pane. Dialog buttons size to content, with adjacent name/save and labels/apply controls. History uses numeric HTTP status and bounded 89-day windows. Configured account history endpoint succeeds from the computer; device refresh remains pending.

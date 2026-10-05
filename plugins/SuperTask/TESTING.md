@@ -89,3 +89,10 @@ Beta.8/code 13 was an earlier collections checkpoint. Its artifact was `build/ou
 Use `syncTestingBranch.ps1` only from a clean integration checkout and verify current feature refs/ancestry. It preserves history and stops on conflicts; it does not install packages, publish releases or merge PRs into main. For runtime changes, rerun relevant tests, TypeScript, lint, full build and verifier; increment version/code, inspect the actual archive and update this artifact record. Documentation-only changes do not require a rebuild.
 
 See [FEEDBACK_IMPLEMENTATION.md](FEEDBACK_IMPLEMENTATION.md) for shipped behavior/evidence, [FEEDBACK_PLAN.md](FEEDBACK_PLAN.md) for approved scope and acceptance criteria, and [VALIDATION.md](VALIDATION.md) for older package records.
+
+
+## Beta.15 UI polish - prepared 5 October 2026
+
+Runtime `e73adf3`; workspace feature `41b48f2`. Artifact `build/outputs/SuperTask-native-beta15.snplg`, 7,586,499 bytes, SHA256 `200cd5059d0dc51c0ba6c154d658f8c26f7bb703c6c216fbe186b558b003df66`. All 239 tests, TypeScript, lint (zero errors), native/JS package verifier and full Hermes compile pass. Read-only completed-history request with the configured account succeeds from the computer. Regression checks cover numeric HTTP success, bounded older-history windows, cache retention on 401, icon overlays, selection, and pane-only project deletion access.
+
+Pending device checks: install/enable beta.15, remote history refresh and exact error if any, one selected task row with no height increase, narrow/large-font icon scrolling, quiet collection headers/no double left divider, name/save and delete choices side by side, project menus absent in sidebar. Preserve actual tasks/configuration; no real task deletion for layout checks.
