@@ -59,6 +59,8 @@ test('individual field edits mark overrides and Use batch restores the latest de
   assert.equal(resetRowField(value, 'priority', defaults).priority, 3);
   value = editRow(value, 'labels', ['urgent']);
   assert.deepEqual(resetRowField(value, 'labels', defaults).labels, ['home']);
+  assert.equal(editRow(row(2), 'content', 'Edited title').fieldProvenance.content, 'manual');
+  assert.equal(editRow(row(2), 'description', 'Edited detail').fieldProvenance.description, 'manual');
 });
 
 test('a newly added draft inherits the latest batch defaults and begins without manual overrides', () => {
@@ -118,6 +120,7 @@ test('AI source row mappings restore manual overrides while retaining proposed f
   assert.equal(result.content, 'Refined task');
   assert.deepEqual([result.projectId, result.sectionId], ['house', 'garden']);
   assert.equal(result.dueString, '2026-10-07');
+  assert.equal(result.sourceText, 'Task 10');
   assert.equal(result.priority, 4); assert.deepEqual(result.labels, ['new']);
   assert.equal(result.rowId, 10);
   assert.deepEqual(result.overrides, {location: true, dueString: true});
@@ -129,6 +132,7 @@ test('manual title and description survive AI refinement and explicit AI metadat
     dueString: '', priority: 4, labels: [], sourceRowIds: ['30'], explicitFields: ['priority']}]);
   assert.equal(result.content, 'My edited title');
   assert.equal(result.description, 'Keep these details');
+  assert.deepEqual(result.fieldProvenance, {content: 'manual', description: 'manual'});
   assert.equal(result.priority, 4);
   assert.equal(result.instructions.priority, true);
   const changed = changeDefault([result], makeDefaults({priority: 1}), 'priority', 2);
@@ -186,6 +190,7 @@ test('refinement can fall back to same-position mapping when cardinality is unch
   const result = reconcileRefinement([row(22)], [{content: 'Edited by AI'}]);
   assert.equal(result[0].rowId, 22);
   assert.deepEqual(result[0].overrides, {});
+  assert.deepEqual(result[0].fieldProvenance, {content: 'ai-proposal', description: 'ai-proposal'});
 });
 
 test('AI split proposals that cite one source row receive distinct fresh identities', () => {
@@ -248,6 +253,33 @@ test('BatchAdd merge action keeps the joined titles when both rows were manually
   const merge = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Merge next'));
   await act(async () => merge.props.onPress());
   assert.deepEqual(tree.root.findAllByType('Input').map(input => input.props.value), ['Edited first Edited second']);
+  await act(async () => tree.unmount());
+});
+
+test('BatchAdd merge keeps an edited description together with the next transcription description', async () => {
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+    'react-native': rn, 'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/useFontScale': {useFontScale: () => 1}, '../utils/closePlugin': {closePlugin() {}},
+    '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})}, '../offline/service': {saveOfflineBatch: async () => []},
+    '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+    '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+  }).default;
+  const rows = [
+    {rowId: 'A', content: 'Prepare', description: 'Keep this detail', projectId: 'house', sectionId: null, selected: true,
+      priority: 1, dueString: '', labels: [], sourceText: 'Prepare - original detail', fieldProvenance: {content: 'transcription', description: 'manual'}, overrides: {description: true}},
+    {rowId: 'B', content: 'Supplies', description: 'Bring the folder', projectId: 'house', sectionId: null, selected: true,
+      priority: 1, dueString: '', labels: [], sourceText: 'Supplies - bring the folder', fieldProvenance: {content: 'transcription', description: 'transcription'}},
+  ];
+  let tree;
+  await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [{id: 'house', name: 'House'}], initialRows: rows}));});
+  const details = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Details'));
+  await act(async () => details.props.onPress());
+  const merge = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Merge next'));
+  await act(async () => merge.props.onPress());
+  assert.deepEqual(tree.root.findAllByType('Input').map(input => input.props.value), ['Prepare Supplies', 'Keep this detail\nBring the folder', '']);
   await act(async () => tree.unmount());
 });
 

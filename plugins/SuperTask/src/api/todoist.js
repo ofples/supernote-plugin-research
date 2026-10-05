@@ -8,6 +8,11 @@
 import {ensurePermissionGroup} from '../utils/permissions';
 import {log} from '../utils/debug';
 import {offlineData, saveOfflineBatch, completeOffline, cachedTask, rememberRemoteTask, editOfflineTask, deleteOfflineTask, completedData, rememberCompleted} from '../offline/service';
+export {createOfflineProject as createProject, renameOfflineProject as renameProject,
+  createOfflineCollection as createCollection, renameOfflineCollection as renameCollection,
+  inspectOfflineContainer as inspectContainer, verifyOfflineContainer as verifyContainer,
+  deleteOfflineContainer as deleteContainer, mutateOfflineTasks as mutateTasks,
+  reorderOfflineTask as reorderTask} from '../offline/service';
 
 const TODOIST_API = 'https://api.todoist.com/api/v1';
 

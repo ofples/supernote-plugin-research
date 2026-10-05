@@ -125,6 +125,17 @@ test('Cancel AI uses cached ready OCR and ignores provider result arriving after
   } finally {await f.dispose();}
 });
 
+test('device OCR text reaches review unchanged for deterministic parser handling', async () => {
+  const f = await fixture();
+  try {
+    const transcription = 'feed dogs - one bowl - each';
+    await f.settleOCR(transcription);
+    assert.equal(f.reviews.length, 1);
+    assert.equal(f.reviews[0].props.initialContent, transcription);
+    assert.equal(f.calls.length, 0, 'native OCR transcription does not start an AI request');
+  } finally {await f.dispose();}
+});
+
 test('90 second deadline falls back and releases busy state even if provider ignores abort forever', async () => {
   const f = await fixture();
   try {

@@ -1,0 +1,129 @@
+<div id="sn-native-preview" aria-label="SuperTask interaction proposal">
+<style>
+#sn-native-preview {position:relative;font-family:Arial,sans-serif;color:#111;background:#fff;border:1px solid #222;--sn-space:17px;color-scheme:light}
+#sn-native-preview *{box-sizing:border-box}
+#sn-native-preview button,#sn-native-preview input,#sn-native-preview textarea,#sn-native-preview select{font:inherit;color:#111;background:#fff}
+#sn-native-preview button{border:1px solid #111;border-radius:3px;min-height:42px;padding:8px 12px}
+#sn-native-preview button:disabled{color:#888;border-color:#bbb}
+#sn-native-preview button[aria-pressed=true]{background:#111;color:#fff}
+#sn-native-preview .quiet{border-color:transparent}
+#sn-native-preview header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 18px;border-bottom:2px solid #111;flex-wrap:wrap}
+#sn-native-preview .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#sn-native-preview h2,#sn-native-preview h3{margin:0;font-size:21px;font-weight:600}
+#sn-native-preview .workspace{display:grid;grid-template-columns:205px minmax(0,1fr)}
+#sn-native-preview aside{border-right:1px solid #111;display:flex;flex-direction:column}
+#sn-native-preview .sn-nav{padding:9px 10px;flex:1}
+#sn-native-preview .sn-nav button{display:flex;width:100%;text-align:left;justify-content:space-between;border-color:transparent;padding:12px;margin:2px 0;border-bottom:1px dotted #aaa;border-radius:0}
+#sn-native-preview .sn-nav button[aria-pressed=true]{color:#111;background:white;border:2px solid #111}
+#sn-native-preview .project-label{padding:24px 10px 10px;font-size:13px;font-weight:bold;border-bottom:1px solid #111;margin-bottom:8px}
+#sn-native-preview .new-project{border-radius:0;border:0;border-top:1px solid #111;width:100%;padding:18px;text-align:left}
+#sn-native-preview main{padding:20px;min-width:0;position:relative}
+#sn-native-preview .heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:16px}
+#sn-native-preview .composer{display:flex;border:1px solid #111;margin-bottom:18px;flex-wrap:wrap}
+#sn-native-preview .composer input{min-width:120px;flex:1;border:0;padding:12px;font-size:16px}
+#sn-native-preview .composer button{border:0;border-left:1px solid #111;border-radius:0}
+#sn-native-preview .location{margin:0 0 8px;color:#666;font-size:13px}
+#sn-native-preview .section-heading{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #111;margin-top:18px;padding-bottom:6px}
+#sn-native-preview .section-heading button:first-child{font-weight:bold}
+#sn-native-preview .task{display:flex;gap:10px;padding:var(--sn-space) 0;border-bottom:1px dotted #aaa;align-items:flex-start;flex-wrap:wrap}
+#sn-native-preview .task.expanded{border:2px solid #111;border-radius:4px;padding:12px;margin:5px 0}
+#sn-native-preview .check{width:42px;min-width:42px;border:0;padding:5px;display:grid;place-items:center}
+#sn-native-preview .circle{height:24px;width:24px;border:2px solid currentColor;border-radius:50%;display:block}
+#sn-native-preview .square{border-radius:3px}
+#sn-native-preview .task-body{flex:1;text-align:left;border:0;min-width:100px;padding:5px 0}
+#sn-native-preview .task-title{font-size:18px;display:block;line-height:1.35}
+#sn-native-preview .task-desc,#sn-native-preview .task-meta{font-size:13px;color:#666;display:block;margin-top:4px}
+#sn-native-preview .actions{padding-left:52px;flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px}
+#sn-native-preview .actions button{padding:7px 10px}
+#sn-native-preview .done .task-title{text-decoration:line-through;color:#666}
+#sn-native-preview .completed-header{margin-top:20px;display:flex;align-items:center;gap:6px}
+#sn-native-preview footer{border-top:1px solid #111;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;gap:10px;flex-wrap:wrap;font-size:13px}
+#sn-native-preview .dialog-wrap{position:absolute;inset:0;background:rgba(255,255,255,.92);display:grid;align-items:start;justify-content:center;padding:36px 16px;z-index:2}
+#sn-native-preview .dialog{background:#fff;border:2px solid #111;border-radius:4px;padding:20px;min-width:260px;max-width:500px;width:100%}
+#sn-native-preview .dialog h3{margin-bottom:18px}
+#sn-native-preview .dialog label{display:block;margin:12px 0}
+#sn-native-preview .dialog input,#sn-native-preview .dialog textarea,#sn-native-preview .dialog select{display:block;width:100%;padding:10px;border:1px solid #111;margin-top:6px;min-height:42px}
+#sn-native-preview .dialog textarea{min-height:90px}
+#sn-native-preview .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:14px 0}
+#sn-native-preview .calendar button{padding:6px;min-width:30px}
+#sn-native-preview .calendar span{text-align:center;font-size:12px}
+#sn-native-preview .pick{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
+#sn-native-preview .pick button{text-align:left;border-color:transparent}
+#sn-native-preview .pick .nested{margin-left:20px;border-left:1px dotted #aaa}
+#sn-native-preview .error{color:#111;margin-top:10px;border-left:3px solid #111;padding-left:8px}
+#sn-native-preview .note-preview{position:absolute;inset:0;background:#fff;padding:22px;z-index:3}
+#sn-native-preview .note-preview p{font-family:Georgia,serif;font-style:italic;font-size:24px;line-height:2;margin:60px 20px}
+#sn-native-preview .edge-button{position:absolute;right:10px;bottom:80px;border:2px solid #111;border-radius:14px;min-width:48px;min-height:48px}
+#sn-native-preview [hidden]{display:none!important}
+@media(max-width:600px){#sn-native-preview .workspace{grid-template-columns:145px minmax(0,1fr)}#sn-native-preview main{padding:12px}#sn-native-preview .sn-nav{padding:6px}#sn-native-preview .sn-nav button{padding:10px 5px;font-size:14px}#sn-native-preview .actions{padding-left:0}#sn-native-preview .task-title{font-size:16px}}
+@media(max-width:400px){#sn-native-preview .workspace{grid-template-columns:1fr}#sn-native-preview aside{border-right:0;border-bottom:1px solid #111}#sn-native-preview .sn-nav{display:flex;flex-wrap:wrap;gap:3px}#sn-native-preview .sn-nav button{width:auto}#sn-native-preview .project-label{width:100%;padding-top:12px}#sn-native-preview .new-project{padding:10px}}
+</style>
+<header><h2>SuperTask</h2><div class="bar" id="sn-topbar"></div></header>
+<div class="workspace"><aside><nav class="sn-nav" id="sn-navigation" aria-label="Task lists"></nav><button class="new-project cursor-interaction" data-action="new-project">＋ New project</button></aside><main id="sn-main"></main></div>
+<footer><button class="quiet cursor-interaction" data-action="sync" id="sn-sync">Saved on device · Offline</button><div class="bar"><span id="sn-status" role="status" aria-live="polite"></span><button class="quiet cursor-interaction" data-action="refresh">↻ Refresh</button></div></footer>
+<div class="note-preview" id="sn-note" hidden><h3>Scratch note</h3><p>Feed dogs — one bowl of kibbles each<br>Water the plants tomorrow</p><button class="edge-button cursor-interaction" data-action="open-tasks" aria-label="Open SuperTask">☑</button></div>
+<script>
+(() => {
+ const root=document.getElementById('sn-native-preview');
+ const nav=root.querySelector('#sn-navigation'), main=root.querySelector('#sn-main'), topbar=root.querySelector('#sn-topbar');
+ const projects=[{id:'House',collections:['Care','Shopping']},{id:'Work',collections:['Planning']}];
+ let tasks=[{id:1,title:'Feed dogs',description:'One bowl of kibbles each',project:'House',collection:'Care',due:'2026-10-05',done:false},{id:2,title:'Water the plants',description:'',project:'House',collection:'Care',due:'2026-10-06',done:false},{id:3,title:'Buy kibble',description:'Large bag',project:'House',collection:'Shopping',due:'',done:false},{id:4,title:'Clean the bowls',description:'',project:'House',collection:'Care',due:'',done:true},{id:5,title:'Prepare agenda',description:'',project:'Work',collection:'Planning',due:'2026-10-05',done:false}];
+ let view='House',collection='Care',expanded=null,selecting=false,selected=new Set(),doneOpen=true,draft='',draftDate='',nextId=6,pending=0;
+ const layout={rowSpacing:17,descriptionPreview:true};
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const button=(label,action,value='',extra='')=>`<button type="button" class="${extra.includes('class="')?extra.match(/class="([^"]+)"/)[1]:'cursor-interaction'}" data-action="${action}" data-value="${esc(value)}" ${extra.replace(/class="[^"]*"/,'')}>${label}</button>`;
+ const project=()=>projects.find(p=>p.id===view);
+ const visible=()=>tasks.filter(t=>view==='Done'?t.done:view==='All projects'?true:view==='Today'?t.due==='2026-10-05':view==='Tomorrow'?t.due==='2026-10-06':view==='Upcoming'?!!t.due:view==='Inbox'?t.project==='Inbox':t.project===view);
+ function noteState(open){root.querySelector('#sn-note').hidden=!open;root.querySelectorAll(':scope > header,:scope > .workspace,:scope > footer').forEach(n=>{n.inert=open;n.setAttribute('aria-hidden',String(open));});}
+ function status(text){root.querySelector('#sn-status').textContent=text;}
+ function change(){pending++;root.querySelector('#sn-sync').textContent=`${pending} saved change${pending===1?'':'s'} · Offline`;}
+ function row(t){const open=expanded===t.id&&!selecting;return `<div class="task ${open?'expanded':''} ${t.done?'done':''}">${button(`<span class="circle ${selecting?'square':''}">${selecting?(selected.has(t.id)?'✓':''):(t.done?'✓':'')}</span>`,selecting?'pick-task':'complete',t.id,`class="check cursor-interaction" aria-label="${selecting?'Select':t.done?'Reopen':'Complete'} ${esc(t.title)}" aria-pressed="${selecting?selected.has(t.id):t.done}"`)}<button type="button" class="task-body cursor-interaction" data-action="${selecting?'pick-task':'expand'}" data-value="${t.id}" aria-expanded="${open}"><span class="task-title">${esc(t.title)}</span>${layout.descriptionPreview&&t.description?`<span class="task-desc">${esc(t.description)}</span>`:''}<span class="task-meta">${esc([!project()?t.project:'',t.collection,t.due].filter(Boolean).join(' · '))}</span></button>${open?`<div class="actions">${button('✎ Edit','edit',t.id)}${button('Date','date',t.id)}${button('Move','move',t.id)}${button('Priority','priority',t.id)}${!t.done&&project()?button('↑','up',t.id,'aria-label="Move task up"')+button('↓','down',t.id,'aria-label="Move task down"'):''}${button('Delete','delete',t.id)}</div>`:''}</div>`;}
+ function render(){
+ root.style.setProperty('--sn-space',layout.rowSpacing+'px');
+ nav.innerHTML=['Today','Tomorrow','Upcoming','Inbox','Done'].map(v=>button(v,'view',v,`aria-pressed="${view===v}"`)).join('')+'<div class="project-label">PROJECTS</div>'+['All projects',...projects.map(p=>p.id)].map(v=>button(v,'view',v,`aria-pressed="${view===v}"`)).join('');
+ topbar.innerHTML=selecting?button('Cancel','cancel-selection')+`<span>${selected.size} selected</span>`+button('Move','move','bulk',selected.size?'':'disabled')+button('Date','date','bulk',selected.size?'':'disabled')+button('More ⋯','bulk-more','',selected.size?'':'disabled')+button('Select all','select-all'):button('Settings','settings')+button('Close','close');
+ const rows=visible(),active=rows.filter(t=>!t.done),done=rows.filter(t=>t.done);
+ const loc=project()?`${view}${collection?' / '+collection:' / No collection'}`:view==='Today'||view==='Tomorrow'?`Inbox · ${view==='Today'?'Today':'Tomorrow'}`:view==='Inbox'?'Inbox':'Choose project / collection';
+ let groups='';
+ if(project()){for(const name of ['',...project().collections]){const group=active.filter(t=>t.collection===name);groups+=`<div class="section-heading">${button(esc(name||'No collection'),'collection',name,`aria-pressed="${collection===name}"`)}${name?button('⋯','collection-menu',name,'aria-label="Collection options"'):''}</div>`+group.map(row).join('');}}
+ else groups=active.map(row).join('');
+ main.innerHTML=`<div class="heading"><h3>${esc(view)}</h3>${button('⋯','view-menu','','aria-label="List options"')}</div>${view!=='Done'&&!selecting?`<div class="location">${esc(loc)}</div><form class="composer"><input id="sn-draft" aria-label="New task" placeholder="Enter task — description" value="${esc(draft)}" autocomplete="off">${button(draftDate||'Date','date','draft')}${button('Add','add','','disabled')}</form>`:''}${groups}${view==='Done'?done.map(row).join(''):selecting?'':`<div class="completed-header">${button(`${doneOpen?'⌄':'›'} Completed (${done.length})`,'done-toggle','','aria-expanded="'+doneOpen+'"')}</div>${doneOpen?done.map(row).join(''):''}`}${project()?`<div style="margin-top:18px">${button('＋ New collection','new-collection')}</div>`:''}`;
+ if(root.querySelector('#sn-draft'))root.querySelector('[data-action=add]').disabled=!draft.trim();
+ }
+ function dialog(title,body,confirm){root.querySelector('.dialog-wrap')?.remove();const wrap=document.createElement('div');wrap.className='dialog-wrap';wrap.innerHTML=`<div class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h3>${esc(title)}</h3>${body}<div class="bar" style="margin-top:18px">${button('Cancel','dialog-cancel')}${confirm?button('Save','dialog-save'):''}</div></div>`;root.append(wrap);wrap.querySelector('[data-action=dialog-cancel]').onclick=()=>wrap.remove();if(confirm)wrap.querySelector('[data-action=dialog-save]').onclick=()=>{if(confirm(wrap)!==false){wrap.remove();render();}};return wrap;}
+ function ids(value){return value==='bulk'?[...selected]:[Number(value)];}
+ function apply(value,fn){const target=ids(value);tasks.filter(t=>target.includes(t.id)).forEach(fn);change();render();}
+ function move(value){const wrap=dialog('Move to','<div class="pick"></div>');const pick=wrap.querySelector('.pick');pick.innerHTML=button('Inbox','destination','Inbox|')+projects.map(p=>button(esc(p.id)+' ›','expand-project',p.id)).join('');pick.onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.action==='expand-project'){const p=projects.find(p=>p.id===b.dataset.value);pick.innerHTML=button('‹ Projects','back-projects')+button(esc(p.id)+' / No collection','destination',p.id+'|')+p.collections.map(c=>button(esc(c),'destination',p.id+'|'+c,'class="nested cursor-interaction"')).join('');}else if(b.dataset.action==='back-projects'){wrap.remove();move(value);}else if(b.dataset.action==='destination'){const [p,c]=b.dataset.value.split('|');if(value==='draft'){view=p;collection=c;}else apply(value,t=>{t.project=p;t.collection=c;});wrap.remove();render();}};}
+ function date(value){let chosen=value==='draft'?draftDate:tasks.find(t=>ids(value).includes(t.id))?.due||'';const wrap=dialog('Due date',`<div class="bar">${button('Today','day','2026-10-05')}${button('Tomorrow','day','2026-10-06')}${button('No date','day','')}</div><h3 style="text-align:center;margin-top:20px">October 2026</h3><div class="calendar">${['S','M','T','W','T','F','S'].map(d=>'<span>'+d+'</span>').join('')}<span></span><span></span><span></span><span></span>${Array.from({length:31},(_,i)=>button(i+1,'day','2026-10-'+String(i+1).padStart(2,'0'))).join('')}</div><label>Date<input type="date" value="${esc(chosen)}"></label>`,w=>{chosen=w.querySelector('input').value;if(value==='draft')draftDate=chosen;else apply(value,t=>t.due=chosen);});wrap.onclick=e=>{const b=e.target.closest('[data-action=day]');if(b){wrap.querySelector('input').value=b.dataset.value;wrap.querySelectorAll('[data-action=day]').forEach(n=>n.setAttribute('aria-pressed',String(n===b)));}};}
+ root.addEventListener('input',e=>{if(e.target.id==='sn-draft'){draft=e.target.value;root.querySelector('[data-action=add]').disabled=!draft.trim();}});
+ root.addEventListener('submit',e=>{e.preventDefault();add();});
+ function add(){if(!draft.trim())return;if(!project()&&!['Inbox','Today','Tomorrow'].includes(view)){move('draft');return;}const split=draft.trim().match(/^(.*?)\s+[-–—]\s+([\s\S]+)$/);tasks.push({id:nextId++,title:split?split[1].trim():draft.trim(),description:split?split[2].trim():'',project:project()?view:'Inbox',collection:project()?collection:'',due:draftDate||(view==='Today'?'2026-10-05':view==='Tomorrow'?'2026-10-06':''),done:false});draft='';change();render();root.querySelector('#sn-draft')?.focus();}
+ root.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const a=b.dataset.action,v=b.dataset.value,t=tasks.find(t=>t.id===Number(v));
+ if(a==='view'){view=v;collection='';expanded=null;selected.clear();selecting=false;render();}
+ if(a==='collection'){collection=v;render();}
+ if(a==='expand'){expanded=expanded===t.id?null:t.id;render();}
+ if(a==='complete'){t.done=!t.done;expanded=null;change();render();}
+ if(a==='pick-task'){selected.has(t.id)?selected.delete(t.id):selected.add(t.id);render();}
+ if(a==='cancel-selection'){selecting=false;selected.clear();render();}
+ if(a==='select-all'){selected=new Set(visible().filter(t=>view==='Done'?t.done:!t.done).map(t=>t.id));render();}
+ if(a==='done-toggle'){doneOpen=!doneOpen;render();}
+ if(a==='add')add();if(a==='date')date(v);if(a==='move')move(v);
+ if(a==='priority'){dialog('Priority','<label>Priority<select><option>Normal</option><option>P3</option><option>P2</option><option>P1</option></select></label>',w=>apply(v,t=>t.priority=w.querySelector('select').value));}
+ if(a==='edit'){dialog('Edit task',`<label>Title<input value="${esc(t.title)}"></label><label>Description<textarea>${esc(t.description)}</textarea></label>`,w=>{const title=w.querySelector('input').value.trim();if(!title)return false;t.title=title;t.description=w.querySelector('textarea').value;change();});}
+ if(a==='up'||a==='down'){const peers=tasks.filter(x=>!x.done&&x.project===t.project&&x.collection===t.collection),i=peers.indexOf(t),other=peers[i+(a==='up'?-1:1)];if(other){const ti=tasks.indexOf(t),oi=tasks.indexOf(other);[tasks[ti],tasks[oi]]=[tasks[oi],tasks[ti]];change();render();}}
+ if(a==='delete'||a==='bulk-delete'){const target=a==='delete'?[t.id]:[...selected];dialog(`Delete ${target.length} task${target.length===1?'':'s'}?`,'',()=>{tasks=tasks.filter(x=>!target.includes(x.id));selected.clear();change();});}
+ if(a==='bulk-more'){const w=dialog('Selected tasks',`<div class="pick">${button('Priority','bulk-priority')}${button('Delete selected tasks','bulk-delete')}</div>`);w.querySelector('[data-action=bulk-priority]').onclick=()=>{w.remove();dialog('Priority','<label>Priority<select><option>Normal</option><option>P3</option><option>P2</option><option>P1</option></select></label>',q=>apply('bulk',t=>t.priority=q.querySelector('select').value));};}
+ if(a==='view-menu'){const w=dialog('List options',`<div class="pick">${button('Select tasks','select-mode')}${project()?button('Rename project','rename-project')+button('Delete project','delete-project'):''}</div>`);w.querySelector('[data-action=select-mode]').onclick=()=>{w.remove();selecting=true;expanded=null;render();};}
+ if(a==='collection-menu'){dialog(v,`<div class="pick">${button('Rename collection','rename-collection',v)}${button('Delete collection','delete-collection',v)}</div>`);}
+ if(a==='new-project'||a==='new-collection'){root.querySelector('.dialog-wrap')?.remove();dialog(a==='new-project'?'New project':'New collection','<label>Name<input></label>',w=>{const name=w.querySelector('input').value.trim();if(!name)return false;if(a==='new-project'){projects.push({id:name,collections:[]});view=name;collection='';}else{project().collections.push(name);collection=name;}change();});}
+ if(a==='rename-project'||a==='rename-collection'){const old=a==='rename-project'?view:v;root.querySelector('.dialog-wrap')?.remove();dialog('Rename','<label>Name<input value="'+esc(old)+'"></label>',w=>{const name=w.querySelector('input').value.trim();if(!name)return false;if(a==='rename-project'){project().id=name;tasks.filter(t=>t.project===old).forEach(t=>t.project=name);view=name;}else{project().collections=project().collections.map(c=>c===old?name:c);tasks.filter(t=>t.project===view&&t.collection===old).forEach(t=>t.collection=name);if(collection===old)collection=name;}change();});}
+ if(a==='delete-project'||a==='delete-collection'){root.querySelector('.dialog-wrap')?.remove();dialog('Delete '+(a==='delete-project'?view:v)+'?',`<label>Tasks inside<select><option value="keep">Keep tasks: move to ${a==='delete-project'?'Inbox':'No collection'}</option><option value="delete">Delete tasks too</option></select></label>`,w=>{const keep=w.querySelector('select').value==='keep';const affected=x=>x.project===view&&(a==='delete-project'||x.collection===v);if(keep)tasks.filter(affected).forEach(t=>{t.collection='';if(a==='delete-project')t.project='Inbox';});else tasks=tasks.filter(t=>!affected(t));if(a==='delete-project'){projects.splice(projects.indexOf(project()),1);view='Inbox';}else{project().collections=project().collections.filter(c=>c!==v);collection='';}change();});}
+ if(a==='settings'){dialog('Settings','<label><input type="checkbox" checked> Floating edge button</label><label>Swipe shortcut<select><option>Off</option><option>Strict three-finger edge swipe</option></select></label><label>AI title/description refinement<select><option>Only when requested</option></select></label>',()=>status('Settings saved in preview'));}
+ if(a==='sync')dialog('Saved changes',`<p>${pending} changes saved on device. They sync when SuperTask resumes online.</p>`);
+ if(a==='refresh')status('Local list refreshed');if(a==='close')noteState(true);if(a==='open-tasks')noteState(false);
+ });
+ render();
+ if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addSlider(layout,'rowSpacing',{label:'Row spacing',min:10,max:24,step:1,unit:'px'});tweak.addToggle(layout,'descriptionPreview',{label:'Description preview'});}
+})();
+</script>
+</div>

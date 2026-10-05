@@ -19,6 +19,7 @@ import {initGestureDetector} from './src/utils/gestureDetector';
 import {initTaskCache} from './src/cache/taskCache';
 import {markViewOpen, registerLifecycleDiagnostics} from './src/utils/viewState';
 import {logPermissionStates} from './src/utils/permissions';
+import {initLauncher} from './src/launcher/service';
 
 AppRegistry.registerComponent(appName, () => App);
 
@@ -50,6 +51,7 @@ permissionsLogged.then(initTaskCache, initTaskCache);
 // classified on finger UP. Config 'off' disables the quick-add lasso
 // gesture only (long press + three-finger tap always on) -- no restart needed.
 initGestureDetector();
+initLauncher();
 
 const icon = Image.resolveAssetSource(require('./assets/icon.png')).uri;
 

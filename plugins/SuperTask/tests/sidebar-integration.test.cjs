@@ -16,7 +16,7 @@ function load(file, overrides = {}) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true,
   }}).outputText, filename); return mod.exports;
 }
-const native = {View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
+const native = {TextInput: 'TextInput', View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView',
   Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null,
   StyleSheet: {create: value => value}, FlatList: ({data, renderItem}) => React.createElement('List', {}, data.map(item =>
     React.createElement('ListItem', {key: item.key || item.id}, renderItem({item}))))};
@@ -37,10 +37,18 @@ function workspace(config = {}, note = false, extraTasks = []) {
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
     reopened.push(id); data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false} : task)};
     data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted);
-  }, getCompletedTasks: async () => [], refreshCompletedTasks: async () => []};
+  }, getCompletedTasks: async () => data.allTasks.filter(task => task.completed), refreshCompletedTasks: async () => data.allTasks.filter(task => task.completed)};
   const hook = load('../src/utils/useTaskSelection.ts', {'../api/todoist': api}).useTaskSelection;
   let frozenReferences;
   const references = () => frozenReferences || data.allTasks.filter(task => task.source).map(task => ({...task, notePath: task.source.filePath, pageNum: task.source.pageNum}));
+  const service = {offlineData: async () => data, completedData: async () => data.allTasks.filter(task => task.completed),
+    subscribeOffline: () => () => {}, retryOffline: async id => {retries.push(id);},
+    mutateOfflineTasks: async (ids, action) => {for (const id of ids) {
+      if (action.kind === 'complete') await (action.completed ? api.completeTask : api.reopenTask)(id);
+    }}, saveOfflineBatch: async () => []};
+  const mutations = load('../src/workspace/useWorkspaceMutations.ts', {'../offline/service': service}).default;
+  const rowModule = load('../src/workspace/WorkspaceTaskRow.tsx', {'react-native': native,
+    '../components/TaskRow': {__esModule: true, default: 'TaskRow'}, '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
   const view = load('../src/screens/TaskHome.tsx', {
     'react-native': native, 'sn-plugin-lib': {PluginCommAPI: {getCurrentFilePath: async () => ({success: true, result: note ? '/note/Test.note' : ''}),
       getCurrentPageNum: async () => ({success: true, result: 0})}, PluginFileAPI: {getElements: async () => ({success: true, result: []})}},
@@ -50,7 +58,14 @@ function workspace(config = {}, note = false, extraTasks = []) {
     '../utils/useFontScale': {useFontScale: () => 1}, '../components/settings': {Check: 'Check'},
     '../utils/viewState': {getSessionTab: () => session, setSessionTab: value => {session = value;}}, '../api/todoist': api,
     '../cache/taskCache': {getCache: () => data, fetchTaskData: async () => data, initTaskCache: async () => data, invalidateCache() {}, subscribeCache: () => () => {}},
-    '../offline/service': {offlineData: async () => data, completedData: async () => data.allTasks.filter(task => task.completed), retryOffline: async id => {retries.push(id);}},
+    '../offline/service': service, '../workspace/useWorkspaceMutations': {__esModule: true, default: mutations},
+    '../workspace/WorkspaceTaskRow': {...rowModule, __esModule: true},
+    '../components/NativeTaskSidebar': {__esModule: true, default: 'Sidebar'},
+    '../components/InlineTaskComposer': {__esModule: true, default: 'Composer'},
+    '../components/WorkspaceSelectionBar': {__esModule: true, default: 'Selection'},
+    '../components/DatePicker': {__esModule: true, default: 'DatePicker'},
+    '../components/ProjectPicker': {__esModule: true, default: 'ProjectPicker'},
+    '../components/PriorityPicker': {__esModule: true, default: 'PriorityPicker'},
     '../utils/debug': {log() {}, logError() {}}, '../utils/useTaskSelection': {useTaskSelection: hook},
     '../components/TaskSidebar': {__esModule: true, default: 'Sidebar'}, '../components/TaskRow': {__esModule: true, default: 'TaskRow'},
     '../components/ProjectOverview': {__esModule: true, default: 'Overview'}, '../components/SelectionBar': {__esModule: true, default: 'UndoBar'},
@@ -88,16 +103,21 @@ test('project sidebar choice preserves navigation and groups collections in the 
   await switchTo(tree, 'projects'); assert.equal(tree.root.findAllByType('Overview').length, 1);
   await act(async () => tree.unmount());
 });
-test('checkbox completes immediately, body opens details, and undo restores note/device tasks', async () => {
+test('checkbox completes immediately, title expands quick actions, and completed footer reopens without an Undo banner', async () => {
   const model = workspace({}, true); let tree;
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   await switchTo(tree, 'note');
   assert.equal(tree.root.findByType('Sidebar').props.noteAvailable, true);
   const row = tree.root.findByType('TaskRow');
-  row.props.onPress(row.props.task); assert.equal(model.navCalls[0][0], 'task-detail');
+  await act(async () => row.props.onPress(row.props.task));
+  assert.equal(model.navCalls.length, 0);
+  await act(async () => tree.root.findByType('QuickActions').props.onEdit());
+  assert.equal(model.navCalls[0][0], 'task-detail');
   await act(async () => row.props.onCheckPress('one'));
   assert.deepEqual(model.completed, ['one']); assert.equal(tree.root.findAllByType('TaskRow').length, 0);
-  await act(async () => tree.root.findByType('UndoBar').props.onUndo());
+  assert.equal(tree.root.findAllByType('UndoBar').length, 0);
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Expand completed tasks'}).props.onPress());
+  await act(async () => tree.root.findByType('TaskRow').props.onCheckPress('one'));
   assert.deepEqual(model.reopened, ['one']); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
   await switchTo(tree, 'device'); assert.equal(tree.root.findAllByType('TaskRow').length, 1);
   await act(async () => tree.unmount());
@@ -202,7 +222,7 @@ test('deleted tasks and acknowledged recurring occurrences stay absent from regi
 test('All projects uses the same immediate checkbox action; collapsing projects never completes concealed tasks', async () => {
   const completed = [];
   const Overview = load('../src/components/ProjectOverview.tsx', {'react-native': native,
-    '../utils/useFontScale': {useFontScale: () => 1}, './TaskRow': {__esModule: true, default: 'TaskRow'},
+    '../utils/useFontScale': {useFontScale: () => 1}, './TaskRow': {__esModule: true, default: 'TaskRow'}, '../workspace/WorkspaceTaskRow': {__esModule: true, default: 'TaskRow'},
   }).default;
   let tree;
   await act(async () => {tree = create(React.createElement(Overview, {projects: [{id: 'p', name: 'Work'}],

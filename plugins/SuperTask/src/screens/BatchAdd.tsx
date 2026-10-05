@@ -111,8 +111,9 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   const merge = (index: number) => safely(() => {
     const merged = mergeOverrides(rows[index], rows[index + 1]);
     const result = mergeNext(rows, index);
+    const descriptions = [...new Set([rows[index].description, rows[index + 1].description].filter(Boolean))];
     return result.map((row: any, i: number) => i === index ? {...row, overrides: merged.overrides,
-      instructions: merged.instructions, description: merged.description,
+      instructions: merged.instructions, description: descriptions.join('\n'),
       projectId: merged.projectId, sectionId: merged.sectionId, dueString: merged.dueString, priority: merged.priority, labels: merged.labels} : row);
   });
   const split = (index: number) => safely(() => {

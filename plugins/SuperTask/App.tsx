@@ -296,13 +296,13 @@ function App(): React.JSX.Element {
 
   return (
     <View style={[styles.container, isOverlay && styles.containerOverlay]}>
-      {screenStack.filter(entry => entry.id === current.id || entry.name === 'task-add' || entry.name === 'task-batch').map(entry => {
+      {screenStack.filter(entry => entry.id === current.id || entry.name === 'task-home' || entry.name === 'task-add' || entry.name === 'task-batch').map(entry => {
         const active = entry.id === current.id;
         return <View key={entry.id} style={active ? styles.screen : styles.hiddenScreen}
           pointerEvents={active ? 'auto' : 'none'} accessibilityElementsHidden={!active}
           importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}>
           {entry.name === 'task-home' && (
-            <TaskHome key={entry.id} nav={nav} focusTab={entry.params?.focusTab} />
+            <TaskHome key={entry.id} nav={nav} active={active} focusTab={entry.params?.focusTab} />
           )}
           {entry.name === 'project-view' && (
             <ProjectView key={entry.id} nav={nav} projectId={entry.params?.projectId} projectName={entry.params?.projectName} />

@@ -11,7 +11,6 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import {PluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
 import {setConfigLoader, getTasks, completeTask} from '../api/todoist';

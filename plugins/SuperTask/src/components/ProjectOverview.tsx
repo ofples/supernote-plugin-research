@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {View, Text, Pressable, FlatList, StyleSheet} from 'react-native';
-import TaskRow from './TaskRow';
+import BaseTaskRow from './TaskRow';
 import {useFontScale} from '../utils/useFontScale';
 const {projectGroups, overviewRows, collapsingSelection} = require('../overview/model');
 
@@ -8,8 +8,9 @@ const {projectGroups, overviewRows, collapsingSelection} = require('../overview/
 let sessionExpanded: Record<string, boolean> = {};
 let sessionCompact = true;
 type Props = {projects: any[]; tasks: any[]; sections?: any[]; selectedIds: string[];
-  onSelect: (id: string) => void; onTask: (task: any) => void; onProject: (project: any) => void; busy?: boolean; onSyncPress?: () => void};
-export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress}: Props) {
+  onSelect: (id: string) => void; onTask: (task: any) => void; onProject: (project: any) => void; busy?: boolean; onSyncPress?: () => void;
+  TaskComponent?: React.ComponentType<any>};
+export default function ProjectOverview({projects, tasks, sections = [], selectedIds, onSelect, onTask, onProject, busy, onSyncPress, TaskComponent = BaseTaskRow}: Props) {
   const scale = useFontScale();
   const [expanded, setExpanded] = useState(sessionExpanded);
   const [compact, setCompact] = useState(sessionCompact);
@@ -33,7 +34,7 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
         <Pressable style={s.control} onPress={collapseAll}><Text style={s.action}>Collapse all</Text></Pressable>
         <Pressable style={s.control} accessibilityRole="button" accessibilityLabel={`Task density: ${compact ? 'compact' : 'comfortable'}`} onPress={() => {sessionCompact = !compact; setCompact(!compact);}}><Text style={s.action}>{compact ? 'Compact' : 'Comfortable'}</Text></Pressable>
       </View>
-      <Text style={s.hint}>Tap a project to show tasks. Check a task to complete it; tap its title for details.</Text>
+      <Text style={s.hint}>Tap a project to show tasks. Check a task to complete it; tap its title for actions.</Text>
     </View>
     {!projects.length ? <View style={s.empty}><Text style={s.emptyText}>No projects</Text></View> :
       <FlatList data={rows} keyExtractor={(item: any) => item.key} extraData={{selectedIds, compact}}
@@ -48,7 +49,7 @@ export default function ProjectOverview({projects, tasks, sections = [], selecte
             <Pressable style={s.open} accessibilityLabel={`Open ${item.project.name} project view`} onPress={() => onProject(item.project)}><Text style={s.action}>Open</Text></Pressable>
           </View> : item.type === 'collection' ? <View style={s.collection}><Text style={{fontSize: Math.round(16 * scale), fontWeight: '600', color: '#000'}}>{item.name} · {item.tasks.length}</Text></View> :
             item.type === 'empty' ? <Text style={s.emptyProject}>No active tasks{item.collection ? ' in this collection' : ''}</Text> :
-            <View style={s.task}><TaskRow task={item.task} selected={selectedIds.includes(item.task.id)} onCheckPress={onSelect}
+            <View style={s.task}><TaskComponent task={item.task} selected={selectedIds.includes(item.task.id)} onCheckPress={onSelect}
               onPress={onTask} compact={compact} disabled={busy} onSyncPress={onSyncPress} /></View>}
       />}
   </View>;
