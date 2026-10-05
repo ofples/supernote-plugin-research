@@ -109,3 +109,14 @@ Beta.16 runtime `09759e4`, workspace `db84c09`. Artifact `build/outputs/SuperTas
 Beta.16 installation/enabled ON confirmed in Plugin Manager. Runtime checks await reopening from the hidden Note toolbar; user asked. No task/note edits.
 
 Pending: scroll Inbox to Completed as part of the list, collapse/expand, quiet history pagination; verify stronger Projects separator; select a task and inspect right-aligned borders/trash/close glyphs and dismiss; open calendar/list actions and confirm white full-size first frame (no corner expansion or dark overlay). No real task mutations are needed. Other device workflows remain at the previously recorded coverage.
+
+
+## Beta.16 hardware follow-up and beta.17 floating dialogs
+
+Beta.16 startup, Projects divider, same-line right-aligned bordered task icons, Close action (actions disappeared), normal-flow Completed group and collapse/expand were inspected on the Nomad. Calendar showed a white fullscreen page with no dimming; transient first-paint behavior was not captured. The user clarified the desired size should be a floating panel. A saved-history warning appeared again; initial no-error refresh observations do not establish backend history success. Active sync succeeded at 22 tasks/0 queued. No task/note changes.
+
+Cleanup: removed 9 obsolete installer files under MyStyle, replaced Plugins/SuperTask.snplg with beta.16, verified both remaining packages SHA256 `581c8c22b60e31a85e03da8bd5aa507ccff88d97421777b65a465e2438654bc2`. Installed private plugin data/settings untouched; local rollback packages retained.
+
+Beta.17/code22 runtime `3be6650`, feature `fe8d299`. Artifact `build/outputs/SuperTask-native-beta17.snplg`, 7,586,889 bytes, SHA256 `39624c1a4566ec349464e2df3e4f17e8dd9b8f8c8c9ab0b4f8e84e33c6a5d8d0`. 242 tests, type/lint, full native package verification and Hermes pass. Test confirms a successful retry clears an earlier history warning. Dialog panels now have explicit screen-sized transparent backdrops and fixed smaller white sheets.
+
+Pending: install beta.17, update canonical package/remove beta.16 installer, verify floating calendar/menu background remains unchanged/undimmed and no size entrance jump, retry history and record exact cause if failure persists.

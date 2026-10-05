@@ -43,3 +43,8 @@ Paid scratch AI request ledger: **1 of 100** used across the goal sessions. No r
 ### Beta.16 list-flow follow-up
 
 Beta.15 remote history refresh is hardware-confirmed (22 active/0 queued). Beta.16 has 241 passing tests and package/Hermes checks. Completed is in the same list flow; white full-page action/calendar dialogs are undimmed/nonanimated; row icon borders align right with explicit Close; Projects has a solid divider. Device layout/first-frame checks pending coordinated screen availability.
+
+
+### Beta.17 clarification and hardware caveat
+
+Beta.16 row actions, dismissal and normal Completed flow passed hardware checks; a history warning recurred, so prior no-error observations do not prove remote history success. Beta.17 floating undimmed panels and successful-retry warning cleanup have 242 passing tests plus native/Hermes verification. Device dialog/history checks pending. Nine old installers removed; beta.16 canonical package hash verified, no task/note edits.
