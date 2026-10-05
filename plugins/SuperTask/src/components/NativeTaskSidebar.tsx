@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   labelSelected: {fontWeight: '700'},
   count: {marginLeft: 8, fontWeight: '700', color: '#000000'},
   countSelected: {color: '#000000'},
-  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderBottomWidth: 1, borderBottomColor: '#999999', borderStyle: 'dotted'},
+  projectsHeader: {minHeight: 42, justifyContent: 'flex-end', paddingHorizontal: 12, paddingBottom: 7, marginTop: 8, marginBottom: 6, borderTopWidth: 2, borderTopColor: '#000000', borderStyle: 'solid'},
   headerLabel: {fontSize: 14, fontWeight: '700', color: '#000000', letterSpacing: 0.4, textTransform: 'uppercase'},
   footer: {borderTopWidth: 1, borderTopColor: '#999999', borderStyle: 'dotted', paddingHorizontal: 8, paddingVertical: 6, backgroundColor: '#ffffff'},
   newProject: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12},

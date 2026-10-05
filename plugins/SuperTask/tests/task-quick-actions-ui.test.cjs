@@ -16,24 +16,29 @@ function load(file, overrides = {}) {
   }}).outputText, filename); return mod.exports.default;
 }
 const actionsProps = calls => ({onEdit: () => calls.push('edit'), onDate: () => calls.push('date'), onMove: () => calls.push('move'),
-  onPriority: () => calls.push('priority'), onMoveUp: () => calls.push('up'), onMoveDown: () => calls.push('down'), onDelete: () => calls.push('delete')});
+  onPriority: () => calls.push('priority'), onMoveUp: () => calls.push('up'), onMoveDown: () => calls.push('down'), onDelete: () => calls.push('delete'), onDismiss: () => calls.push('dismiss')});
 test('quick actions are icon-only accessible targets and keep their callbacks', async () => {
   const Actions = load('../src/components/TaskQuickActions.tsx', {'react-native': native, '../utils/useFontScale': {useFontScale: () => 1}});
   const calls = []; let tree;
   await act(async () => {tree = create(React.createElement(Actions, actionsProps(calls)));});
   const buttons = tree.root.findAllByType('Pressable');
-  assert.equal(buttons.length, 7);
-  assert.deepEqual(buttons.map(button => button.props.accessibilityLabel), ['Edit task', 'Set date', 'Move task', 'Set priority', 'Move task up', 'Move task down', 'Delete task']);
-  for (const button of buttons) {
+  assert.equal(buttons.length, 8);
+  assert.deepEqual(buttons.map(button => button.props.accessibilityLabel), ['Edit task', 'Set date', 'Move task', 'Set priority', 'Move task up', 'Move task down', 'Delete task', 'Close task actions']);
+  for (const button of buttons.slice(0, 7)) {
     assert.equal(button.props.style[0].width, 44); assert.equal(button.props.style[0].height, 44);
     assert.equal(button.findAllByType('Text').length, 1);
+    assert.equal(button.props.style[0].borderWidth, 1);
   }
-  await act(async () => buttons.at(-1).props.onPress());
+  await act(async () => buttons[6].props.onPress());
   assert.deepEqual(calls, ['delete']);
+  await act(async () => buttons[7].props.onPress());
+  assert.deepEqual(calls, ['delete', 'dismiss']);
   await act(async () => tree.update(React.createElement(Actions, {...actionsProps(calls), maxWidth: 250})));
   assert.equal(tree.root.findAllByType('Pressable').some(button => button.props.accessibilityLabel === 'Move task up'), true);
   assert.equal(tree.root.findAllByType('Pressable').some(button => button.props.accessibilityLabel === 'Move task down'), true);
   assert.equal(tree.root.findByType('ScrollView').props.style[1].width, 250);
+  await act(async () => tree.update(React.createElement(Actions, {...actionsProps(calls), maxWidth: 500})));
+  assert.equal(tree.root.findByType('ScrollView').props.style[1].width, 341);
   assert.equal(tree.root.findByProps({accessibilityLabel: 'Set date'}).props.accessibilityState.disabled, false);
   await act(async () => tree.unmount());
 });
@@ -45,5 +50,16 @@ test('project sidebar stays plain and never renders the legacy project options m
   assert.equal(tree.root.findAllByProps({accessibilityLabel: 'Options for Work'}).length, 0);
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Work'}).props.onPress());
   assert.deepEqual(changed, ['project:p']); assert.deepEqual(legacyMenu, []);
+  await act(async () => tree.unmount());
+});
+test('native sidebar uses one solid separator above Projects', async () => {
+  const Sidebar = load('../src/components/NativeTaskSidebar.tsx', {'react-native': native, '../utils/useFontScale': {useFontScale: () => 1}});
+  let tree;
+  await act(async () => {tree = create(React.createElement(Sidebar, {activeView: 'projects', projects: [], noteAvailable: false, onViewChange: () => {}}));});
+  const header = tree.root.findByProps({accessibilityRole: 'header'});
+  assert.equal(header.props.style.borderTopWidth, 2);
+  assert.equal(header.props.style.borderTopColor, '#000000');
+  assert.equal(header.props.style.borderStyle, 'solid');
+  assert.equal(header.props.style.borderBottomWidth, undefined);
   await act(async () => tree.unmount());
 });
