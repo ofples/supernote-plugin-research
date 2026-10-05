@@ -524,7 +524,7 @@ const s = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderWidth: 3,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   panelHeader: {
     flexDirection: 'row',
@@ -532,7 +532,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderBottomWidth: 2,
+    borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
   panelTitle: {
@@ -562,7 +562,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   closeBtnText: {
     fontSize: 16,
@@ -615,7 +615,7 @@ const s = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     padding: 10,
     fontSize: 16,
     color: '#000000',
@@ -632,9 +632,9 @@ const s = StyleSheet.create({
   btn: {
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   btnText: {
     fontSize: 15,
@@ -643,9 +643,9 @@ const s = StyleSheet.create({
   },
   submitBtn: {
     paddingVertical: 14,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
     backgroundColor: '#000000',
     marginBottom: 8,
@@ -663,9 +663,9 @@ const s = StyleSheet.create({
   },
   markBtn: {
     paddingVertical: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
   },
   markBtnDashed: {
@@ -685,9 +685,9 @@ const s = StyleSheet.create({
   successBtn: {
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
   },
   successBtnText: {

@@ -165,9 +165,9 @@ export function formatDate(d: Date): string {
 
 const styles = StyleSheet.create({
   container: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: '#ffffff',
     padding: 12,
   },
@@ -213,13 +213,13 @@ const styles = StyleSheet.create({
     maxHeight: 44,
   },
   cellToday: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   cellSelected: {
     backgroundColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   cellText: {
     fontSize: 15,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
   },
   footerButtonText: {

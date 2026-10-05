@@ -697,9 +697,9 @@ const styles = StyleSheet.create({
   runButton: {
     margin: 16,
     paddingVertical: 14,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
     backgroundColor: '#000000',
   },
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
 
   // Navigation tests
   navSection: {
-    borderTopWidth: 2,
+    borderTopWidth: 1,
     borderTopColor: '#000000',
     padding: 12,
     maxHeight: 200,
@@ -779,9 +779,9 @@ const styles = StyleSheet.create({
   navBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   navBtnText: {
     fontSize: 12,
@@ -802,7 +802,7 @@ const styles = StyleSheet.create({
 
   // Motion listener
   motionSection: {
-    borderTopWidth: 2,
+    borderTopWidth: 1,
     borderTopColor: '#000000',
     padding: 12,
     maxHeight: 240,
@@ -821,9 +821,9 @@ const styles = StyleSheet.create({
   motionBtn: {
     paddingHorizontal: 20,
     paddingVertical: 8,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   motionBtnActive: {
     backgroundColor: '#000000',
