@@ -32,11 +32,32 @@ export async function requestLauncherPermission() {
   }
   return bridge.requestPermission();
 }
+// Explicit Settings changes already committed their preference before clearing a
+// native quick-Hide marker. Background reloads instead commit disabled first.
+export async function confirmLauncherPreference() {
+  await bridge?.confirmHide();
+}
 export function reloadLauncher() {
   const token = ++revision;
   const run = queue.then(async () => {
-    const config = await loadConfig();
+    let config = await loadConfig();
     if (!bridge || token !== revision) {
+      return;
+    }
+    const status = await bridge.getStatus();
+    if (token !== revision) {
+      return;
+    }
+    if (status.hidePending) {
+      if (!(await saveConfig({launcherEnabled: false}))) {
+        throw new Error(
+          'Launcher hidden now; disabling preference is waiting to save locally.',
+        );
+      }
+      await bridge.confirmHide();
+      config = await loadConfig();
+    }
+    if (token !== revision) {
       return;
     }
     await bridge.configure(
@@ -57,7 +78,7 @@ export function launcherViewChanged(open) {
 }
 export function launcherLifecycle(state) {
   if (state === 1) {
-    reloadLauncher();
+    reloadLauncher().catch(() => {});
   }
   if (state === 2) {
     launcherViewChanged(true);
@@ -76,9 +97,18 @@ export function initLauncher() {
   }
   initialized = true;
   subscriptions.push(
-    DeviceEventEmitter.addListener('SuperTaskLauncherTap', async () => {
+    DeviceEventEmitter.addListener('SuperTaskLauncherTap', async event => {
       // Native opens the view once, waking React; do not open it again here.
       require('../utils/viewState').markViewOpen('edge-launcher');
+      if (event?.route === 'settings') {
+        global.__superTaskButtonId = 'config';
+        global.__superTaskDeepLink = null;
+        if (global.__superTaskNavigate) {
+          global.__superTaskButtonId = null;
+          global.__superTaskNavigate('config');
+        }
+        return;
+      }
       const config = getCachedConfig() || (await loadConfig());
       const focusTab = resolveDefaultTab(config);
       global.__superTaskButtonId = null;
@@ -102,7 +132,7 @@ export function initLauncher() {
             'Launcher',
             'Position could not be saved; restoring the last durable position',
           );
-          reloadLauncher();
+          reloadLauncher().catch(() => {});
         }
       },
     ),
@@ -110,13 +140,19 @@ export function initLauncher() {
   subscriptions.push(
     DeviceEventEmitter.addListener('SuperTaskLauncherError', event => {
       log('Launcher', event.message || 'Launcher unavailable');
-      if (event.launchFailed) {
-        require('../utils/viewState').markViewClosed('launcher-error');
-      }
+      // A rejected native launch never opened/marked our UI. Leave any newer
+      // toolbar-opened view's lifecycle state intact.
     }),
   );
   subscriptions.push(
-    DeviceEventEmitter.addListener('SuperTaskLauncherResume', reloadLauncher),
+    DeviceEventEmitter.addListener('SuperTaskLauncherResume', () =>
+      reloadLauncher().catch(() => {}),
+    ),
   );
-  reloadLauncher();
+  subscriptions.push(
+    DeviceEventEmitter.addListener('SuperTaskLauncherHide', () =>
+      reloadLauncher().catch(() => {}),
+    ),
+  );
+  reloadLauncher().catch(() => {});
 }

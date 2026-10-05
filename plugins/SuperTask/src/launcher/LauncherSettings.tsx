@@ -1,11 +1,12 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useRef} from 'react';
 import {AppState, Pressable, StyleSheet, Text, View} from 'react-native';
-import {loadConfig, saveConfig} from '../utils/config';
+import {loadConfig, saveConfig, getCachedConfig} from '../utils/config';
 import {CheckRow, Section, Segmented, SettingRow} from '../components/settings';
 import {
   launcherStatus,
   reloadLauncher,
   requestLauncherPermission,
+  confirmLauncherPreference,
 } from './service';
 
 export default function LauncherSettings() {
@@ -16,6 +17,7 @@ export default function LauncherSettings() {
   const [foregroundDetection, setForegroundDetection] = useState(true);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const refresh = async () => {
     try {
       const status = await launcherStatus();
@@ -23,15 +25,23 @@ export default function LauncherSettings() {
       setAvailable(status.available);
       setForegroundDetection(status.foregroundDetection === true);
       await reloadLauncher();
-    } catch {
-      setMessage('Launcher status could not be checked.');
+      const config = await loadConfig();
+      if (!savingRef.current) {
+        setEnabled(config.launcherEnabled === true);
+        setEdge(config.launcherEdge === 'left' ? 'left' : 'right');
+      }
+      if (status.hidePending) {
+        setMessage('Hidden. Saved on device.');
+      }
+    } catch (error: any) {
+      setMessage(error.message || 'Launcher status could not be checked.');
     }
   };
   useEffect(() => {
     let mounted = true;
     loadConfig()
       .then(config => {
-        if (mounted) {
+        if (mounted && !savingRef.current) {
           setEnabled(config.launcherEnabled === true);
           setEdge(config.launcherEdge === 'left' ? 'left' : 'right');
         }
@@ -54,16 +64,27 @@ export default function LauncherSettings() {
     launcherEdge?: string;
     launcherPosition?: number;
   }) => {
-    if (saving) {
+    if (savingRef.current) {
       return;
     }
+    savingRef.current = true;
+    const previous = {enabled, edge};
     setSaving(true);
     setMessage('Saving locally…');
+    if (next.launcherEnabled !== undefined) {
+      setEnabled(next.launcherEnabled);
+    }
+    if (next.launcherEdge) {
+      setEdge(next.launcherEdge);
+    }
+    let committed = false;
     try {
       if (!(await saveConfig(next))) {
         throw new Error('Settings could not be saved.');
       }
+      committed = true;
       if (next.launcherEnabled !== undefined) {
+        await confirmLauncherPreference();
         setEnabled(next.launcherEnabled);
       }
       if (next.launcherEdge) {
@@ -72,16 +93,31 @@ export default function LauncherSettings() {
       await reloadLauncher();
       setMessage('Saved on device');
     } catch (error: any) {
+      if (!committed) {
+        const durable = getCachedConfig();
+        setEnabled(
+          durable ? durable.launcherEnabled === true : previous.enabled,
+        );
+        setEdge(
+          durable
+            ? durable.launcherEdge === 'left'
+              ? 'left'
+              : 'right'
+            : previous.edge,
+        );
+      }
       setMessage(error.message || 'Launcher settings failed.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
   return (
     <Section title="EDGE LAUNCHER">
       <Text style={styles.note}>
-        Finger only. Tap to open tasks; drag to reposition. The button stays at
-        the chosen edge when rotated. It hides while SuperTask is open.
+        Finger only. Tap to open tasks; drag to reposition. Hold for Hide and
+        Settings. The button stays at the chosen edge when rotated. It hides
+        while SuperTask is open.
       </Text>
       <Text style={styles.note}>
         Pen protection is unavailable: touching the button with the pen can
