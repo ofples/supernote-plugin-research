@@ -19,6 +19,29 @@ real physical display metrics and reapplies the same edge/fraction. A failed
 position save restores the last durable setting. Settings offers enable/disable,
 edge choice, reset position, and a just-in-time permission screen for PluginHost.
 
+A deliberate 800 ms hold opens a separate 160-by-96 dp native menu containing
+48 dp rows for Hide and Settings. It is non-focusable/non-modal, clamped to the
+screen, and disappears after ten seconds, rotation/repositioning or cancellation.
+The held pointer's release cannot activate either the menu or the task list;
+menu selection requires a new finger tap. Drag, multi-contact and pen input cannot
+select a menu row. No full-screen dismissal surface or pen lock is created.
+
+Quick Hide removes both windows and stops monitoring immediately. A native
+private pending marker prevents accidental reappearance while React is paused
+or restarting. JS persists `launcherEnabled: false` through the existing private
+config queue before acknowledging the marker. If saving fails, native stays
+hidden and Settings reports that the disabling preference is waiting to save;
+resume/reload retries it. Explicit Settings changes clear the marker only after
+their preference commits. Toggle and edge changes render intent immediately and
+roll back from the last acknowledged config on known local-save failure.
+
+Settings opens through the same native SDK operation and routes to the existing
+config screen, including before App mounts. Routing events are emitted only
+after the SDK Promise accepts the open request (not proof of actual rendering).
+A rejection never marks our view open or closes a newer toolbar-opened view.
+Worker submission tolerates concurrent invalidation/shutdown; stale launch checks
+do not clear a newer launch and eligible visibility monitoring resumes.
+
 Visibility uses native `UsageStatsManager.queryEvents`, checked at most once per
 three seconds only while enabled, screen on and the SuperTask UI closed. It
 requires existing host usage permission; missing permission or ambiguous results
@@ -71,6 +94,10 @@ false positive.
 - Eight focused Node tests cover coherent reordered pointer identities, physical
   dimensions/rotation, palm/pen/extra contacts, cancellation, drift/jumps, pen and
   launch cooldowns, malformed events, blocked streams, early lifts and slow release.
+- Eight service tests cover Settings routing before/after mount, normal task-tab
+  routing, quick-Hide commit-before-ack, paused/restart recovery, failed save,
+  explicit reenable and rejected launch isolation. Two rendered settings tests
+  verify immediate toggle/edge intent, known-failure rollback and successful commit.
 - TypeScript and focused ESLint checks pass with no errors. Existing style warnings
   remain in legacy touched files.
 - Release Kotlin compilation and Metro/Hermes bundling passed locally; the root
@@ -81,6 +108,7 @@ false positive.
 - No device installation, note modification, UI interaction, recovery or paid AI
   was performed by this implementation subtask.
 - Pending: permission denied/return, tap vs slow tap/drag/cancel, physical edge
+  long-press menu positioning/expiry/new-tap selection, native Hide while paused,
   position and rotation, hide/disable, plugin/host restart and classloader cleanup,
   foreground transitions/coexistence, e-ink redraw, idle-monitor overhead, pen under
   the button/elsewhere, deliberate swipe traces and palm rejection on the Nomad.
