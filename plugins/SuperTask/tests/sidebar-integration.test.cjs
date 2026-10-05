@@ -453,3 +453,20 @@ test('successful retry clears a previous history warning without discarding save
   assert.doesNotMatch(JSON.stringify(tree.toJSON()), /Temporary network problem/);
   await act(async () => tree.unmount());
 });
+
+
+test('sync summary stays one truncated line in a stable footer and keeps full details accessible', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const summary = tree.root.findByProps({accessibilityLabel: 'Open sync summary'});
+  const labels = summary.findAllByType('Text');
+  assert.equal(labels.length, 1);
+  assert.equal(labels[0].props.numberOfLines, 1);
+  assert.equal(labels[0].props.ellipsizeMode, 'tail');
+  assert.match(summary.props.accessibilityValue.text, /tasks, .*queued/);
+  const parent = summary.parent;
+  assert.equal(parent.props.style[1].height, 69);
+  await act(async () => summary.props.onPress());
+  assert.ok(tree.root.findByProps({accessibilityLabel: 'Close sync summary'}));
+  await act(async () => tree.unmount());
+});
