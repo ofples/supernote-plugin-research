@@ -1,5 +1,9 @@
 # SuperTask progress
 
+## UI polish follow-up - 5 October 2026
+
+Beta.15/code 20 is built and locally verified (runtime `e73adf3`). Workspace draft PR #9 includes icon-only same-row task actions, borderless action icons, single faint collection rules, a plain completed footer, pane-only project menus, compact dialog button groups, and name/label inputs with adjacent save/apply buttons. History refresh accepts numeric successful status codes and divides older requests into bounded 89-day windows; the configured account completed-history endpoint succeeds in a read-only computer probe. All 239 tests, TypeScript, lint, native package inspection and full Hermes compilation pass. Device installation and history-refresh verification are pending while the coordinated Obsidian chat uses the screen.
+
 ## Connected Nomad follow-up — 5 October 2026
 
 **Beta.14 is installed/enabled**, with startup and corrected dotted separators verified on the Nomad. Existing configuration is unchanged and privately backed up. Multiselect/Select all selected 20 active Inbox tasks, including offscreen rows; Cancel cleared selection without edits. Saved completed history renders; its remote refresh was unavailable during the check. No task/note edits or new AI calls were made. The separator correction is on the workspace feature branch (`db69d20`). Combined beta.14/code 19 has all 236 tests, TypeScript/lint, package inspection and full Hermes compilation passing. Screen control was coordinated with and returned to the Obsidian testing chat. Exact artifact/hash and remaining hardware checks are in [TESTING.md](TESTING.md). Subsequent sections describe earlier checkpoints.
