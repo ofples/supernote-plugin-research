@@ -1,6 +1,16 @@
 # SuperTask progress
 
-## Integrated feedback implementation — 4 October 2026
+## Native interaction goal delivered locally — 5 October 2026
+
+The native interaction redesign is implemented and reviewed on `release/workflow-overview-testing`, runtime revision `a70aa6a1f03c595f85c140014a5edcca23a71037`. All nine current feature heads are verified ancestors; the sync helper maintains that set. Main is unchanged. Separate draft PRs: [engine #7](https://github.com/ofples/supernote-plugin-research/pull/7), [launcher/recognition #8](https://github.com/ofples/supernote-plugin-research/pull/8), [workspace #9](https://github.com/ofples/supernote-plugin-research/pull/9). PR 9 depends on the engine branch; PRs 7/8 compare against the common reviewed beta.12/design base. The earlier six PRs are preserved.
+
+The workspace now provides contextual inline creation, row actions, explicit multiselect and atomic bulk edits, per-view completed history without an Undo banner, dotted separators, pane menus, fixed project creation and collection management. Local intents render immediately; frozen retries remain accessible across dialogs/views, account changes cancel old UI dispatch, and recurring occurrences retain independent identities and restrictions. Project retention has an explicit surviving destination and conservative scope proof. Ordering writes current Todoist order keys within sibling containers. OCR/AI title-description proposals preserve manual edits and provenance. Luna handled bounded presentation/parser work; Sol handled engine/native coordination and reviewed integration.
+
+**Final beta:** 0.4.0-beta.13 / code 18, `build/outputs/SuperTask-native-beta13.snplg`, **7,586,231 bytes**, SHA-256 `d0263e10675b2fc81923f27a737cf2d15f18d346f655d64f11ce301e009ebac5`. **236 tests pass**, full TypeScript/lint error checks pass, full native/JS build and actual archive verification pass, and the complete JS bundle compiles with the pinned Hermes compiler. Config/icon/native registrations/dex/ARM64 library and overlay manifest permission were inspected. Inherited build/dependency warnings remain.
+
+**Device:** ADB currently sees no connected Nomad, so beta.13 is built but not installed or hardware-verified. Beta.12 remains the last installed version. [Exact deferred checks and limitations](docs/native-interactions-validation.md) include launcher pen/rotation/coexistence, gesture traces, handwriting recognition and interaction timing. Launcher defaults off; scoped pen protection is unavailable in the SDK. Remote Keep tasks remains restricted where complete retention cannot be proved. The scratch Todoist contract check was cleaned up; paid AI ledger remains **1/100**. No real tasks/notes, credentials, main history or public release were changed.
+
+## Historical integrated feedback implementation — 4 October 2026
 
 The approved feedback scope is implemented across six feature histories on `release/workflow-overview-testing`, runtime integration HEAD `99dd6e166cf3d52302f6da61db7a9dc2210f955b`. Follow-up heads: offline mutations/collections (PR 4) `8e12d886403d4edbeeb01a02b28983a1978b6fcb`, sidebar/actions (PR 5) `dd81300801bc0f74f854b2882936fa815838e829`, and capture/batch/AI settings (PR 6) `8742e3c0f534a2d9e75e8c13c369b2180fcde720`. Draft PRs 4–6 remain separate/reviewable; earlier PRs 1–3 are preserved. Six-head ancestry verification passed. There has been no main merge or release publication.
 

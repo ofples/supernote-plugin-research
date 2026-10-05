@@ -12,6 +12,8 @@ Keep tasks remains available for fully known never-sent local containers. Remote
 
 ## Hardware checks deferred
 
+Final local runtime revision: `a70aa6a1f03c595f85c140014a5edcca23a71037`. Beta.13/code 18 package: 7,586,231 bytes, SHA-256 `d0263e10675b2fc81923f27a737cf2d15f18d346f655d64f11ce301e009ebac5`. The combined 236-test suite, TypeScript, lint error checks, full native/JS build, actual archive inspection and full pinned Hermes compilation pass. Separate review PRs 7–9 are attached; all nine feature histories are integrated. Final runtime code is unchanged by the subsequent documentation commit.
+
 ADB reported no connected device during final local integration. These checks remain pending for the new beta; earlier beta.12 checks do not establish new runtime behavior:
 
 - Install and enable the inspected combined beta, preserve configuration, verify startup/cache and settings entry points.

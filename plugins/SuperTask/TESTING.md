@@ -1,5 +1,23 @@
 # Combined SuperTask testing
 
+## Current native interaction beta — 5 October 2026
+
+Integration branch: `release/workflow-overview-testing`; packaged runtime revision **a70aa6a1f03c595f85c140014a5edcca23a71037**. All nine current remote feature heads pass ancestry verification through `syncTestingBranch.ps1` without additional changes. Main and the earlier six draft PRs remain unchanged.
+
+| New feature | Included head | Draft review base |
+|---|---|---|
+| Durable offline location/order/bulk engine, PR 7 | `34f96a5c90bb985278941660d5479d39f5ea178f` | `review/native-interactions-base` |
+| Native launcher and recognition, PR 8 | `5aa3e97` | `review/native-interactions-base` |
+| Native workspace and safety follow-ups, PR 9 | `922399abf078d3fa78fcf08dc7e7e9753d9d0aba` | `feature/native-interaction-engine` |
+
+Artifact: **0.4.0-beta.13**, code **18**, `build/outputs/SuperTask-native-beta13.snplg`; **7,586,231 bytes**, SHA-256 **d0263e10675b2fc81923f27a737cf2d15f18d346f655d64f11ce301e009ebac5**. Final combined **236/236 tests passed**, none skipped/cancelled. Full TypeScript and ESLint error checks passed. Full debug native/Metro build, actual snplg/nested native archive verifier and full pinned Hermes bundle compilation passed. Native manifest inspection includes SYSTEM_ALERT_WINDOW; SDK/RN/React pins and package registrations/classes/ARM64 library match the source. Metro resolves the shared npm dependency junction without changing the lockfile or third-party clones. Inherited SDK/Gradle/Hermes/dependency warnings remain; no audit-clean claim is made.
+
+ADB sees no connected device. **Beta.13 has not been installed or hardware-verified.** The last verified installation remains beta.12. [Native verification handoff](docs/native-interactions-validation.md) records exact pending scratch workflows, server contract evidence, cleanup and platform limits. In particular the launcher is off by default and lacks SDK scoped pen exclusion; strict gesture thresholds require device traces. Remote retention is disabled when complete history/descendant scope cannot be proved. Paid AI requests remain **1 of 100**.
+
+The following beta.12 record and its task counts are historical, not evidence of the new runtime.
+
+## Historical beta.12 integration
+
 Current integration: `release/workflow-overview-testing`, runtime integration HEAD `99dd6e166cf3d52302f6da61db7a9dc2210f955b`. This is a private testing branch, not a release. Six feature histories and their testing helpers are included; nothing is merged to main or published. All six feature heads were verified as ancestors of this integration.
 
 | Feature history | Included revision |
