@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     padding: 12,
     fontSize: 16,
     color: '#000000',
@@ -502,9 +502,9 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     paddingVertical: 16,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
     backgroundColor: '#000000',
     marginBottom: 16,
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderWidth: 3,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     alignSelf: 'stretch',
@@ -563,9 +563,9 @@ const styles = StyleSheet.create({
   },
   markButton: {
     paddingVertical: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
   },
   markButtonDashed: {
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     zIndex: 10,
@@ -609,9 +609,9 @@ const styles = StyleSheet.create({
   overlayButton: {
     flex: 1,
     paddingVertical: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
     alignItems: 'center',
   },
   overlayButtonPrimary: {

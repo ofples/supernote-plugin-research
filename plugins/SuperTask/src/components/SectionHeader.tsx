@@ -1,8 +1,4 @@
-/**
- * SectionHeader - group divider with title, count chip, optional chevron (F-024).
- * White background + black rule (no gray tint -- e-ink dithers it), count in
- * the same Chip idiom as row metadata.
- */
+/** Group title and plain count above a single faint divider. */
 
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';

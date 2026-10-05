@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 4,
+    borderRadius: 0,
   },
   headerButtonText: {
     fontSize: 14,

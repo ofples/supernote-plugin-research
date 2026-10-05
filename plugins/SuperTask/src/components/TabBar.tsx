@@ -43,14 +43,14 @@ export default function TabBar({tabs, activeTab, onTabChange}: Props) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    borderBottomWidth: 2,
+    borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
   tab: {
     flex: 1,
     paddingVertical: 12,
     alignItems: 'center',
-    borderRightWidth: 2,
+    borderRightWidth: 1,
     borderRightColor: '#000000',
     backgroundColor: '#ffffff',
   },
