@@ -167,3 +167,12 @@ test('early lift cannot count subsequent one-finger travel; late assembly and sl
   release.at(-1).eventTime += 300;
   assert.equal(launchCount(classifier(), release), 0);
 });
+
+
+test('two-finger bottom swipe works with stable IDs and staggered lifts', () => {
+  const swipe = new StrictEdgeSwipe(); swipe.setDimensions(1404, 1872);
+  const points = (travel, count=2) => Array.from({length: count}, (_, i) => ({pointerId: i+10, toolType: 1, x: 500+i*65, y: 1830-travel}));
+  const event = (action, time, travel, count=2, actionIndex=0) => ({action, eventTime: time, toolType: 1, pointers: points(travel,count), pointerCount:count, actionIndex});
+  for (const e of [event(0,5000,0,1), event(5,5070,0,2,1), event(2,5250,55), event(2,5400,110), event(2,5550,170), event(6,5620,170,2,1)]) assert.equal(swipe.feed(e), false);
+  assert.equal(swipe.feed(event(1,5700,170,1)), true);
+});

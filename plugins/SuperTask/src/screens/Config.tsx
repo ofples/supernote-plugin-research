@@ -621,7 +621,7 @@ export default function Config({nav, initialPage}: Props) {
               applyChange('bezel', {bezelSwipeEnabled: v}, true);
             }}
             label="Bezel swipe"
-            hint="Three fingers together from the bottom edge; pause after writing"
+            hint="Two fingers together from the bottom edge; pause after writing"
             saved={savedRow === 'bezel'}
           />
 
@@ -886,7 +886,7 @@ export default function Config({nav, initialPage}: Props) {
         intro="Ways to get to your task list from a note, and what to expect once you are there."
         sections={[
           {label: 'Toolbar button', body: 'Tap SuperTask in the note toolbar plugin menu. Always available; nothing to enable.'},
-          {label: 'Bezel swipe (optional)', body: 'Start exactly three fingers together at the very bottom edge and move all three upward about a finger length. Off by default. All contacts must travel together before lifting. Uneven motion, extra contacts, pen activity and ambiguous touch streams are rejected. Pause at least 1.5 seconds after writing. Device traces are still needed to tune deliberate activation.'},
+          {label: 'Bezel swipe (optional)', body: 'Start two fingers together at the very bottom edge and move both upward about a finger length. Off by default. All contacts must travel together before lifting. Uneven motion, extra contacts, pen activity and ambiguous touch streams are rejected. Pause at least 1.5 seconds after writing. Device traces are still needed to tune deliberate activation.'},
           {label: 'Long press on a task link', body: 'Hold one finger on the dashed box around a captured task for about a second to open that task directly. Always on -- it needs a link under your finger, so nothing accidental can fire it.'},
           {label: 'Pen cooldown', body: 'For 1.5 seconds after any pen contact, finger gestures are ignored. This is what stops your palm from opening SuperTask mid-sentence. Pause briefly after writing before you gesture.'},
           {label: 'Default tab', body: 'The tab SuperTask opens on. "Last opened" returns you to whatever tab you were on when you closed it.'},

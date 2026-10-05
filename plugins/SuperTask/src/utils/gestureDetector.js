@@ -20,7 +20,7 @@
  *      clusters can mimic it and why it is opt-in
  *
  * 4. BEZEL SWIPE (F-021, config-gated, default OFF):
- *    - Exactly three stable finger IDs begin in the bottom 4% of the screen.
+ *    - Two or three stable finger IDs begin in the bottom 4% of the screen.
  *    - Each must move upward at least 150px concurrently, with bounded drift
  *      and coherent motion; malformed, cancelled, palm/pen and reentry streams
  *      fail closed. Screen bounds come from native display metrics.
@@ -237,7 +237,7 @@ export function initGestureDetector() {
       const edgeStream = _edgeStream;
       const strictLaunch = _strictSwipe.feed(msg, _bezelEnabled, isViewOpen() || _actionInProgress);
       if (swipeAction === 1 || swipeAction === 3) _edgeStream = false;
-      if (strictLaunch) { cancelGesture(); openTaskHome('strict three-finger edge swipe'); return; }
+      if (strictLaunch) { cancelGesture(); openTaskHome('two-finger edge swipe'); return; }
 
       // B-031: pen strokes made while our full-screen view is up COMMIT ink
       // to the note underneath (the EMR pen is a separate input plane; the

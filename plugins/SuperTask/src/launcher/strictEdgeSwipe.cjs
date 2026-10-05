@@ -126,22 +126,22 @@ class StrictEdgeSwipe {
         p.y - c.lastY > 15
       )
         return reject();
-      if (s.contacts.size < 3 && Math.abs(p.y - c.y) > 20) return reject();
+      if (s.contacts.size < 2 && Math.abs(p.y - c.y) > 20) return reject();
       c.lastX = p.x;
       c.lastY = p.y;
     }
     const travels = [...s.contacts.values()].map(c => c.y - c.lastY);
     if (Math.max(...travels) - Math.min(...travels) > 60) return reject();
-    if (action === 2 && s.contacts.size === 3 && s.release === null) {
+    if (action === 2 && s.contacts.size >= 2 && s.release === null) {
       s.moves++;
       s.qualified =
         s.moves >= 3 && t - s.start >= 300 && travels.every(d => d >= 150);
     }
     if (action === 6 || action === 1) {
-      // Require all three contacts to qualify while concurrently down, before any lift.
+      // Require all contacts to qualify while concurrently down, before any lift.
       if (
         !s.qualified ||
-        s.contacts.size !== 3 ||
+        s.contacts.size < 2 ||
         (s.release !== null && t - s.release > 250)
       )
         return reject();
