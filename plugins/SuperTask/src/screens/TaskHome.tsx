@@ -125,7 +125,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [pageTaskIds, setPageTaskIds] = useState<string[]>([]);
   const [registryNoteTasks, setRegistryNoteTasks] = useState<any[]>([]);
   const [deviceTasks, setDeviceTasks] = useState<any[]>(() => (cached0?.allTasks || []).filter((task: any) => task.source?.filePath).map((task: any) => ({...task, notePath: task.source.filePath, noteFile: task.source.filePath.split('/').pop(), pageNum: task.source.pageNum})));
-  const [deviceLoaded, setDeviceLoaded] = useState(false);
+  const [deviceLoaded, setDeviceLoaded] = useState(!!cached0);
   const [visibilityConfig, setVisibilityConfig] = useState<any>(cfg0 || {});
   const [, setDebugModeOn] = useState(cfg0?.debugMode === true);
 
