@@ -49,6 +49,7 @@ test('same Responses model path parses HTTP 200 buffered response and requests s
     assert.equal(requests[0].body.text.format.strict, true);
     assert.ok(requests[0].body.text.format.schema.properties.tasks.items.required.includes('sectionId'));
     assert.match(JSON.stringify(requests[0].body.input), /input_image/);
+    assert.match(JSON.stringify(requests[0].body.input), /sourceText/);
   } finally {global.fetch = originalFetch;}
 });
 test('cancelled refinement never starts a request; provider failures hide raw response bodies', async () => {
