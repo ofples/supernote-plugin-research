@@ -1183,7 +1183,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           !!item.group.id && <Pressable style={styles.iconButton} accessibilityLabel={`Collection menu for ${item.group.name}`} onPress={() => openContainerAction('collection', item.group.id, id)}><Text style={styles.headerButtonText}>•••</Text></Pressable>} /> :
         item.type === 'empty' ? <Text style={styles.emptyCollection}>No active tasks in this collection</Text> :
         <TaskRow task={item.task} onCheckPress={sel.completeOne} disabled={sel.busy} onPress={handleTaskPress} onSyncPress={() => setSyncSheetOpen(true)} showCollection={collectionName(item.task)} />}
-        ListFooterComponent={<><Pressable style={styles.headerButton} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={styles.headerButtonText}>+ New collection</Text></Pressable>{renderCompletedSection()}</>} onScrollBeginDrag={() => setExpandedId(null)} />
+        ListFooterComponent={<><Pressable style={styles.newCollection} accessibilityLabel={`New collection in ${name}`} onPress={() => openContainerAction('collection', undefined, id)}><Text style={[styles.newCollectionText, {fontSize: Math.round(15 * scale)}]}>+ New collection</Text></Pressable>{renderCompletedSection()}</>} onScrollBeginDrag={() => setExpandedId(null)} />
     </View>;
   };
 
@@ -1242,10 +1242,9 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         </View>
       </View>
 
-      <View style={styles.footer}>
-        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
-          <Text style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · Sync details</Text>
-          {syncMessage ? <Text style={styles.footerText}>{syncMessage}</Text> : null}
+      <View style={[styles.footer, {height: Math.max(44, Math.round(14 * scale) + 18) + 25}]}>
+        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {syncMessage || 'Sync details'}</Text>
         </Pressable>
         <View style={styles.footerRight}>
           <Pressable style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
@@ -1463,7 +1462,9 @@ const styles = StyleSheet.create({
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
-  syncSummary: {flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
+  newCollection: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, alignSelf: 'stretch', backgroundColor: '#fff'},
+  newCollectionText: {fontSize: 15, color: '#000', fontWeight: '700'},
+  syncSummary: {minWidth: 0, flex: 1, minHeight: 44, justifyContent: 'center', paddingRight: 10},
   sheetBackdrop: {flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center'},
   sheet: {width: '90%', maxWidth: 720, height: '65%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
   sheetContent: {padding: 16, gap: 12},

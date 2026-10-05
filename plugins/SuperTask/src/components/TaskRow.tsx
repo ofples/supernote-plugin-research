@@ -52,14 +52,14 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   const isOverdue = !checked && dueDate && dueDate < today;
   const isToday = dueDate === today;
 
-  const chips: Array<{label: string; inverted?: boolean}> = [];
+  const chips: Array<{label: string; inverted?: boolean; quiet?: boolean}> = [];
   if (completedAt) chips.push({label: `Done ${formatDate(completedAt.slice(0, 10))}`});
   if (isOverdue) chips.push({label: `Overdue ${formatDate(dueDate)}`, inverted: true});
   else if (isToday) chips.push({label: 'Today'});
   else if (dueDate) chips.push({label: formatDate(dueDate)});
   if (priorityLabel) chips.push({label: priorityLabel});
   if (showProject) chips.push({label: showProject});
-  if (showCollection) chips.push({label: showCollection});
+  if (showCollection) chips.push({label: showCollection, quiet: true});
   if (pageNum !== undefined) chips.push({label: `p.${pageNum}`});
   const syncPending = task.syncState === 'pending' || task._registryOnly || task.awaitingRecurrence || task.occurrencePending;
   const syncAttention = task.syncState === 'attention';
@@ -88,7 +88,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
         {chips.length > 0 && (
           <View style={styles.meta}>
             {chips.map((c, i) => (
-              <Chip key={i} label={c.label} inverted={c.inverted} />
+              <Chip key={i} label={c.label} inverted={c.inverted} quiet={c.quiet} />
             ))}
           </View>
         )}
