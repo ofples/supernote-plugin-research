@@ -398,3 +398,23 @@ test('Keep tasks requires an explicit surviving writable project and passes its 
   assert.equal(deletes[0].options.scopeToken, 'verified-scope'); assert.equal(deletes[0].options.mode, 'keep');
   await act(async () => tree.unmount());
 });
+test('Note and Device retain a protected recurring history row beside its active next occurrence across owned ID aliases', async () => {
+  const history = {id: 'one', project_id: 'p', content: 'Prior recurring occurrence', completed: true, occurrenceHistory: true,
+    completed_at: '2026-10-04', due: {date: '2026-10-04', is_recurring: true}};
+  const model = workspace({}, true, [history]); let tree;
+  model.updateData(data => {
+    const next = task => task.id === 'one' && !task.completed ? {...task, id: 'remote:one', remoteId: 'one', due: {date: '2026-10-06', is_recurring: true}} : task;
+    return {...data, tasks: data.tasks.map(next), allTasks: data.allTasks.map(next)};
+  });
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  for (const view of ['note', 'device']) {
+    await switchTo(tree, view);
+    const rows = tree.root.findAllByType('TaskRow');
+    assert.ok(rows.some(row => row.props.task.id === 'remote:one' && !row.props.task.completed));
+    const occurrence = rows.find(row => row.props.task.occurrenceHistory);
+    assert.ok(occurrence); assert.equal(occurrence.props.disabled, true);
+    await act(async () => occurrence.props.onCheckPress());
+    assert.deepEqual(model.reopened, []); assert.deepEqual(model.completed, []);
+  }
+  await act(async () => tree.unmount());
+});
