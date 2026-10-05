@@ -96,6 +96,9 @@ function remove(store, kind, id, options, ids, model) {
   if (options.mode === 'delete' && !plan.complete && options.includeUncached !== true) {throw new Error('Confirm deletion of all contained tasks, including uncached completed history. The cached count is a minimum.');}
   if (plan.descendantProjectCount) {throw new Error('Move or delete descendant projects separately before deleting their parent; project hierarchy will not be flattened.');}
   const location = own(next, kind, id), actual = location.remoteId || location.id;
+  // A fresh, explicitly confirmed scope replaces only a never-sent rejected
+  // delete intent. Attempted UUIDs remain immutable and must reconcile first.
+  next.outbox = next.outbox.filter(op => !(op.localId === location.id && op.kind === `${kind}_delete` && !op.attempts && op.projectionRolledBack));
   let result = next;
   const dependencies = new Set();
   if (options.mode === 'keep') {
@@ -202,7 +205,7 @@ function reconcile(store) {
 function preflight(store, op) {
   const kind = op.kind.startsWith('project_') ? 'project' : 'collection', location = bucket(store, kind)[op.localId];
   const latest = remoteList(store, kind).find(p => p.id === location.remoteId);
-  try {permission(latest, op.kind.endsWith('_delete') ? 'delete' : 'edit'); if (kind === 'collection') {permission(find(store, 'project', latest.project_id));}} catch (e) {op.state = 'attention'; op.error = e.message; return;}
+  try {permission(latest, op.kind.endsWith('_delete') ? 'delete' : 'edit'); if (kind === 'collection') {permission(find(store, 'project', latest.project_id));}} catch (e) {rejectDeleteProjection(store, op, e.message); return;}
   if (op.kind.endsWith('_delete')) {
     const projectIds = op.recovery.projects;
     const currentProjects = [...mergedProjects(store), ...(store.archivedProjects || [])].filter(p => projectIds.includes(p.parent_id) && !projectIds.includes(p.id));
@@ -211,7 +214,7 @@ function preflight(store, op) {
       content: t.content, description: t.description || '', due: t.due || null, labels: t.labels || [], priority: t.priority || 1});
     const normalized = rows => rows.map(state).sort((a, b) => a.id.localeCompare(b.id));
     if (currentProjects.length || (op.expectedEmpty ? active.length : !equal(normalized(active), normalized(op.recovery.activeBaseline)))) {
-      op.state = 'attention'; op.error = 'The container contents changed on Todoist. Review its current scope again before deleting; nothing was sent.'; return;
+      rejectDeleteProjection(store, op, 'The container contents changed on Todoist. Review its current scope again before deleting; nothing was sent.'); return;
     }
   }
   if (!location.baseLocation || latest.name !== location.baseLocation.name || latest.parent_id !== location.baseLocation.parent_id || latest.project_id !== location.baseLocation.project_id || latest.created_at !== location.baseLocation.created_at || latest.added_at !== location.baseLocation.added_at) {
@@ -228,4 +231,27 @@ function preflight(store, op) {
     }
   }
 }
-module.exports = {locationKind, isCreate, mergedProjects, find, permission, createProject, rename, scope, remove, mapProject, command, ready, acknowledge, reconcile, preflight, equal};
+function rejectDeleteProjection(store, op, reason) {
+  op.state = 'attention'; op.error = reason;
+  if (!op.kind.endsWith('_delete') || op.attempts || op.projectionRolledBack) {return;}
+  const model = require('./model');
+  const kind = op.kind.startsWith('project_') ? 'project' : 'collection';
+  const location = bucket(store, kind)[op.localId], latest = remoteList(store, kind).find(p => p.id === location.remoteId);
+  store.conflictArchive.push({localId: op.localId, desired: copy(location), operations: [copy(op)]});
+  store.syncNotices.push({localId: op.localId, message: 'The container deletion was stopped. Current Todoist contents are visible for review.'});
+  location.deleted = false;
+  if (latest) {Object.assign(location, latest, {id: location.id, remoteId: location.remoteId, deleted: false, baseLocation: copy(latest)});}
+  for (const saved of op.recovery.tasks) {
+    const task = Object.values(store.tasks).find(t => t.id === saved.id || t.remoteId === (saved.remoteId || saved.id));
+    if (!task || task.deleteAcknowledged) {continue;}
+    task.deleted = false;
+    const remote = store.remote.find(t => t.id === task.remoteId);
+    if (remote && !store.outbox.some(o => o.localId === task.id)) {
+      Object.assign(task, remote, {id: task.id, remoteId: task.remoteId, source: task.source || null,
+        deleted: false, completed: !!(remote.completed || remote.is_completed || remote.checked),
+        serverCompleted: !!(remote.completed || remote.is_completed || remote.checked), remoteMissing: false, baseRemote: model.remoteState(remote)});
+    } else if (!remote && !store.outbox.some(o => o.localId === task.id)) {task.remoteMissing = true;}
+  }
+  op.projectionRolledBack = true;
+}
+module.exports = {locationKind, isCreate, mergedProjects, find, permission, createProject, rename, scope, remove, mapProject, command, ready, acknowledge, reconcile, preflight, rejectDeleteProjection, equal};

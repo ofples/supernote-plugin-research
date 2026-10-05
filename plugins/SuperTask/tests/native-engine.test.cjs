@@ -84,6 +84,10 @@ test('remote container preflight rejects new contents, changed permissions and c
   let s = remove(state(), 'project', 'p'); const op = s.outbox[0];
   s.remote.push(task('new')); locations.preflight(s, op);
   assert.equal(op.state, 'attention'); assert.match(op.error, /contents changed/);
+  assert.equal(locations.mergedProjects(s).some(p => p.id === 'p'), true);
+  assert.equal(m.mergedTasks(s).length, 3);
+  assert.equal(op.projectionRolledBack, true);
+  assert.equal(s.syncNotices.length, 1);
   s = remove(state(), 'collection', 's'); s.projects[0].is_read_only = true;
   locations.preflight(s, s.outbox[0]); assert.equal(s.outbox[0].state, 'attention');
 });
@@ -212,6 +216,26 @@ test('schema validates location identities, scope metadata, dependency shape and
   }
   let s = remove(state(), 'project', 'p'); delete s.outbox[0].recovery;
   assert.throws(() => m.validateStore(s, 'account', 'device'), /Damaged container/);
+});
+test('rejected deletion restores remote fields and a fresh confirmation replaces its unsent intent', () => {
+  let s = remove(state(), 'project', 'p');
+  s.remote[0].content = 'Changed remotely'; s.remote.push(task('new'));
+  const old = s.outbox[0].uuid; locations.preflight(s, s.outbox[0]);
+  assert.equal(m.cachedView(s, 'a').content, 'Changed remotely');
+  assert.equal(s.conflictArchive.length, 1);
+  const restored = JSON.parse(JSON.stringify(s)); m.validateStore(restored, 'account', 'device');
+  s = remove(restored, 'project', 'p');
+  assert.equal(s.outbox.length, 1); assert.notEqual(s.outbox[0].uuid, old);
+  assert.equal(s.outbox[0].recovery.activeBaseline.length, 3);
+});
+test('missing archived/history verification leaves a visible container and cached tasks for review', async () => {
+  let disk = JSON.stringify(remove(state(), 'project', 'p')), sent = 0;
+  const store = createStore({read: async () => ({exists: true, main: disk}), commit: async next => {disk = next;}}, 'account', 'device');
+  const api = {userId: async () => 'u', fetchSnapshot: async () => ({tasks: state().remote, projects: [project, inbox], sections: []}),
+    fetchArchivedProjects: async () => ({complete: false, projects: []}), commands: async () => {sent++; throw new Error('must not send');}};
+  await createSyncWorker(store, api).sync();
+  const s = await store.load(); assert.equal(sent, 0); assert.equal(s.outbox[0].state, 'attention');
+  assert.equal(locations.mergedProjects(s).some(p => p.id === 'p'), true); assert.equal(m.mergedTasks(s).length, 2);
 });
 test('a completed dated scan cannot enable remote Keep or claim imported historical completeness', async () => {
   let disk = JSON.stringify(state());

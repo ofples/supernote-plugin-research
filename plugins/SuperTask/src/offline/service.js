@@ -68,7 +68,7 @@ export async function offlineData() {
   const current = await offlineSession();
   const state = await current.store.load();
   const allTasks = model.privateTasks(state);
-  const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state,
+  const pendingChanges = state.outbox.map(op => ({id: op.localId, uuid: op.uuid, kind: op.kind, state: op.state, attempts: op.attempts, occurrenceKey: op.occurrenceKey || null,
     error: op.error, task: state.tasks[op.localId],
     project: op.kind.startsWith('project_') ? locations.find(state, 'project', op.localId) : null,
     collection: op.kind.startsWith('collection_') ? locations.find(state, 'collection', op.localId) : null}));
@@ -85,12 +85,14 @@ export async function offlineData() {
 
 export async function saveOfflineBatch(drafts, source = null, capturedAt = Date.now(), request = {}) {
   const current = await offlineSession();
+  bindRequest(current, request);
   if (!request.ids) {
     request.ids = JSON.parse(await NativeModules.TaskStorage.newIds(1 + drafts.length * 3));
   }
   const batchId = request.ids[0];
   const alreadySaved = Object.values((await current.store.load()).tasks).filter(task => task.batchId === batchId);
-  if (alreadySaved.length) return alreadySaved.map(task => ({...task, syncState: 'pending'}));
+  assertCurrent(current);
+  if (alreadySaved.length) {return alreadySaved.map(task => ({...task, syncState: 'pending'}));}
   let index = 0;
   const ids = () => {
     if (index >= request.ids.length) throw new Error('Capture changed after an uncertain save; reopen SuperTask to review saved tasks.');
@@ -98,33 +100,42 @@ export async function saveOfflineBatch(drafts, source = null, capturedAt = Date.
   };
   let created;
   await current.store.transaction(state => {
+    bindRequest(current, request);
     const result = model.addBatch(state, drafts, source, ids, capturedAt);
     created = result.tasks;
     return result.next;
   });
+  assertCurrent(current);
   requestActiveSync();
   return created.map(task => ({...task, syncState: 'pending'}));
 }
 
 export async function completeOffline(id, completed = true) {
   const current = await offlineSession();
+  assertCurrent(current);
   const ids = await idGenerator(1);
-  await current.store.transaction(state => model.setCompleted(state, id, completed, ids));
+  await current.store.transaction(state => {assertCurrent(current); return model.setCompleted(state, id, completed, ids);});
+  assertCurrent(current);
   requestActiveSync();
 }
 
 export async function editOfflineTask(id, draft) {
   const current = await offlineSession();
+  assertCurrent(current);
   const ids = await idGenerator(12);
-  await current.store.transaction(state => model.editTask(state, id, draft, ids));
+  await current.store.transaction(state => {assertCurrent(current); return model.editTask(state, id, draft, ids);});
+  assertCurrent(current);
   requestActiveSync();
-  return cachedTask(id);
+  const state = await current.store.load(); assertCurrent(current);
+  return model.cachedView(state, id);
 }
 
 export async function deleteOfflineTask(id) {
   const current = await offlineSession();
+  assertCurrent(current);
   const ids = await idGenerator(12);
-  await current.store.transaction(state => model.deleteTask(state, id, ids));
+  await current.store.transaction(state => {assertCurrent(current); return model.deleteTask(state, id, ids);});
+  assertCurrent(current);
   requestActiveSync();
 }
 
@@ -137,7 +148,9 @@ export async function createOfflineCollection(projectId, name, request = {}) {
 
 export async function cancelOfflineTask(id) {
   const current = await offlineSession();
-  await current.store.transaction(state => model.cancelUnsent(state, id));
+  assertCurrent(current);
+  await current.store.transaction(state => {assertCurrent(current); return model.cancelUnsent(state, id);});
+  assertCurrent(current);
 }
 
 export async function syncOffline() {
@@ -196,12 +209,21 @@ async function mutationIdentity(request, count) {
 function assertCurrent(current) {
   if (getCachedConfig()?.apiToken?.trim() !== current.token) {const error = new Error('The Todoist account changed. This interaction was cancelled.'); error.code = 'ACCOUNT_CHANGED'; throw error;}
 }
+function bindRequest(current, request) {
+  assertCurrent(current);
+  if (request.accountKey && request.accountKey !== current.identity.accountKey) {
+    const error = new Error('The Todoist account changed. Retry this saved interaction only with its original account.');
+    error.code = 'ACCOUNT_CHANGED'; throw error;
+  }
+  request.accountKey = current.identity.accountKey;
+}
 async function durableMutation(request, count, reduce, operationSignature) {
-  const current = await offlineSession(), identity = await mutationIdentity(request, count); let result;
+  const current = await offlineSession(); bindRequest(current, request);
+  const identity = await mutationIdentity(request, count); let result;
   const signature = JSON.stringify(operationSignature);
   assertCurrent(current);
   await current.store.transaction(state => {
-    assertCurrent(current);
+    bindRequest(current, request);
     const prior = state.mutationRequests?.[identity.requestId];
     if (prior) {if (prior.signature !== signature) {throw new Error('An uncertain mutation identity cannot be reused for different changes.');} result = prior.result; return state;}
     const reduced = reduce(state, identity.ids); result = reduced.result;
@@ -237,10 +259,11 @@ export async function deleteOfflineContainer(kind, id, options, request = {}) {
   return durableMutation(request, Math.max(32, plan.count * 6 + 16), (state, ids) => ({next: locations.remove(state, kind, id, options, ids, model), result: {id, kind, count: plan.count, mode: options.mode}}), ['container_delete', kind, id, options]);
 }
 export async function mutateOfflineTasks(taskIds, mutation, request = {}) {
-  const current = await offlineSession(), identity = await mutationIdentity(request, taskIds.length * 6 + 16); let results;
+  const current = await offlineSession(); bindRequest(current, request);
+  const identity = await mutationIdentity(request, taskIds.length * 6 + 16); let results;
   assertCurrent(current);
   await current.store.transaction(state => {
-    assertCurrent(current);
+    bindRequest(current, request);
     const reduced = bulk.mutate(state, taskIds, mutation, identity.ids, identity.requestId, model);
     results = reduced.results; return reduced.next;
   });

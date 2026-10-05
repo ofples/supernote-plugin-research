@@ -43,7 +43,7 @@ function createSyncWorker(store, api, clock = Date.now) {
                 s.archivedProjects = archives.projects;
                 const queued = s.outbox.find(o => o.uuid === candidate.uuid);
                 if (queued && !queued.attempts) {
-                  if (!archives.complete) {queued.state = 'attention'; queued.error = 'Archived descendant projects could not be verified. The project was not deleted.';}
+                  if (!archives.complete) {locations.rejectDeleteProjection(s, queued, 'Archived descendant projects could not be verified. The project was not deleted.');}
                   else {locations.preflight(s, queued);}
                 }
                 return s;
@@ -56,7 +56,7 @@ function createSyncWorker(store, api, clock = Date.now) {
             if (!history.complete || history.tasks.length) {
               state = await store.transaction(s => {
                 const queued = s.outbox.find(o => o.uuid === candidate.uuid);
-                if (queued && !queued.attempts) {queued.state = 'attention'; queued.error = 'Completed contents changed or could not be verified after retention moves. The container was not deleted.';}
+                if (queued && !queued.attempts) {locations.rejectDeleteProjection(s, queued, 'Completed contents changed or could not be verified. The container was not deleted.');}
                 return s;
               });
             }
