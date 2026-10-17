@@ -65,7 +65,7 @@ After creating a task, you have two options for marking the original handwriting
 
 Either way, the content on your note page is linked to the task in Todoist, and vice versa.
 
-For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.25 adds host-aware keyboard avoidance for text inputs and a paged two-lane board with a collapsible sidebar. The package is built and verified locally; beta.24 is the current device install. Beta.24's main footer clears the keyboard, but its deep New AI model ID field remains clipped. Beta.25's correction and the board/sidebar/action-icon changes still need hardware checks; see [TESTING.md](TESTING.md) and [VALIDATION.md](VALIDATION.md).
+For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.26 restores bordered text controls for Settings, Close, View and the list menu, keeps the sidebar toggle icon, places the composer destination beside the calendar, and moves Batch actions into the review header. The beta.26 package is built and verified locally. Beta.24 remains the installed device version; beta.25 and beta.26 have not been installed. Keyboard reachability for the deep New AI model ID field and these UI changes remain pending hardware checks; see [TESTING.md](TESTING.md) and [VALIDATION.md](VALIDATION.md).
 
 ### Quick capture with finger gesture
 
@@ -99,7 +99,7 @@ Both cases are workarounds for now -- the Supernote SDK doesn't yet provide dire
 
 ## Configuration
 
-Open SuperTask's settings via the gear icon (Settings > Apps > Plugins > SuperTask), or from within the plugin's main menu.
+Open SuperTask's settings with the **Settings** button in the plugin header, or from Settings > Apps > Plugins > SuperTask.
 
 ### Connections tab
 - **API Token** -- your Todoist API token
