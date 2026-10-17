@@ -1,10 +1,10 @@
 # Native interactions beta verification
 
-## Planned beta.22 follow-up — local only
+## Beta.22 validation status — local checks and limited install verified
 
-The `feature/capture-review-polish` pass is planned for beta.22. It is not yet integrated into the testing branch, built, installed, or verified on a Supernote. Beta.21 remains the latest hardware-verified checkpoint below; do not carry its test counts or device observations forward as evidence for beta.22.
+Runtime source `e851e34744739c0463bb75328b71c807ce11fe89` is from `feature/capture-review-polish`; testing integration and ancestry are managed through `syncTestingBranch.ps1`. Package **0.4.0-beta.22/code 27**, `build/outputs/SuperTask.snplg`, is **7,606,256 bytes**, SHA-256 `34ccedf5b05679b882b8e01af2db67de1fad53f0a88b97c03fcc5206bbf40723`. Verifier-only maintenance commit `98710a9a5160fc45913f76435c94ed04715647b4` followed without changing runtime source. The offline suite passed 316/316, TypeScript/ESLint reported zero errors, native build/package verification passed (including identity, config, icon, JS, native classes and ARM64), and pinned Hermes compile exited 0 (5,008,281-byte HBC, magic `c61fbc03`; warnings present, no errors).
 
-Automated focused coverage currently exercises compact batch actions and save retry, task-row override preservation, Lines/Paragraphs grouping and explicit split, shorthand parsing, due-time serialization, AI metadata validation, and TaskDetail preservation of unchanged timed/recurring due values. The combined branch must still pass its full test, type, lint, native package, and Hermes checks.
+Luna installed the inspected package through Supernote Settings > Apps > Plugins. Plugin Manager showed v0.4.0-beta.22 enabled ON; the exact beta.21 installer and temporary beta.22 installer were removed, leaving canonical `/storage/emulated/0/MyStyle/Plugins/SuperTask.snplg`. SuperTask Settings opened and General loaded. Tasks Today/Done switching worked; stationary multiselect preserved checkbox bounds and Cancel cleared it. AI-by-default remained unchecked. No task/note changed. The View control was unavailable through safe accessibility labels, so Board, sort/group, expanded-description and model-dropdown behavior were not verified. Beta.21 hardware observations below remain historical.
 
 The pending runtime review includes:
 
@@ -13,10 +13,10 @@ The pending runtime review includes:
 - OCR Lines/Paragraphs grouping before edits, bullet boundaries, wrapped-line joining, and manual newline split; title-description spaced-dash handling.
 - Supported shorthand, retained unknown/conflicting directives, multiword project/collection matches, and unchanged row overrides.
 - Account/view-scoped List/Board, grouping, sort and Completed expansion preferences across relaunch and account changes.
-- Inline destination selection applying a collection or No collection immediately; settings and other staged ProjectPicker flows should retain their existing behavior.
+- Inline composer and active-task destination selection applying a project, collection, or No collection immediately (single task and multiselect); settings and other staged ProjectPicker flows should retain their existing behavior.
 - Optional two-finger bottom-edge gesture cooldown/rejection behavior and optional launcher permission, position, rotation, hide, and coexistence behavior. Both need device evidence; the launcher remains off by default.
 
-Record the beta.22 artifact hash and automated evidence in [TESTING.md](../TESTING.md), then add device observations only after a coordinated tester run. No real task/note edits are needed for layout checks.
+Pending: Board/view options and scope; sort/group and Completed column; immediate composer/task/multiselect move destinations; expanded descriptions and workspace stability; preference persistence across relaunch/account switch; Batch panel behavior and grouping/splitting; handwriting OCR/AI capture fallback and cancellation; source-note return; physical gesture cooldown/rejection and optional launcher behavior. Update only from observed checks. No real task/note edits are needed for layout checks.
 
 This record distinguishes automated checks, scratch server evidence and device checks. Specification: `NATIVE_INTERACTIONS.md`; activated goal: `NATIVE_INTERACTIONS_GOAL.md`. Beta.14 is installed/enabled and startup/layout/separators inspected; see TESTING.md for the exact artifact hash. Beta.12/initial beta.13 local-delivery records below are historical.
 

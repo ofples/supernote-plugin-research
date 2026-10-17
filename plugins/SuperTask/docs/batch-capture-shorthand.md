@@ -1,6 +1,6 @@
 # Batch capture and shorthand
 
-**Planned beta.22 documentation.** The beta.22 package has not been built or verified on a device. Controls and examples below describe the current local implementation and may change after tester feedback.
+**Beta.22 implementation and package are verified; workspace/capture behavior has limited device verification.** Package 0.4.0-beta.22/code 27 is installed and enabled, and Settings opened successfully. These checks do not verify handwritten capture, OCR/AI fallback, or the batch review controls. See [TESTING.md](../TESTING.md) for automated results and device checks still pending.
 
 ## Review a batch
 
