@@ -93,24 +93,32 @@ function localDate(date) {
 function resolveDue(value, capturedAt = Date.now()) {
   if (!value) {return null;}
   const text = String(value).trim().toLowerCase();
-  if (text === 'today' || text === 'tomorrow') {
+  if (text === 'today' || text === 'tomorrow' || text === 'tonight') {
     const date = new Date(capturedAt); if (text === 'tomorrow') {date.setDate(date.getDate() + 1);}
-    return {date: localDate(date), is_recurring: false};
+    return {date: localDate(date), timezone: null, is_recurring: false};
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    const date = new Date(text + 'T12:00:00');
-    if (!Number.isNaN(date.getTime()) && localDate(date) === text) {return {date: text, is_recurring: false};}
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:t(\d{2}):(\d{2}):(\d{2}))?$/i);
+  if (match) {
+    const date = new Date(match[1] + 'T12:00:00');
+    const validDate = !Number.isNaN(date.getTime()) && localDate(date) === match[1];
+    const validTime = !match[2] || (Number(match[2]) <= 23 && Number(match[3]) <= 59 && Number(match[4]) <= 59);
+    if (validDate && validTime) {return {date: text.replace('t', 'T'), timezone: null, is_recurring: false};}
   }
-  throw new Error('Choose a calendar date, today, or tomorrow before saving offline.');
+  throw new Error('Choose a calendar date and valid local time, today, or tomorrow before saving offline.');
 }
 function normalizeDraft(draft, capturedAt) {
   const content = String(draft.content || '').trim();
   if (!content) {throw new Error('Every selected task needs a title.');}
   const priority = draft.priority || 1;
   if (![1, 2, 3, 4].includes(priority)) {throw new Error('Invalid task priority.');}
+  let due = own(draft, 'due') ? draft.due : undefined;
+  if (due !== undefined && due !== null && typeof due === 'object' && !due.is_recurring) {
+    if (!due.date) throw new Error('Choose a calendar date before saving offline.');
+    due = resolveDue(due.date, capturedAt);
+  }
   return {content, description: String(draft.description || ''), project_id: draft.projectId || draft.project_id || null,
     section_id: draft.sectionId || draft.section_id || null, labels: Array.isArray(draft.labels) ? draft.labels.map(String) : [], priority,
-    due: own(draft, 'due') && draft.due !== undefined ? clone(draft.due) : resolveDue(draft.dueString, capturedAt)};
+    due: due !== undefined ? clone(due) : resolveDue(draft.dueString, capturedAt)};
 }
 function mergedSections(store) {
   const local = Object.values(store.collections || {}), owned = new Set(local.map(s => s.remoteId).filter(Boolean));

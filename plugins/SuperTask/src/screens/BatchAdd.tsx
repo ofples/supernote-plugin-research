@@ -31,6 +31,10 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   const nextId = useRef(0);
   const defaultsRef = useRef(makeDefaults({projectId: defaultProjectId, sectionId: defaultSectionId}));
   const [defaults, setDefaults] = useState(defaultsRef.current);
+  const captureTime = useRef(capturedAt).current;
+  const rawInitialText = useRef(initialContent).current;
+  const canChooseGrouping = !initialRows?.length && !!initialContent;
+  const [ocrGrouping, setOcrGrouping] = useState<'lines' | 'paragraphs'>('lines');
   const decorate = (values: any[]) => values.map(row => {
     const rowId = row.rowId ?? `batch-row-${++nextId.current}`;
     if (typeof rowId === 'number') nextId.current = Math.max(nextId.current, rowId);
@@ -38,7 +42,8 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   });
   const [rows, setRows] = useState<any[]>(() => decorate(initialRows?.length
     ? initialRows.map(row => initializeProposalRow({description: initialDescription, selected: true, ...row}, defaultsRef.current))
-    : fromText(initialContent, {...defaultsRef.current, description: initialDescription, overrides: {}})));
+    : fromText(initialContent, {...defaultsRef.current, description: initialDescription, overrides: {}},
+      {projects, sections, capturedAt: captureTime, grouping: 'lines'})));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -63,7 +68,6 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   const working = useRef(false);
   const request = useRef({});
   const autoBackTimer = useRef<any>(null);
-  const captureTime = useRef(capturedAt).current;
   const selected = rows.filter(row => row.selected);
   const locked = busy || attempted || saved;
   const cancelRefinement = (message = 'AI refinement stopped. Original rows were kept.') => {
@@ -91,6 +95,22 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
     return () => {current = false;};
   }, [active]);
   useEffect(() => {
+    if (!active || !canChooseGrouping) return;
+    setRows(previous => {
+      let changed = false;
+      const next = previous.map(row => {
+        if (!row.quickAdd?.unresolvedLocation || row.fieldProvenance?.content !== 'transcription' ||
+            row.content !== row.quickAdd.content || Object.keys(row.overrides || {}).length || row.fieldProvenance?.description === 'manual') return row;
+        const [resolved] = fromText(row.sourceText, {...defaultsRef.current, description: row.description || initialDescription, overrides: {}},
+          {projects, sections, capturedAt: captureTime, grouping: 'lines'});
+        if (!resolved || resolved.quickAdd?.unresolvedLocation) return row;
+        changed = true;
+        return {...row, ...resolved, rowId: row.rowId, selected: row.selected, sourceRowIds: row.sourceRowIds};
+      });
+      return changed ? next : previous;
+    });
+  }, [active, canChooseGrouping, projects, sections, initialDescription, captureTime, defaults.projectId]);
+  useEffect(() => {
     const sub = PluginManager.registerPluginLifeListener({onMsg: (message: any) => {
       if (message.state >= 3) cancelRefinement();
     }});
@@ -105,6 +125,29 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
     setDefaults(result.defaults);
     setRows(result.rows);
     setStatus('');
+  };
+  const changeOcrGrouping = (grouping: 'lines' | 'paragraphs') => {
+    if (grouping === ocrGrouping || !canChooseGrouping) return;
+    const pristine = rows.every(row => row.fieldProvenance?.content === 'transcription' &&
+      row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length);
+    if (!pristine) {setStatus('Choose Lines or Paragraphs before editing recognized task details.'); return;}
+    const selectedByLine = new Map<string, boolean[]>();
+    for (const row of rows) for (const line of String(row.sourceText || '').split(/\r?\n/)) {
+      if (!selectedByLine.has(line)) selectedByLine.set(line, []);
+      selectedByLine.get(line)!.push(!!row.selected);
+    }
+    const regrouped = fromText(rawInitialText, {...defaultsRef.current, description: initialDescription, overrides: {}},
+      {projects, sections, capturedAt: captureTime, grouping});
+    const next = regrouped.map(row => {
+      const lines = row.sourceText.split(/\r?\n/);
+      const positions = new Map<string, number>();
+      const selected = lines.map(line => {
+        const index = positions.get(line) || 0; positions.set(line, index + 1);
+        return selectedByLine.get(line)?.[index] ?? true;
+      });
+      return {...row, selected: selected.every(Boolean)};
+    });
+    setRows(decorate(next)); setOcrGrouping(grouping); setExpanded(null); setStatus('');
   };
   const resetField = (index: number, field: string) => update(index, resetRowField(rows[index], field, defaultsRef.current));
   const safely = (action: () => any[]) => {
@@ -225,6 +268,13 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
           <View style={s.modalHeader}><Text style={[s.modalTitle, scaledTitle]}>Batch actions</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Close batch actions" style={s.button} onPress={() => setBatchActionsOpen(false)}><Text style={[s.label, scaledLabel]}>Close</Text></Pressable></View>
           <ScrollView style={s.modalScroll} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled">
+        {canChooseGrouping && <View style={s.actions} accessibilityLabel="OCR grouping">
+          <Text style={[s.label, scaledLabel]}>Group recognized text</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'lines', disabled: !rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
+            style={[s.button, ocrGrouping === 'lines' && s.ocrChoiceSelected]} disabled={!rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('lines')}><Text style={[s.label, scaledLabel, ocrGrouping === 'lines' && s.ocrChoiceText]}>Lines</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'paragraphs', disabled: !rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
+            style={[s.button, ocrGrouping === 'paragraphs' && s.ocrChoiceSelected]} disabled={!rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('paragraphs')}><Text style={[s.label, scaledLabel, ocrGrouping === 'paragraphs' && s.ocrChoiceText]}>Paragraphs</Text></Pressable>
+        </View>}
         <View style={s.actions}>
           <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={[s.label, scaledLabel]}>Select all</Text></Pressable>
           <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: false})))}><Text style={[s.label, scaledLabel]}>Select none</Text></Pressable>
@@ -313,6 +363,7 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
     </ScrollView>}
     {!!status && <Text style={[s.status, scaledStatus]}>{status}</Text>}
     {!saved && <View style={s.footer}>
+      {attempted && busy && <Pressable style={s.primary} disabled><Text style={[s.primaryText, scaledPrimary]}>Saving…</Text></Pressable>}
       {!attempted && !saveFailed && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={[s.primaryText, scaledPrimary]}>{`Save ${selected.length} task${selected.length === 1 ? '' : 's'}`}</Text></Pressable>}
       {saveFailed && !saved && <Pressable style={s.primary} disabled={busy || !configLoaded} onPress={save}><Text style={[s.primaryText, scaledPrimary]}>{attempted ? 'Retry same batch' : 'Try again'}</Text></Pressable>}
       <Pressable style={s.button} disabled={busy} onPress={() => nav.resetTo('task-home')}><Text style={[s.label, scaledLabel]}>Tasks</Text></Pressable>
