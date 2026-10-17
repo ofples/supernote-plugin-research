@@ -6,4 +6,5 @@ module.exports = {
     keyboardShouldPersistTaps: props.keyboardShouldPersistTaps || 'handled',
   }, children),
   KeyboardAvoidanceViewport: ({children, ...props}) => React.createElement('View', props, children),
+  KeyboardAwareTextInput: props => React.createElement('Input', props),
 };

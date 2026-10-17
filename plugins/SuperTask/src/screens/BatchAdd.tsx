@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal} from 'react-native';
+import {View, Text, Pressable, ScrollView, StyleSheet, Modal} from 'react-native';
 import {PluginManager} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {saveOfflineBatch} from '../offline/service';
@@ -8,7 +8,7 @@ import ProjectPicker from '../components/ProjectPicker';
 import {useLocations} from '../collections/useLocations';
 import PriorityPicker from '../components/PriorityPicker';
 import DatePicker from '../components/DatePicker';
-import {KeyboardAwareScrollView, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
 import {useFontScale} from '../utils/useFontScale';
 const {fromText, mergeNext, splitRow, MAX_TASKS} = require('../batch/model');
 const {localDate} = require('../offline/model');
@@ -303,7 +303,7 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
           onChange={projectId => applyDefault('location', {projectId, sectionId: projectId === defaultsRef.current.projectId ? defaultsRef.current.sectionId : null})}
           onSectionChange={sectionId => applyDefault('location', {projectId: defaultsRef.current.projectId, sectionId})} />}
         {showBatchPriority && <PriorityPicker value={defaults.priority} onChange={priority => applyDefault('priority', priority)} />}
-        {showBatchLabels && <TextInput style={[s.input, scaledInput]} value={defaults.labels.join(', ')} placeholder="Batch labels, separated by commas" editable={!locked}
+        {showBatchLabels && <KeyboardAwareTextInput style={[s.input, scaledInput]} value={defaults.labels.join(', ')} placeholder="Batch labels, separated by commas" editable={!locked}
           onChangeText={value => applyDefault('labels', value.split(',').map(label => label.trim()).filter(Boolean))} />}
         {showAiSetupHint && <View style={s.notice}>
           <Text style={[s.text, scaledText]}>Set up optional AI refinement in Settings. Nothing is sent until you choose Refine with AI.</Text>
@@ -326,7 +326,7 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
       <KeyboardAwareScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent}>
         {rows.map((row, index) => <View key={row.rowId} style={s.card}>
           <View style={s.actions}><Pressable style={s.button} onPress={() => update(index, {selected: !row.selected})} disabled={locked}><Text style={[s.label, scaledLabel]}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
-            <TextInput style={[s.input, scaledInput]} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
+            <KeyboardAwareTextInput style={[s.input, scaledInput]} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
           </View>
           <Text style={[s.text, scaledText]}>{projects.find((p: any) => p.id === row.projectId)?.name || 'Inbox'}{row.sectionId ? ` / ${sections.find((section: any) => section.id === row.sectionId)?.name || 'Unavailable collection'}` : ''} · P{5 - row.priority} · {row.dueString || 'No date'}{row.labels?.length ? ` · ${row.labels.join(', ')}` : ''}</Text>
           {!locked && <View style={s.actions}>
@@ -348,8 +348,8 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
               <Pressable style={s.button} onPress={() => edit(index, 'dueString', '')}><Text style={[s.label, scaledLabel]}>No date</Text></Pressable></View>
             {!!(row.overrides?.dueString || row.instructions?.dueString) && <Pressable style={s.button} onPress={() => resetField(index, 'dueString')}><Text style={[s.label, scaledLabel]}>Use batch date</Text></Pressable>}
             {dateRow === row.rowId && <DatePicker value={row.dueString} onChange={dueString => edit(index, 'dueString', dueString)} onClose={() => setDateRow(null)} />}
-            <TextInput style={[s.input, scaledInput]} value={row.description} placeholder="Description" multiline onChangeText={description => edit(index, 'description', description)} />
-            <TextInput style={[s.input, scaledInput]} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => edit(index, 'labels', labels.split(',').map((value: string) => value.trim()).filter(Boolean))} />
+            <KeyboardAwareTextInput style={[s.input, scaledInput]} value={row.description} placeholder="Description" multiline onChangeText={description => edit(index, 'description', description)} />
+            <KeyboardAwareTextInput style={[s.input, scaledInput]} value={(row.labels || []).join(', ')} placeholder="Labels, separated by commas" onChangeText={labels => edit(index, 'labels', labels.split(',').map((value: string) => value.trim()).filter(Boolean))} />
             {!!(row.overrides?.labels || row.instructions?.labels) && <Pressable style={s.button} onPress={() => resetField(index, 'labels')}><Text style={[s.label, scaledLabel]}>Use batch labels</Text></Pressable>}
           </View>}
         </View>)}

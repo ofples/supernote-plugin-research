@@ -6,11 +6,10 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
 } from 'react-native';
-import {KeyboardAwareScrollView} from '../components/KeyboardAvoidance';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {PluginNoteAPI, PluginCommAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
@@ -333,7 +332,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Task</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
           editable={!attempted}
@@ -383,7 +382,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Description</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           style={[styles.input, styles.inputMultiline, {fontSize: Math.round(16 * scale)}]}
           value={description}
           editable={!attempted}

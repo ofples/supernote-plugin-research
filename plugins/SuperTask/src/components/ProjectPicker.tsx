@@ -1,7 +1,8 @@
 /** Compact project and selected-project collection controls for task forms. */
 
 import React, {useEffect, useRef, useState} from 'react';
-import {View, Text, TextInput, Pressable, StyleSheet} from 'react-native';
+import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {KeyboardAwareTextInput} from './KeyboardAvoidance';
 import {useFontScale} from '../utils/useFontScale';
 const {projectSections} = require('../collections/model');
 
@@ -112,7 +113,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
         {!creating ? <Pressable accessibilityRole="button" accessibilityLabel={`New collection in ${selectedProject.name}`} style={styles.action} onPress={beginCreate}>
           <Text style={[styles.text, {fontSize: Math.round(14 * scale)}]}>New collection</Text>
         </Pressable> : <View style={styles.createForm}>
-          <View style={styles.inputRow}><TextInput accessibilityLabel="New collection name" style={[styles.input, {fontSize: Math.round(15 * scale)}]} value={name}
+          <View style={styles.inputRow}><KeyboardAwareTextInput accessibilityLabel="New collection name" style={[styles.input, {fontSize: Math.round(15 * scale)}]} value={name}
             onChangeText={value => {setName(value); setError('');}} editable={!saving} autoCorrect={false} returnKeyType="done"
             onSubmitEditing={saveCollection} />
           <View style={styles.row}>

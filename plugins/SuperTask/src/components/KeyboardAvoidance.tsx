@@ -4,14 +4,15 @@ import {
   Keyboard,
   Platform,
   ScrollView,
-  UIManager,
+  TextInput,
   View,
   type LayoutChangeEvent,
   type ScrollViewProps,
+  type TextInputProps,
   type ViewStyle,
 } from 'react-native';
 
-type KeyboardFrame = {screenY: number};
+type KeyboardFrame = {screenY: number; height?: number};
 type ViewportFrame = {top: number; height: number};
 type FocusedInputFrame = {top: number; height: number};
 
@@ -19,6 +20,23 @@ type FocusedInputFrame = {top: number; height: number};
 export function calculateKeyboardInset(viewport: ViewportFrame, keyboard: KeyboardFrame | null): number {
   if (!keyboard || !Number.isFinite(viewport.top) || !Number.isFinite(viewport.height) || !Number.isFinite(keyboard.screenY)) return 0;
   return Math.max(0, Math.min(viewport.height, viewport.top + viewport.height - keyboard.screenY));
+}
+
+/** Correct RN 0.79 Android frames that report the full screen bottom as IME top. */
+export function normalizeKeyboardFrame(frame: KeyboardFrame | null, screenHeight: number): KeyboardFrame | null {
+  if (!frame || !Number.isFinite(frame.screenY) || !Number.isFinite(frame.height) || frame.height! <= 0 || !Number.isFinite(screenHeight) || screenHeight <= 0) return frame;
+  // ReactRootView compares softInputMode to ADJUST_NOTHING without masking the
+  // state bits. PluginHost uses STATE_ALWAYS_HIDDEN | ADJUST_NOTHING, so it can
+  // report the full display bottom plus a positive keyboard height. A resized
+  // window reports screenY at the keyboard top and its bottom remains in range.
+  if (frame.screenY + frame.height! > screenHeight + 2) {
+    return {...frame, screenY: Math.max(0, screenHeight - frame.height!)};
+  }
+  return frame;
+}
+
+function currentKeyboardFrame(frame: KeyboardFrame | null): KeyboardFrame | null {
+  return normalizeKeyboardFrame(frame, Dimensions.get('screen').height);
 }
 
 /** Move only enough to expose a focused field inside the part of the scroll view above the keyboard. */
@@ -75,7 +93,7 @@ export function KeyboardAvoidanceViewport({children, style, contentStyle, access
   const windowRef = useRef<View>(null);
   const mounted = useRef(true);
   const [frame, setFrame] = useState<ViewportFrame>(frameRef.current);
-  const [keyboard, setKeyboard] = useState<KeyboardFrame | null>(() => Keyboard.metrics() || null);
+  const [keyboard, setKeyboard] = useState<KeyboardFrame | null>(() => currentKeyboardFrame(Keyboard.metrics() || null));
 
   const measureTop = useCallback(() => {
     if (!mounted.current) return;
@@ -99,11 +117,11 @@ export function KeyboardAvoidanceViewport({children, style, contentStyle, access
     const unsubscribe = subscribeToKeyboardFrames(
       Keyboard,
       Dimensions,
-      next => {setKeyboard(next); measureTop();},
+      next => {setKeyboard(currentKeyboardFrame(next)); measureTop();},
       () => setKeyboard(null),
       () => {
         const metrics = Keyboard.metrics();
-        setKeyboard(metrics || null);
+        setKeyboard(currentKeyboardFrame(metrics || null));
         measureTop();
       },
     );
@@ -135,79 +153,95 @@ export function revealFocusedInput(
   return delta;
 }
 
-/** Vertical form lists explicitly reveal their focused input when the keyboard opens. */
-type KeyboardAwareScrollViewProps = ScrollViewProps & {
-  onFocus?: (event: any) => void;
-  onBlur?: (event: any) => void;
+type KeyboardInput = React.ElementRef<typeof TextInput>;
+type KeyboardScrollOwner = {
+  focus: (input: KeyboardInput | null) => void;
+  blur: (input: KeyboardInput | null) => void;
 };
+const KeyboardScrollContext = React.createContext<KeyboardScrollOwner | null>(null);
 
-export function KeyboardAwareScrollView({onFocus, onBlur, keyboardShouldPersistTaps = 'handled', ...props}: KeyboardAwareScrollViewProps) {
+/** Text inputs register their host instance with the nearest vertical form scroller. */
+export const KeyboardAwareTextInput = React.forwardRef<KeyboardInput, TextInputProps>(function KeyboardAwareTextInput({onFocus, onBlur, ...props}, forwardedRef) {
+  const owner = React.useContext(KeyboardScrollContext);
+  const inputRef = useRef<KeyboardInput>(null);
+  const setRef = useCallback((input: KeyboardInput | null) => {
+    inputRef.current = input;
+    if (typeof forwardedRef === 'function') forwardedRef(input);
+    else if (forwardedRef) forwardedRef.current = input;
+  }, [forwardedRef]);
+  return <TextInput {...props} ref={setRef}
+    onFocus={event => {owner?.focus(inputRef.current); onFocus?.(event);}}
+    onBlur={event => {owner?.blur(inputRef.current); onBlur?.(event);}} />;
+});
+
+/** Vertical form lists explicitly reveal their focused input when the keyboard opens. */
+export function KeyboardAwareScrollView({keyboardShouldPersistTaps = 'handled', children, ...props}: ScrollViewProps) {
   const scrollRef = useRef<ScrollView>(null);
-  const focusedTarget = useRef<number | null>(null);
+  const focusedInput = useRef<KeyboardInput | null>(null);
   const mounted = useRef(true);
   const viewportRef = useRef<ViewportFrame>({top: 0, height: 0});
   const currentOffset = useRef(0);
-  const keyboardFrame = useRef<KeyboardFrame | null>(Keyboard.metrics() || null);
-  const NativeScrollView: any = ScrollView;
-  const measure = useCallback((target = focusedTarget.current) => {
+  const keyboardFrame = useRef<KeyboardFrame | null>(currentKeyboardFrame(Keyboard.metrics() || null));
+  const measure = useCallback(() => {
     if (!mounted.current) return;
     const view = scrollRef.current as any;
-    if (target == null || !view?.measureInWindow || !UIManager.measureInWindow) return;
+    const input = focusedInput.current;
+    if (!input?.measureInWindow || !view?.measureInWindow) return;
     view.measureInWindow((_x: number, top: number, width: number, height: number) => {
       // Inactive navigation routes stay mounted with display:none. Their
       // native frames are empty, so don't let a keyboard event scroll them.
       if (!mounted.current || width <= 0 || height <= 0) return;
       viewportRef.current = {top, height};
-      UIManager.measureInWindow(target, (_inputX: number, inputTop: number, _inputWidth: number, inputHeight: number) => {
-        if (!mounted.current || focusedTarget.current !== target) return;
+      input.measureInWindow((_inputX: number, inputTop: number, _inputWidth: number, inputHeight: number) => {
+        if (!mounted.current || focusedInput.current !== input) return;
         revealFocusedInput(view, currentOffset.current, viewportRef.current, {top: inputTop, height: inputHeight}, keyboardFrame.current);
       });
     });
   }, []);
+  const focus = useCallback((input: KeyboardInput | null) => {
+    focusedInput.current = input;
+    if (Keyboard.isVisible()) requestAnimationFrame(() => measure());
+  }, [measure]);
+  const blur = useCallback((input: KeyboardInput | null) => {
+    if (input == null || focusedInput.current === input) focusedInput.current = null;
+  }, []);
+  const owner = React.useMemo(() => ({focus, blur}), [focus, blur]);
 
   useEffect(() => {
     mounted.current = true;
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const shown = Keyboard.addListener(showEvent, event => {
-      keyboardFrame.current = event.endCoordinates;
+      keyboardFrame.current = currentKeyboardFrame(event.endCoordinates);
       requestAnimationFrame(() => measure());
     });
     const hidden = Keyboard.addListener(hideEvent, () => {keyboardFrame.current = null;});
     const resize = Dimensions.addEventListener('change', () => {
-      keyboardFrame.current = Keyboard.metrics() || null;
+      keyboardFrame.current = currentKeyboardFrame(Keyboard.metrics() || null);
       requestAnimationFrame(() => measure());
     });
     return () => {mounted.current = false; shown.remove(); hidden.remove(); resize.remove();};
   }, [measure]);
 
-  return <NativeScrollView
-    {...props}
-    ref={scrollRef}
-    keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-    onFocus={(event: any) => {
-      focusedTarget.current = focusedInputTarget(event);
-      onFocus?.(event);
-      if (Keyboard.isVisible()) requestAnimationFrame(() => measure());
-    }}
-    onBlur={(event: any) => {
-      const target = focusedInputTarget(event);
-      if (target == null || focusedTarget.current === target) focusedTarget.current = null;
-      onBlur?.(event);
-    }}
-    onLayout={(event: any) => {
-      viewportRef.current = {...viewportRef.current, height: event.nativeEvent.layout.height};
-      props.onLayout?.(event);
-      requestAnimationFrame(() => measure());
-    }}
-    onScroll={(event: any) => {
-      currentOffset.current = event.nativeEvent.contentOffset.y;
-      props.onScroll?.(event);
-    }}
-    onContentSizeChange={(width: number, height: number) => {
-      props.onContentSizeChange?.(width, height);
-      if (keyboardFrame.current) requestAnimationFrame(() => measure());
-    }}
-    scrollEventThrottle={props.scrollEventThrottle ?? 16}
-  />;
+  return <KeyboardScrollContext.Provider value={owner}>
+    <ScrollView
+      {...props}
+      ref={scrollRef}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+      onLayout={(event: LayoutChangeEvent) => {
+        viewportRef.current = {...viewportRef.current, height: event.nativeEvent.layout.height};
+        props.onLayout?.(event);
+        requestAnimationFrame(() => measure());
+      }}
+      onScroll={(event: any) => {
+        currentOffset.current = event.nativeEvent.contentOffset.y;
+        props.onScroll?.(event);
+      }}
+      onContentSizeChange={(width: number, height: number) => {
+        props.onContentSizeChange?.(width, height);
+        if (keyboardFrame.current) requestAnimationFrame(() => measure());
+      }}
+      scrollEventThrottle={props.scrollEventThrottle ?? 16}
+    >{children}</ScrollView>
+  </KeyboardScrollContext.Provider>;
 }

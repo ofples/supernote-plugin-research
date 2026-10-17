@@ -9,7 +9,7 @@ const {act, create} = require('react-test-renderer');
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top: 0, height: 40}, metrics = null} = {}) {
+function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top: 0, height: 40}, metrics = null, screenHeight = 1872} = {}) {
   const listeners = new Map();
   const removed = [];
   const keyboard = {
@@ -21,7 +21,7 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
     metrics: () => metrics,
     isVisible: () => !!metrics,
   };
-  const dimensions = {addEventListener(_event, callback) {
+  const dimensions = {get() {return {height: screenHeight};}, addEventListener(_event, callback) {
     const entries = listeners.get('dimensions') || new Set();
     entries.add(callback); listeners.set('dimensions', entries);
     return {remove() {entries.delete(callback); removed.push('dimensions');}};
@@ -30,8 +30,12 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
     Dimensions: dimensions,
     Keyboard: keyboard,
     Platform: {OS: 'android'},
-    UIManager: {measureInWindow(target, callback) {callback(0, target === 5 ? viewport.top : input.top, 200, target === 5 ? viewport.height : input.height);}},
     View: 'View',
+    TextInput: React.forwardRef((props, ref) => {
+      const instance = {measureInWindow(callback) {callback(0, input.top, 200, input.height);}};
+      React.useImperativeHandle(ref, () => instance);
+      return React.createElement('FakeTextInput', props);
+    }),
     ScrollView: React.forwardRef((props, ref) => {
       const instance = {
         measureInWindow(callback) {callback(0, viewport.top, viewport.width, viewport.height);},
@@ -50,7 +54,9 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);
-  return {api: mod.exports, native, listeners, removed, scrolls, setMetrics(value) {metrics = value;}};
+  return {api: mod.exports, native, listeners, removed, scrolls, setMetrics(value) {metrics = value;}, setInputFrame(value) {input = value;}, dispatch(event, payload) {
+    for (const callback of listeners.get(event) || []) callback(payload);
+  }};
 }
 
 test('keyboard viewport geometry avoids only the overlap that the host did not resize away', () => {
@@ -59,6 +65,20 @@ test('keyboard viewport geometry avoids only the overlap that the host did not r
   assert.equal(api.calculateKeyboardInset({top: 0, height: 500}, {screenY: 500}), 0, 'adjustResize already removed the overlap');
   assert.equal(api.calculateKeyboardInset({top: 300, height: 800}, {screenY: 700}), 400, 'floating PluginHost window uses its screen offset');
   assert.equal(api.calculateKeyboardInset({top: 300, height: 500}, {screenY: 700}), 100, 'partially resized host gets only the remaining overlap');
+});
+
+test('keyboard frame normalization repairs only the RN full-screen-bottom error', () => {
+  const {api} = makeRuntime();
+  assert.deepEqual(api.normalizeKeyboardFrame({screenY: 1872, height: 700}, 1872), {screenY: 1172, height: 700},
+    'adjustNothing plus host state bits reports screen bottom instead of keyboard top');
+  assert.deepEqual(api.normalizeKeyboardFrame({screenY: 1172, height: 700}, 1872), {screenY: 1172, height: 700},
+    'normal adjustResize frame is preserved');
+  assert.deepEqual(api.normalizeKeyboardFrame({screenY: 700, height: 400}, 1872), {screenY: 700, height: 400},
+    'a modal window frame away from full-screen bottom is preserved');
+  assert.deepEqual(api.normalizeKeyboardFrame({screenY: 1872}, 1872), {screenY: 1872},
+    'frames without keyboard height are not guessed');
+  assert.deepEqual(api.normalizeKeyboardFrame({screenY: 1404, height: 500}, 1404), {screenY: 904, height: 500},
+    'screen rotation uses the current height');
 });
 
 test('focused input scroll delta handles modal offsets, already-visible fields and adjusted host windows', () => {
@@ -75,16 +95,30 @@ test('focused input scroll delta handles modal offsets, already-visible fields a
     'keeps the insertion end of a multiline field visible when it is taller than the viewport');
 });
 
-test('keyboard-aware scroll view measures in window coordinates and removes all listeners on unmount', async () => {
+test('focused host input reveals after keyboard open and listener cleanup is complete', async () => {
   const oldRaf = global.requestAnimationFrame;
   global.requestAnimationFrame = callback => {callback(); return 1;};
-  const runtime = makeRuntime({viewport: {top: 300, height: 800}, input: {top: 670, height: 50}, metrics: {screenY: 700}});
+  const runtime = makeRuntime({viewport: {top: 300, height: 800}, input: {top: 670, height: 50}});
   let tree;
   try {
-    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null));});
+    let callerFocusCount = 0;
+    const callerFocus = () => {callerFocusCount++;};
+    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null,
+      React.createElement(runtime.api.KeyboardAwareTextInput, {accessibilityLabel: 'field', onFocus: callerFocus}),
+      React.createElement(runtime.api.KeyboardAwareTextInput, {accessibilityLabel: 'second field'})));});
     const scroll = tree.root.findByType('FakeScrollView');
-    await act(async () => scroll.props.onFocus({nativeEvent: {target: 7}}));
+    const input = tree.root.findAllByType('FakeTextInput')[0];
+    await act(async () => input.props.onFocus({nativeEvent: {target: 7}}));
+    assert.equal(callerFocusCount, 1, 'the input calls through to the caller focus callback');
+    await act(async () => runtime.dispatch('keyboardDidShow', {endCoordinates: {screenY: 700}}));
     assert.deepEqual(runtime.scrolls, [{y: 36, animated: false}], 'uses measured modal and keyboard bounds for a minimal scroll');
+    await act(async () => scroll.props.onScroll({nativeEvent: {contentOffset: {y: 36}}}));
+    runtime.setInputFrame({top: 690, height: 50});
+    runtime.setMetrics({screenY: 700});
+    const secondInput = tree.root.findAllByType('FakeTextInput')[1];
+    await act(async () => secondInput.props.onFocus({nativeEvent: {target: 8}}));
+    assert.deepEqual(runtime.scrolls, [{y: 36, animated: false}, {y: 92, animated: false}],
+      'a new field focused while the keyboard is already visible is also revealed');
     assert.equal(scroll.props.keyboardShouldPersistTaps, 'handled');
     assert.equal(runtime.listeners.get('keyboardDidShow').size, 1);
     assert.equal(runtime.listeners.get('keyboardDidHide').size, 1);
@@ -104,9 +138,10 @@ test('keyboard events do not scroll an inactive route whose native viewport is h
   const runtime = makeRuntime({viewport: {top: 0, height: 0, width: 0}, input: {top: 650, height: 40}, metrics: {screenY: 600}});
   let tree;
   try {
-    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null));});
-    const scroll = tree.root.findByType('FakeScrollView');
-    await act(async () => scroll.props.onFocus({nativeEvent: {target: 7}}));
+    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null,
+      React.createElement(runtime.api.KeyboardAwareTextInput, null)));});
+    const input = tree.root.findByType('FakeTextInput');
+    await act(async () => input.props.onFocus({nativeEvent: {target: 7}}));
     assert.deepEqual(runtime.scrolls, [], 'display:none navigation forms are ignored');
     await act(async () => tree.unmount());
   } finally {
@@ -116,12 +151,17 @@ test('keyboard events do not scroll an inactive route whose native viewport is h
 
 test('every current TextInput surface is accounted for by the shared viewport and focused-scroll path', () => {
   const src = path.resolve(__dirname, '../src');
-  const inputFiles = [];
+  const inputFiles = [], rawInputFiles = [];
   const visit = dir => {
     for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) visit(file);
-      else if (/\.tsx?$/.test(entry.name) && /<TextInput\b/.test(fs.readFileSync(file, 'utf8'))) inputFiles.push(path.relative(src, file).replaceAll('\\', '/'));
+      else if (/\.tsx?$/.test(entry.name)) {
+        const source = fs.readFileSync(file, 'utf8');
+        const relative = path.relative(src, file).replaceAll('\\', '/');
+        if (/<KeyboardAwareTextInput\b/.test(source)) inputFiles.push(relative);
+        if (/<TextInput\s/.test(source)) rawInputFiles.push(relative);
+      }
     }
   };
   visit(src);
@@ -137,6 +177,7 @@ test('every current TextInput surface is accounted for by the shared viewport an
     'screens/TaskDetail.tsx',
     'screens/TaskHome.tsx',
   ].sort(), 'update this inventory when a new input surface is added');
+  assert.deepEqual(rawInputFiles, ['components/KeyboardAvoidance.tsx'], 'screen and modal inputs register their native host ref through the shared wrapper');
 
   const app = fs.readFileSync(path.resolve(__dirname, '../App.tsx'), 'utf8');
   assert.match(app, /<KeyboardAvoidanceViewport>/, 'all navigation routes share the host-aware viewport');

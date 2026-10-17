@@ -13,7 +13,7 @@ function load(file, overrides) {
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => name.endsWith('/components/KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+  mod.require = name => name.endsWith('KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);

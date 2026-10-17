@@ -15,12 +15,11 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
   Clipboard,
 } from 'react-native';
-import {KeyboardAwareScrollView} from '../components/KeyboardAvoidance';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig, saveConfig, getCachedConfig, getConfigSource, wasTemplateGenerated} from '../utils/config';
 import {setConfigLoader, testConnection, getProjects} from '../api/todoist';
@@ -527,7 +526,7 @@ export default function Config({nav, initialPage}: Props) {
             onInfo={() => setInfoSheet('token')}
             saved={savedRow === 'token'}>
             <View style={s.inputRow}>
-              <TextInput
+              <KeyboardAwareTextInput
                 style={[s.input, {flex: 1}]}
                 value={token}
                 onChangeText={setToken}

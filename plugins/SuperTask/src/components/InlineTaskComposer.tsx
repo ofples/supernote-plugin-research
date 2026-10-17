@@ -1,5 +1,6 @@
 import React, {useRef} from 'react';
 import {View, Text, TextInput, Pressable, StyleSheet} from 'react-native';
+import {KeyboardAwareTextInput} from './KeyboardAvoidance';
 import {useFontScale} from '../utils/useFontScale';
 
 export type InlineTaskComposerProps = {
@@ -21,7 +22,7 @@ export default function InlineTaskComposer({value, onChangeText, dueDate, destin
   return (
     <View style={styles.container}>
       <View style={styles.inputRow}>
-        <TextInput ref={input} accessibilityLabel="New task" placeholder="Enter task — description" placeholderTextColor="#666666"
+        <KeyboardAwareTextInput ref={input} accessibilityLabel="New task" placeholder="Enter task — description" placeholderTextColor="#666666"
           style={[styles.input, {fontSize: Math.round(16 * scale), lineHeight: Math.round(22 * scale)}]}
           value={value} onChangeText={onChangeText} onSubmitEditing={submit} returnKeyType="done"
           blurOnSubmit={false} editable={!saving} accessibilityState={{disabled: saving}} />
