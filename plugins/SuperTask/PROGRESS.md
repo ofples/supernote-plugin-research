@@ -1,6 +1,6 @@
 # SuperTask progress
 
-## Beta.25 — keyboard reachability and paged workspace — 18 October 2026
+## Beta.25 — keyboard reachability and paged workspace — 17 October 2026
 
 The local feature branch contains the beta.25 runtime source, including the keyboard reveal correction at `eab9e2fd52fab41c2135b5d79b783dd722197b0b`; metadata/build commit `0f7e075ef45279350da0078fb1c047c5b3e4f4f2` sets **0.4.0-beta.25/code 30**. The versioned package `build/outputs/SuperTask-native-beta25.snplg` is **7,610,210 bytes**, SHA-256 `d50dfaf1159ae0773c37d1e82483c59d1954aee5c24315fa5f3bd248d1b5a441`. Package verification confirms the identity, icon, JavaScript, native registrations/classes and ARM64 library. Pinned Hermes compilation passed and produced 5,029,890 bytes, SHA-256 `28ca3208d3b1ed37492ea1b52259d0166aa6b4daa12dd0b8d53aa2e1eeff4120`.
 
