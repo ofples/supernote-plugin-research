@@ -34,6 +34,17 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = [];
   let finishProject; const projectGate = new Promise(resolve => {finishProject = resolve;});
   let session = null; let reads = 0; let scans = 0; let cacheListener;
+  const accountKey = 'cached-private-account-key';
+  let cacheRevision = 1;
+  let loadConfig = async () => config;
+  const saveConfig = async patch => {
+    if (patch.workspacePreferences) {
+      config.workspacePreferences = {...(config.workspacePreferences || {}), ...patch.workspacePreferences,
+        accounts: {...(config.workspacePreferences?.accounts || {}), ...(patch.workspacePreferences.accounts || {})}};
+    }
+    for (const [key, value] of Object.entries(patch)) if (key !== 'workspacePreferences') config[key] = value;
+    return true;
+  };
   const api = {completeTask: async id => {completed.push(id); data = {...data, tasks: data.tasks.filter(task => task.id !== id),
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
     reopened.push(id); data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false} : task)};
@@ -51,15 +62,25 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const mutations = load('../src/workspace/useWorkspaceMutations.ts', {'../offline/service': service}).default;
   const rowModule = load('../src/workspace/WorkspaceTaskRow.tsx', {'react-native': native,
     '../components/TaskRow': {__esModule: true, default: 'TaskRow'}, '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
+  const componentOverrides = {'react-native': native, '../utils/useFontScale': {useFontScale: () => 1}};
+  const Board = load('../src/components/WorkspaceBoard.tsx', componentOverrides).default;
+  const ViewOptions = load('../src/components/WorkspaceViewOptions.tsx', componentOverrides).default;
+  const Picker = load('../src/components/ProjectPicker.tsx', componentOverrides).default;
+  const SectionHeader = props => React.createElement('Section', {...props,
+    accessibilityLabel: props.onToggle ? `${props.expanded ? 'Collapse' : 'Expand'} ${props.title.toLowerCase()} tasks` : undefined,
+    accessibilityState: props.onToggle ? {expanded: props.expanded} : undefined,
+    onPress: props.onToggle,
+  });
+  const ProjectPicker = props => props.commitOnSelect ? React.createElement(Picker, props) : React.createElement('ProjectPicker', props);
   const view = load('../src/screens/TaskHome.tsx', {
     'react-native': native, 'sn-plugin-lib': {PluginCommAPI: {getCurrentFilePath: async () => ({success: true, result: note ? '/note/Test.note' : ''}),
       getCurrentPageNum: async () => ({success: true, result: 0})}, PluginFileAPI: {getElements: async () => {scans++; return {success: true, result: []};}}},
     '../utils/closePlugin': {closePlugin() {}}, '../utils/taskRegistry': {getAllTasks: async () => {reads++; return references();}, getTasksForNote: async () => {reads++; return references();}, getTask: async () => null},
     '../utils/noteOpener': {}, '../utils/noteHeal': {healRenamedNotes: async () => 0}, '../utils/noteLabel': {noteLabel: () => 'Test'},
-    '../utils/config': {getCachedConfig: () => config, loadConfig: async () => config, resolveDefaultTab: cfg => cfg?.defaultTab || 'today', saveConfig: async () => {}},
+    '../utils/config': {getCachedConfig: () => config, loadConfig: (...args) => loadConfig(...args), resolveDefaultTab: cfg => cfg?.defaultTab || 'today', saveConfig},
     '../utils/useFontScale': {useFontScale: () => 1}, '../components/settings': {Check: 'Check'},
     '../utils/viewState': {getSessionTab: () => session, setSessionTab: value => {session = value;}}, '../api/todoist': api,
-    '../cache/taskCache': {getCachedWorkspace: () => ({...data, completedTasks: data.allTasks.filter(task => task.completed)}), getCache: () => data, fetchTaskData: async () => data, initTaskCache: async () => data, invalidateCache() {}, subscribeCache: listener => {cacheListener = listener; return () => {};}},
+    '../cache/taskCache': {getCachedWorkspace: () => ({...data, accountKey, revision: cacheRevision, completedTasks: data.allTasks.filter(task => task.completed)}), getCache: () => data, fetchTaskData: async () => data, initTaskCache: async () => data, invalidateCache() {}, subscribeCache: listener => {cacheListener = listener; return () => {};}},
     '../offline/service': service, '../workspace/useWorkspaceMutations': {__esModule: true, default: mutations},
     '../workspace/WorkspaceTaskRow': {...rowModule, __esModule: true},
     '../components/NativeTaskSidebar': {__esModule: true, default: 'Sidebar'},
@@ -71,11 +92,14 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     '../utils/debug': {log() {}, logError() {}}, '../utils/useTaskSelection': {useTaskSelection: hook},
     '../components/TaskSidebar': {__esModule: true, default: 'Sidebar'}, '../components/TaskRow': {__esModule: true, default: 'TaskRow'},
     '../components/ProjectOverview': {__esModule: true, default: 'Overview'}, '../components/SelectionBar': {__esModule: true, default: 'UndoBar'},
-    '../components/SectionHeader': {__esModule: true, default: 'Section'}, '../components/Chip': {__esModule: true, default: 'Chip'},
+    '../components/SectionHeader': {__esModule: true, default: SectionHeader}, '../components/Chip': {__esModule: true, default: 'Chip'},
+    '../components/WorkspaceBoard': {__esModule: true, default: Board}, '../components/WorkspaceViewOptions': {__esModule: true, default: ViewOptions},
+    '../components/ProjectPicker': {__esModule: true, default: ProjectPicker},
   });
   const nav = {push: (...args) => navCalls.push(args)};
-  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, updateData: update => {data = update(data);},
-    emitCache: () => cacheListener({...data, completedTasks: data.allTasks.filter(task => task.completed)}), getReads: () => reads, getScans: () => scans, finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
+  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, accountKey,
+    setLoadConfig: loader => {loadConfig = loader;}, updateData: update => {data = update(data);},
+    emitCache: () => {cacheRevision++; cacheListener({...data, accountKey, revision: cacheRevision, completedTasks: data.allTasks.filter(task => task.completed)});}, getReads: () => reads, getScans: () => scans, finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
     markMissing: (id, leakIntoActive = false) => {
       data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
       data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted && (leakIntoActive || !task.remoteMissing));
@@ -85,6 +109,9 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     nextOccurrence: id => {data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: false, awaitingRecurrence: false, occurrencePending: false, due: {date: tomorrow, is_recurring: true}} : task)}; data.tasks = data.allTasks.filter(task => !task.completed && !task.deleted);} };
 }
 const switchTo = async (tree, view) => act(async () => tree.root.findByType('Sidebar').props.onViewChange(view));
+const seedCompletedExpanded = (model, contexts) => {
+  model.config.workspacePreferences = {accounts: {[model.accountKey]: Object.fromEntries(contexts.map(context => [context, {completedExpanded: true}]))}};
+};
 test('legacy Pending destination migrates to Today and opens the sync summary', async () => {
   const model = workspace({defaultTab: 'pending'}); let tree;
   assert.equal(model.normalize('pending'), 'today'); assert.equal(model.normalize('project:p'), 'project:p');
@@ -98,7 +125,7 @@ test('project sidebar choice preserves navigation and groups collections in the 
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   await switchTo(tree, 'project:p');
   assert.equal(tree.root.findByType('Sidebar').props.activeView, 'project:p');
-  assert.deepEqual(tree.root.findAllByType('Section').map(n => n.props.title), ['No collection', 'Writing', '⌄ Completed']);
+  assert.deepEqual(tree.root.findAllByType('Section').map(n => n.props.title), ['No collection', 'Writing', 'Completed']);
   assert.equal(tree.root.findAllByType('TaskRow').length, 2); assert.equal(model.navCalls.length, 0);
   await switchTo(tree, 'tomorrow'); assert.deepEqual(tree.root.findAllByType('TaskRow').map(n => n.props.task.id), ['two']);
   await switchTo(tree, 'inbox'); assert.deepEqual(tree.root.findAllByType('TaskRow').map(n => n.props.task.id), ['inbox']);
@@ -107,6 +134,7 @@ test('project sidebar choice preserves navigation and groups collections in the 
 });
 test('checkbox completes immediately, title expands quick actions, and completed footer reopens without an Undo banner', async () => {
   const model = workspace({}, true); let tree;
+  seedCompletedExpanded(model, ['note']);
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   await switchTo(tree, 'note');
   assert.equal(tree.root.findByType('Sidebar').props.noteAvailable, true);
@@ -257,8 +285,9 @@ test('inline draft survives a view change with note source and submits once unde
 });
 test('Upcoming requires a chosen date; completed collapse state belongs to each view', async () => {
   const model = workspace(); let tree;
+  seedCompletedExpanded(model, ['today', 'upcoming']);
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
-  const footer = () => tree.root.findByProps({accessibilityLabel: 'Expand completed tasks'});
+  const footer = () => tree.root.findAllByType('Section').find(section => section.props.title === 'Completed');
   assert.equal(footer().props.accessibilityState.expanded, true);
   await act(async () => footer().props.onPress());
   await switchTo(tree, 'upcoming'); assert.equal(footer().props.accessibilityState.expanded, true);
@@ -288,6 +317,7 @@ test('a syncing project alias keeps project rows and composer location available
 test('completed recurring occurrence cannot be selected or reopened through the active next task', async () => {
   const history = {id: 'one', project_id: 'p', content: 'Previous occurrence', completed: true, occurrenceHistory: true, completed_at: '2026-10-04', due: {date: '2026-10-04', is_recurring: true}};
   const model = workspace({}, false, [history]); let tree;
+  seedCompletedExpanded(model, ['today']);
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   const row = tree.root.findAllByType('TaskRow').find(value => value.props.task.occurrenceHistory);
   assert.equal(row.props.disabled, true);
@@ -407,6 +437,7 @@ test('Note and Device retain a protected recurring history row beside its active
   const history = {id: 'one', project_id: 'p', content: 'Prior recurring occurrence', completed: true, occurrenceHistory: true,
     completed_at: '2026-10-04', due: {date: '2026-10-04', is_recurring: true}};
   const model = workspace({}, true, [history]); let tree;
+  seedCompletedExpanded(model, ['note', 'device']);
   model.updateData(data => {
     const next = task => task.id === 'one' && !task.completed ? {...task, id: 'remote:one', remoteId: 'one', due: {date: '2026-10-06', is_recurring: true}} : task;
     return {...data, tasks: data.tasks.map(next), allTasks: data.allTasks.map(next)};
@@ -446,6 +477,7 @@ test('completed tasks are inside the active list scroll flow and action pages ne
 test('successful retry clears a previous history warning without discarding saved history', async () => {
   let fail = true;
   const model = workspace({}, false, [], async () => {if (fail) throw new Error('Temporary network problem'); return [];}); let tree;
+  seedCompletedExpanded(model, ['today']);
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   assert.match(JSON.stringify(tree.toJSON()), /Temporary network problem/);
   fail = false;
@@ -511,5 +543,94 @@ test('collapsing a collection preserves its count and Select all includes hidden
   assert.equal(tree.root.findByType('Selection').props.count, 2);
   assert.deepEqual(model.completed, []);
   await act(async () => tree.root.findAllByType('Section').find(row => row.props.title === 'Writing').props.onToggle());
+  await act(async () => tree.unmount());
+});
+
+test('Completed collapse persists across cache refresh and remount, and a stale config read cannot reopen it', async () => {
+  const model = workspace(); let tree; let resolveConfig;
+  seedCompletedExpanded(model, ['today']);
+  model.setLoadConfig(() => new Promise(resolve => {resolveConfig = resolve;}));
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const completed = () => tree.root.findAllByType('Section').find(section => section.props.title === 'Completed');
+  assert.equal(completed().props.accessibilityState.expanded, true);
+  await act(async () => completed().props.onToggle());
+  assert.equal(completed().props.accessibilityState.expanded, false);
+  assert.equal(model.config.workspacePreferences.accounts[model.accountKey].today.completedExpanded, false);
+  await act(async () => {resolveConfig({workspacePreferences: {accounts: {[model.accountKey]: {today: {completedExpanded: true}}}}}); await Promise.resolve();});
+  assert.equal(completed().props.accessibilityState.expanded, false, 'late config must merge around the newer local toggle');
+  model.updateData(data => ({...data, tasks: [...data.tasks, {id: 'refresh', project_id: 'p', content: 'Refreshed task'}]}));
+  await act(async () => model.emitCache());
+  assert.equal(completed().props.accessibilityState.expanded, false, 'cache refresh must not reset the local preference');
+  await act(async () => tree.unmount());
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  assert.equal(completed().props.accessibilityState.expanded, false, 'remount must load the account-scoped saved value');
+  await act(async () => tree.unmount());
+});
+
+test('switching List and Board keeps the selected project scope and selected task identity', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await switchTo(tree, 'project:p');
+  let one = tree.root.findAllByType('TaskRow').find(row => row.props.task.id === 'one');
+  assert.ok(one);
+  await act(async () => one.props.onLongPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Workspace view options'}).props.onPress());
+  await act(async () => pressText(tree, 'Board').props.onPress());
+  let rows = tree.root.findAllByType('TaskRow');
+  assert.deepEqual(rows.map(row => row.props.task.id).sort(), ['one', 'two']);
+  assert.equal(rows.find(row => row.props.task.id === 'one').props.selected, true);
+  assert.equal(rows.some(row => row.props.task.id === 'inbox'), false, 'board must stay within the selected project');
+  await act(async () => pressText(tree, 'List').props.onPress());
+  rows = tree.root.findAllByType('TaskRow');
+  assert.deepEqual(rows.map(row => row.props.task.id).sort(), ['one', 'two']);
+  assert.equal(rows.find(row => row.props.task.id === 'one').props.selected, true);
+  await act(async () => tree.unmount());
+});
+
+test('selection mode keeps the header height and mounted composer slot unchanged', async () => {
+  const model = workspace(); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const headerStyle = () => tree.toJSON().children[0].props.style;
+  const composerSlot = () => tree.root.findByType('Composer').parent;
+  const beforeHeader = JSON.stringify(headerStyle());
+  const beforeComposerLayout = JSON.stringify(composerSlot().props.style[0]);
+  assert.equal(tree.root.findAllByType('Composer').length, 1);
+  const row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'one');
+  await act(async () => row.props.onLongPress());
+  assert.equal(JSON.stringify(headerStyle()), beforeHeader);
+  assert.equal(JSON.stringify(composerSlot().props.style[0]), beforeComposerLayout);
+  assert.equal(composerSlot().props.style[1].opacity, 0);
+  assert.equal(composerSlot().props.pointerEvents, 'none');
+  assert.equal(tree.root.findAllByType('Composer').length, 1, 'selection must hide the mounted composer instead of removing its slot');
+  await act(async () => tree.root.findByType('Selection').props.onCancel());
+  assert.equal(JSON.stringify(headerStyle()), beforeHeader);
+  assert.equal(JSON.stringify(composerSlot().props.style[0]), beforeComposerLayout);
+  assert.equal(composerSlot().props.pointerEvents, 'auto');
+  await act(async () => tree.unmount());
+});
+
+test('composer destination commits a collection or no-collection choice immediately and closes the picker', async () => {
+  const model = workspace(); let tree;
+  model.updateData(data => ({...data, projects: [...data.projects, {id: 'q', name: 'Personal'}]}));
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const chooseDestination = async () => {
+    await act(async () => tree.root.findByType('Composer').props.onChooseDestination());
+    assert.equal(tree.root.findAllByType('Modal').length, 1);
+  };
+  await chooseDestination();
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Work'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose collection Writing'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0);
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Work / Writing');
+  assert.doesNotMatch(JSON.stringify(tree.toJSON()), /Use location/);
+  await chooseDestination();
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Work'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose collection No collection'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0);
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Work');
+  await chooseDestination();
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Personal'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0, 'project with no collections commits on project choice');
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Personal');
   await act(async () => tree.unmount());
 });
