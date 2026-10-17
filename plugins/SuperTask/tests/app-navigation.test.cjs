@@ -209,7 +209,7 @@ test('App deep-link and navigation logs contain no task title or serialized task
 test('Settings key save refreshes retained batch hint on Back without replacing its unsaved draft', async () => {
   const f = await fixture({config: {aiApiKey: '', aiSetupHintDismissed: false}});
   try {
-    await f.tap('Start batch'); assert.ok(byLabel(f.tree, 'Set up AI'));
+    await f.tap('Start batch'); await f.tap('Batch actions'); assert.ok(byLabel(f.tree, 'Set up AI'));
     await act(async () => {f.tree.root.findAllByType('Input')[0].props.onChangeText('Keep this edited draft'); await flush();});
     await f.tap('Select none'); await f.tap('Set up AI');
     assert.equal(f.tree.root.findByType(f.Batch).props.active, false);
@@ -225,7 +225,7 @@ test('a deactivated batch cannot publish a stale config read after a newer Setti
   const f = await fixture();
   try {
     const finishOldRead = f.stallNextConfigRead();
-    await f.tap('Start batch'); await f.tap('AI settings');
+    await f.tap('Start batch'); await f.tap('Batch actions'); await f.tap('AI settings');
     await f.tap('Save AI key'); await f.tap('Settings Back');
     assert.equal(byLabel(f.tree, 'Set up AI'), undefined);
     await act(async () => {finishOldRead({postCreateAction: 'auto-back', aiApiKey: '', aiSetupHintDismissed: false}); await flush();});
