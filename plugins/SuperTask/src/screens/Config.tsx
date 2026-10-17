@@ -310,6 +310,18 @@ export default function Config({nav, initialPage}: Props) {
     if (ok) { setAiSetupHintDismissed(true); }
   };
 
+  const handleToggleAIDefault = async () => {
+    const previous = getCachedConfig()?.aiByDefault === true;
+    const next = !aiByDefault;
+    setAiByDefault(next);
+    setAiStatus('');
+    const ok = await applyChange('aiByDefault', {aiByDefault: next});
+    if (!ok) {
+      setAiByDefault(previous);
+      setAiStatus('Could not save AI by default. Try again.');
+    }
+  };
+
   // ── Account handlers ─────────────────────────────────────
 
   const handlePaste = async () => {
@@ -796,11 +808,7 @@ export default function Config({nav, initialPage}: Props) {
                 <Text style={s.btnSmallText}>Dismiss</Text>
               </Pressable>
             </View>}
-            <CheckRow checked={aiByDefault} onToggle={() => {
-              const next = !aiByDefault;
-              setAiByDefault(next);
-              applyChange('aiByDefault', {aiByDefault: next});
-            }} label="AI by default" hint="For lasso captures, try AI automatically when an API key is set. Device OCR remains available." saved={savedRow === 'aiByDefault'} />
+            <CheckRow checked={aiByDefault} onToggle={handleToggleAIDefault} label="AI by default" hint="For lasso captures, try AI automatically when an API key is set. Device OCR remains available." saved={savedRow === 'aiByDefault'} />
             <AISettingsFields apiKey={aiApiKey} model={aiModel} models={aiModels} status={aiStatus} saving={aiSaving}
               onApiKeyChange={setAiApiKey} onModelChange={handleSelectAIModel}
               onModelsChange={handleChangeAIModels} onSave={handleSaveAISettings} />

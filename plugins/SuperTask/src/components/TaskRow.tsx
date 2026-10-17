@@ -7,7 +7,7 @@ import Chip from './Chip';
 import {Check} from './settings';
 import {useFontScale} from '../utils/useFontScale';
 const {localDate} = require('../offline/model');
-const {formatDueLabel} = require('./taskDueLabel');
+const {formatDueLabel, getDueDateTimeKey} = require('./taskDueLabel');
 
 const PRIORITY_LABELS: Record<number, string> = {
   4: 'P1',
@@ -49,7 +49,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   };
 
   const priorityLabel = PRIORITY_LABELS[task.priority] || '';
-  const dueDate = (task.due?.date || '').slice(0, 10);
+  const dueDate = getDueDateTimeKey(task.due?.date || '').slice(0, 10);
   const today = localDate(new Date());
   const isOverdue = !checked && dueDate && dueDate < today;
 
