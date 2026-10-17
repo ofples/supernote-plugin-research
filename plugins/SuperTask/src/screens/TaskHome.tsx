@@ -1456,15 +1456,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             }} />}
             {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
               <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
-                commitOnSelect={actionSheet.kind === 'composer-move'}
+                commitOnSelect
                 onCreateCollection={(projectId, name) => workspaceService.createOfflineCollection(projectId, name)}
-                onCommitSelection={(projectId, sectionId) => {setComposer(previous => ({...previous, ...composerLocation, projectId, sectionId, explicit: true})); setActionSheet(null);}}
+                onCommitSelection={(projectId, sectionId) => {
+                  if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, projectId, sectionId, explicit: true}));
+                  else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: projectId, section_id: sectionId}});
+                  setActionSheet(null);
+                }}
                 onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
-              {actionSheet.kind !== 'composer-move' && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionLocation.projectId} onPress={() => {
-                if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, ...actionLocation, explicit: true}));
-                else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: actionLocation.projectId, section_id: actionLocation.sectionId}});
-                setActionSheet(null);
-              }}><Text style={styles.headerButtonText}>Use this location</Text></Pressable>}
             </>}
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
             {actionSheet?.kind === 'more' && <View style={styles.actionRow}>

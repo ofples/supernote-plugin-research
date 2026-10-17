@@ -31,7 +31,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     sections: [{id: 's', name: 'Writing', project_id: 'p'}], pendingCount: 2, pendingTaskCount: 1, pendingCollectionCount: 1,
     pendingChanges: [{id: 'inbox', uuid: 'a', kind: 'create', state: 'attention', error: {status: 401}, task: tasks[2]},
       {id: 's', uuid: 'b', kind: 'collection_create', state: 'pending', collection: {name: 'Writing'}}]};
-  const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = [];
+  const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = []; const taskMutations = [];
   let finishProject; const projectGate = new Promise(resolve => {finishProject = resolve;});
   let session = null; let reads = 0; let scans = 0; let cacheListener;
   let accountKey = 'cached-private-account-key';
@@ -64,7 +64,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const references = () => frozenReferences || data.allTasks.filter(task => task.source).map(task => ({...task, notePath: task.source.filePath, pageNum: task.source.pageNum}));
   const service = {offlineData: async () => data, completedData: async () => data.allTasks.filter(task => task.completed),
     subscribeOffline: () => () => {}, retryOffline: async id => {retries.push(id);},
-    mutateOfflineTasks: async (ids, action) => {for (const id of ids) {
+    mutateOfflineTasks: async (ids, action) => {taskMutations.push({ids: [...ids], action}); for (const id of ids) {
       if (action.kind === 'complete') await (action.completed ? api.completeTask : api.reopenTask)(id);
     }}, saveOfflineBatch: async (drafts, source, capturedAt, request) => {savedDrafts.push({drafts, source, request}); return [];},
     createOfflineProject: async name => {await projectGate; const project = {id: 'saved-local-project', name}; data = {...data, projects: [...data.projects, project]}; return project;} };
@@ -106,7 +106,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     '../components/ProjectPicker': {__esModule: true, default: ProjectPicker},
   });
   const nav = {push: (...args) => navCalls.push(args)};
-  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, accountKey,
+  return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, taskMutations, config, service, accountKey,
     setLoadConfig: loader => {loadConfig = loader;}, updateData: update => {data = update(data);},
     holdNextSave: () => {let release; const promise = new Promise(resolve => {release = resolve;}); nextSaveGate = {promise}; return release;}, flushSaves: () => saveChain,
     switchAccount: (nextKey, token) => {accountKey = nextKey; config.apiToken = token; data = {...data, accountKey: nextKey}; cacheRevision++;},
@@ -643,6 +643,47 @@ test('composer destination commits a collection or no-collection choice immediat
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Personal'}).props.onPress());
   assert.equal(tree.root.findAllByType('Modal').length, 0, 'project with no collections commits on project choice');
   assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Personal');
+  await act(async () => tree.unmount());
+});
+
+test('moving one or several tasks commits the chosen project or collection immediately', async () => {
+  const waitForMutation = async model => {
+    await act(async () => new Promise(resolve => setTimeout(resolve, 0)));
+    assert.ok(model.taskMutations.length);
+    return model.taskMutations.at(-1);
+  };
+
+  const single = workspace(); let tree;
+  single.updateData(data => ({...data, projects: [...data.projects, {id: 'q', name: 'Personal'}]}));
+  await act(async () => {tree = create(React.createElement(single.Home, {nav: single.nav}));});
+  await switchTo(tree, 'project:p');
+  let row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'one');
+  await act(async () => row.props.onPress());
+  row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'one');
+  await act(async () => row.props.rightAccessory.props.onMove());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Personal'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0);
+  assert.equal(tree.root.findAllByType('Text').some(node => node.props.children === 'Use this location'), false);
+  let mutation = await waitForMutation(single);
+  assert.deepEqual(mutation.ids, ['one']);
+  assert.deepEqual(mutation.action, {kind: 'edit', patch: {project_id: 'q', section_id: null}});
+  await act(async () => tree.unmount());
+
+  const multiple = workspace();
+  await act(async () => {tree = create(React.createElement(multiple.Home, {nav: multiple.nav}));});
+  await switchTo(tree, 'project:p');
+  row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'one');
+  await act(async () => row.props.onLongPress());
+  row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'two');
+  await act(async () => row.props.onPress());
+  assert.equal(tree.root.findByType('Selection').props.count, 2);
+  await act(async () => tree.root.findByType('Selection').props.onMove());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose collection No collection'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0);
+  assert.equal(tree.root.findAllByType('Text').some(node => node.props.children === 'Use this location'), false);
+  mutation = await waitForMutation(multiple);
+  assert.deepEqual(mutation.ids.sort(), ['one', 'two']);
+  assert.deepEqual(mutation.action, {kind: 'edit', patch: {project_id: 'p', section_id: null}});
   await act(async () => tree.unmount());
 });
 
