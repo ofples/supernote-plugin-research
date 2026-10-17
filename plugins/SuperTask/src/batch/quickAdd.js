@@ -141,9 +141,9 @@ function labelTokens(text, excludedSpans = []) {
 function parseTime(value) {
   let hour, minute;
   let second = 0;
-  let match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)$/i);
+  let match = value.match(/^(\d{1,2})(?::(\d{2})(?::(\d{2}))?)?\s*(am|pm)$/i);
   if (match) {
-    hour = Number(match[1]); minute = Number(match[2]); second = Number(match[3] || 0);
+    hour = Number(match[1]); minute = Number(match[2] || 0); second = Number(match[3] || 0);
     if (hour < 1 || hour > 12 || minute > 59 || second > 59) return null;
     hour = (hour % 12) + (match[4].toLowerCase() === 'pm' ? 12 : 0);
   } else {
@@ -176,8 +176,11 @@ function parseDue(text, capturedAt = Date.now(), excludedSpans = []) {
     const time = match[3] ? parseTime(match[3].replace(/\s+/g, '')) : null;
     if (!match[3] || time) add(match.index, relative.lastIndex, date, time);
   }
-  const absolute = /\b(?:(due)\s+)?(\d{4}-\d{2}-\d{2})(?:(?:[ T]|\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)([zZ]|[+-]\d{2}:?\d{2})?)?(?![\d:])/gi;
+  const absolute = /\b(?:(due)\s+)?(\d{4}-\d{2}-\d{2})(?:(?:[ T]|\s+at\s+)(\d{1,2}(?::\d{2}(?::\d{2})?)?\s*(?:am|pm)|\d{1,2}:\d{2}(?::\d{2})?)([zZ]|[+-]\d{2}:?\d{2})?)?(?![\p{L}\p{N}:])/giu;
   while ((match = absolute.exec(text))) {
+    const suffix = text.slice(absolute.lastIndex);
+    if (!match[3] && /^(?:\s+at\s+|\s+|T)\d{1,2}:\d{2}/iu.test(suffix)) continue;
+    if (match[3] && !match[4] && /^(?:[zZ]|[+-]\d{2}:?\d{2})/u.test(suffix)) continue;
     // Offline due dates are local floating values. Keep explicit instants and
     // offsets intact rather than stripping their zone and changing meaning.
     if (match[4]) continue;

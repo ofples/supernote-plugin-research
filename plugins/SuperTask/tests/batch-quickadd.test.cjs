@@ -100,6 +100,18 @@ test('quick add consumes AM and PM suffixes as part of local times without leavi
   const morning = parseQuickAdd('Meet 2026-10-18 12:05am', {});
   assert.equal(morning.content, 'Meet');
   assert.equal(morning.dueString, '2026-10-18T00:05:00');
+  const hourOnly = parseQuickAdd('Meet due tomorrow at 9am', {capturedAt: new Date(2026, 9, 17).getTime()});
+  assert.equal(hourOnly.content, 'Meet');
+  assert.equal(hourOnly.dueString, '2026-10-18T09:00:00');
+});
+
+test('quick add does not partially consume malformed AM/PM or time tokens', () => {
+  for (const time of ['9:30pmm', '9:30abc']) {
+    const text = `Meet due 2026-10-18 at ${time}`;
+    const parsed = parseQuickAdd(text, {});
+    assert.equal(parsed.content, text);
+    assert.equal(parsed.dueString, undefined);
+  }
 });
 
 test('quick add preserves explicit ISO instants instead of partially consuming their zone suffix', () => {
