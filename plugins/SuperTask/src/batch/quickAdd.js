@@ -1,7 +1,14 @@
 const {resolveDue} = require('../offline/model');
 
 const normal = value => String(value || '').trim().toLocaleLowerCase();
-const isBoundary = char => !char || /[\s,;|/()[\]{}]/u.test(char);
+const isBoundary = char => !char || /[\s,;|/()[\]{}#]/u.test(char);
+const inside = (index, spans = []) => spans.some(span => index >= span.start && index < span.end);
+const overlaps = (start, end, spans = []) => spans.some(span => start < span.end && end > span.start);
+function protectedRanges(text) {
+  return [...text.matchAll(/(?:https?:\/\/|www\.)[^\s]+/giu),
+    ...text.matchAll(/[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+@(?:[\p{L}\p{N}-]+\.)+[\p{L}\p{N}-]+/gu)]
+    .map(match => ({start: match.index, end: match.index + match[0].length}));
+}
 
 function matchName(text, index, choices) {
   const value = text.slice(index);
@@ -50,7 +57,9 @@ function resolveLocationReferences(text, projects = [], sections = [], defaultPr
   const refs = [];
   let unresolved = false;
   const projectChoices = projects.filter(project => project?.name && !project.is_deleted && !project.is_archived);
+  const protectedText = protectedRanges(text);
   for (let index = 0; index < text.length; index++) {
+    if (inside(index, protectedText) || inside(index, refs)) continue;
     const char = text[index], previous = text[index - 1];
     if (char === '#' && (index === 0 || /[\s,;([{]/u.test(previous))) {
       const result = matchLocationAt(text, index, index + 1, projectChoices, sections, 'marker');
@@ -63,16 +72,42 @@ function resolveLocationReferences(text, projects = [], sections = [], defaultPr
       if (result.status === 'matched') refs.push(result);
       else if (/^project\s*:/i.test(phrase[0])) unresolved = true;
     }
-    if (char === '/' && (index === 0 || isBoundary(previous)) && defaultProjectId) {
+  }
+
+  // A confirmed project reference owns its whole span, including its slash and
+  // collection. Bare references are considered only outside those spans.
+  const hasProjectAtEnd = index => {
+    const prefix = text.slice(0, index).trimEnd();
+    return projectChoices.some(project => {
+      const name = String(project.name || '');
+      if (!name || normal(prefix.slice(-name.length)) !== normal(name)) return false;
+      const start = prefix.length - name.length;
+      return isBoundary(prefix[start - 1]);
+    });
+  };
+  for (let index = 0; index < text.length; index++) {
+    if (inside(index, protectedText)) continue;
+    const char = text[index], previous = text[index - 1];
+    if ((index === 0 || isBoundary(previous)) && char !== '#' && !inside(index, refs)) {
+      const result = matchLocationAt(text, index, index, projectChoices, sections, 'bare');
+      if (result.status === 'matched' && !inside(result.start, refs)) refs.push(result);
+    }
+  }
+  const projectIds = [...new Set(refs.map(ref => String(ref.value.projectId)))];
+  const effectiveProjectId = projectIds.length === 1 ? projectIds[0] : defaultProjectId;
+  if (effectiveProjectId) {
+    for (let index = 0; index < text.length; index++) {
+      if (text[index] !== '/' || inside(index, protectedText) || inside(index, refs) || hasProjectAtEnd(index)) continue;
       let sectionStart = index + 1;
       while (/\s/u.test(text[sectionStart] || '')) sectionStart++;
-      const match = matchName(text, sectionStart, sections.filter(section => String(section.project_id) === String(defaultProjectId) && !section.is_deleted && !section.is_archived));
-      if (match.status === 'matched') refs.push({status: 'matched', value: {projectId: String(defaultProjectId), sectionId: String(match.choice.id)}, start: index, end: match.end});
+      const match = matchName(text, sectionStart, sections.filter(section => String(section.project_id) === String(effectiveProjectId) && !section.is_deleted && !section.is_archived));
+      if (match.status === 'matched') {
+        for (const ref of refs) {
+          if (String(ref.value.projectId) === String(effectiveProjectId) && !ref.value.sectionId) ref.value.sectionId = String(match.choice.id);
+        }
+        refs.push({status: 'matched', value: {projectId: String(effectiveProjectId), sectionId: String(match.choice.id)}, start: index, end: match.end});
+      }
       else if (match.status === 'ambiguous') unresolved = true;
-    }
-    if ((index === 0 || isBoundary(previous)) && char !== '#') {
-      const result = matchLocationAt(text, index, index, projectChoices, sections, 'bare');
-    if (result.status === 'matched') refs.push(result);
     }
   }
 
@@ -85,15 +120,14 @@ function resolveLocationReferences(text, projects = [], sections = [], defaultPr
   return {location, spans, unresolved};
 }
 
-function labelTokens(text) {
+function labelTokens(text, excludedSpans = []) {
   const labels = [], spans = [];
-  const emailRanges = [...text.matchAll(/[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+@(?:[\p{L}\p{N}-]+\.)+[\p{L}\p{N}-]+/gu)]
-    .map(match => [match.index, match.index + match[0].length]);
+  const emailRanges = protectedRanges(text);
   const regex = /(^|[\s,;])([%@])(?:"([^"]+)"|“([^”]+)”|([\p{L}\p{N}\p{M}_-]+))/gu;
   let match;
   while ((match = regex.exec(text))) {
     const markerStart = match.index + match[1].length;
-    if (emailRanges.some(([start, end]) => markerStart >= start && markerStart < end)) continue;
+    if (inside(markerStart, emailRanges) || inside(markerStart, excludedSpans)) continue;
     const preceding = text.slice(Math.max(0, markerStart - 32), markerStart);
     if (/(?:assignee\s*[:=]?\s*|assign(?:ed)?\s+to\s+|remind(?:er)?(?:\s+me)?\s+)$/iu.test(preceding)) continue;
     const label = match[3] || match[4] || match[5];
@@ -120,9 +154,12 @@ function parseTime(value) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
 }
 
-function parseDue(text, capturedAt = Date.now()) {
+function parseDue(text, capturedAt = Date.now(), excludedSpans = []) {
   const candidates = [];
+  const blocked = [...protectedRanges(text), ...excludedSpans];
   const add = (start, end, date, time) => {
+    if (inside(start, blocked) || blocked.some(span => start < span.end && end > span.start)) return;
+    if (text[start - 1] === '#') return;
     const dueString = time ? `${date}T${time}` : date;
     try {resolveDue(dueString, capturedAt); candidates.push({start, end, dueString});} catch {}
   };
@@ -156,27 +193,31 @@ function parseQuickAdd(value, {projects = [], sections = [], capturedAt = Date.n
   const text = String(value);
   const locationResult = resolveLocationReferences(text, projects, sections, defaultProjectId);
   const tokenSpans = [...locationResult.spans];
-  const labels = labelTokens(text);
+  const labels = labelTokens(text, tokenSpans);
   tokenSpans.push(...labels.spans);
   let priority;
   const pRegex = /(^|[\s,;])p([1-4])(?=$|[\s,.;])/gi;
   let match;
+  const priorities = [];
   while ((match = pRegex.exec(text))) {
-    const start = match.index + match[1].length;
-    if (!tokenSpans.some(span => start >= span.start && start < span.end)) {
-      if (priority === undefined) priority = 5 - Number(match[2]);
-      tokenSpans.push({start, end: pRegex.lastIndex});
-    }
+    const tokenStart = match.index + match[1].length;
+    const separator = match[1].match(/[,;]/u)?.[0];
+    const start = separator ? match.index + match[1].indexOf(separator) : tokenStart;
+    if (!overlaps(tokenStart, pRegex.lastIndex, [...tokenSpans, ...protectedRanges(text)])) priorities.push({priority: 5 - Number(match[2]), start, end: pRegex.lastIndex});
   }
-  const due = parseDue(text, capturedAt);
-  if (due && !tokenSpans.some(span => due.start < span.end && due.end > span.start)) tokenSpans.push(due);
+  if (priorities.length && new Set(priorities.map(item => item.priority)).size === 1) {
+    priority = priorities[0].priority;
+    tokenSpans.push(...priorities);
+  }
+  const due = parseDue(text, capturedAt, [...tokenSpans, ...protectedRanges(text)]);
+  if (due) tokenSpans.push(due);
   let cleaned = '', cursor = 0;
   for (const span of tokenSpans.sort((a, b) => a.start - b.start)) {
     if (span.start < cursor) continue;
     cleaned += text.slice(cursor, span.start);
     cursor = span.end;
   }
-  cleaned = (cleaned + text.slice(cursor)).replace(/[\t ]+/g, ' ').trim();
+  cleaned = (cleaned + text.slice(cursor)).replace(/[\t ]+/g, ' ').replace(/\s*[,;]\s*$/, '').trim();
   return {content: cleaned, projectId: locationResult.location?.projectId, sectionId: locationResult.location?.sectionId,
     labels: labels.labels, priority, dueString: due?.dueString, unresolvedLocation: locationResult.unresolved};
 }

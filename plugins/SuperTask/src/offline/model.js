@@ -102,7 +102,7 @@ function resolveDue(value, capturedAt = Date.now()) {
     const date = new Date(match[1] + 'T12:00:00');
     const validDate = !Number.isNaN(date.getTime()) && localDate(date) === match[1];
     const validTime = !match[2] || (Number(match[2]) <= 23 && Number(match[3]) <= 59 && Number(match[4]) <= 59);
-    if (validDate && validTime) {return {date: text.replace('t', 'T'), timezone: null, is_recurring: false};}
+    if (validDate && validTime) {return {date: text.replace('t', 'T'), ...(match[2] ? {timezone: null} : {}), is_recurring: false};}
   }
   throw new Error('Choose a calendar date and valid local time, today, or tomorrow before saving offline.');
 }

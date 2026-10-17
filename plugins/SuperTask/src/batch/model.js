@@ -1,9 +1,15 @@
 /* Native recognition is the baseline. AI proposals must pass the same review. */
 const {resolveDue} = require('../offline/model');
 const {MAX_SOURCE_ROW_LENGTH, MAX_TRANSCRIPTION_LENGTH, stripBullet, splitTitleDescription} = require('./descriptionParser');
-const {parseQuickAdd, labelTokens, resolveLocationReferences} = require('./quickAdd');
+const {parseQuickAdd, resolveLocationReferences} = require('./quickAdd');
 const {groupOcrText} = require('./ocrGrouping');
 const MAX_TASKS = 100;
+function hasDueCue(text) {
+  const matcher = /\b(?:today|tomorrow|tonight|next|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|due)\b|\d{4}-\d{2}-\d{2}/gi;
+  let match;
+  while ((match = matcher.exec(text))) if (text[match.index - 1] !== '#') return true;
+  return false;
+}
 const taskSchema = {
   type: 'object', additionalProperties: false,
   required: ['content', 'description', 'dueDate', 'priority', 'projectId', 'sectionId', 'labels', 'sourceRowIds', 'sourceText', 'explicitFields'],
@@ -86,23 +92,24 @@ function validateProposal(value, projects = [], sections = [], rows = []) {
       (row.sectionId || null) === task.sectionId);
     const baselineProjectId = sources.length && sources.every(row => (row.projectId || null) === (sources[0].projectId || null)) ? sources[0].projectId : null;
     const location = resolveExplicitLocation(sourceText, projects, sections, baselineProjectId);
+    const sourceTokens = parseQuickAdd(sourceText, {projects, sections, defaultProjectId: baselineProjectId});
     if ((task.explicitFields.includes('location') || (task.projectId !== null && (!sources.length || !inherited))) &&
         (location ? location.projectId !== task.projectId || location.sectionId !== task.sectionId : task.projectId !== null || task.sectionId !== null)) {
       throw new Error('AI location must match an explicit, unambiguous project or collection phrase. Original rows are unchanged.');
     }
     const next = {...task, content: task.content.trim(), dueString: task.dueDate || '', selected: true,
       sourceText, fieldProvenance: {content: 'ai-proposal', description: 'ai-proposal'}};
-    const sourceLabels = [...new Set((sources.length ? sources : [{sourceText}]).flatMap(row => labelTokens(row.sourceText || row.content).labels))];
+    const sourceLabels = [...new Set((sources.length ? sources : [{sourceText}]).flatMap(row =>
+      parseQuickAdd(row.sourceText || row.content, {projects, sections, defaultProjectId: baselineProjectId}).labels))];
     const labelSet = values => [...new Set(values)].sort();
     if (task.explicitFields.includes('labels') && sourceLabels.length && JSON.stringify(labelSet(task.labels)) !== JSON.stringify(labelSet(sourceLabels))) {
       throw new Error('AI labels must match explicit %label or @label tokens. Original rows are unchanged.');
     }
-    const priorityMatches = [...sourceText.matchAll(/(?:^|[\s,;])p([1-4])(?=$|[\s,.;])/gi)].map(match => 5 - Number(match[1]));
-    const sourcePriority = /\b(?:important|urgent)\b/i.test(sourceText) ? 4 : priorityMatches.length && new Set(priorityMatches).size === 1 ? priorityMatches[0] : null;
+    const sourcePriority = sourceTokens.priority ?? (/\b(?:important|urgent)\b/i.test(sourceTokens.content) ? 4 : null);
     if (task.explicitFields.includes('priority') && sourcePriority !== null && task.priority !== sourcePriority) {
       throw new Error('AI priority must match the source priority instruction. Original rows are unchanged.');
     }
-    const proof = {location: !!location, dueString: /\b(?:today|tomorrow|tonight|next|every|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|due)\b|\d{4}-\d{2}-\d{2}/i.test(sourceText),
+    const proof = {location: !!location, dueString: !!sourceTokens.dueString || hasDueCue(sourceTokens.content),
       priority: sourcePriority !== null || /\bpriority\b/i.test(sourceText), labels: sourceLabels.length > 0};
     next.explicitFields = task.explicitFields.filter(field => proof[field]);
     const first = sources[0];

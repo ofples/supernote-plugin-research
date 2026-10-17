@@ -60,6 +60,48 @@ test('unsupported assignment and reminder references stay visible for review', (
   assert.equal(reminder.content, 'Remind me @alex to call');
 });
 
+test('nested explicit project and section references use the explicit project', () => {
+  const allProjects = [...projects, {id: 'today', name: 'Today'}, {id: 'quoted', name: 'Shopping @Home P1 Today'}];
+  const allSections = [...sections,
+    {id: 'house-admin', project_id: 'house', name: 'Admin'},
+    {id: 'work-admin', project_id: 'work', name: 'Admin'}];
+  const nested = parseQuickAdd('Do task #Work /Admin', {projects: allProjects, sections: allSections, defaultProjectId: 'house'});
+  assert.equal(nested.projectId, 'work');
+  assert.equal(nested.sectionId, 'work-admin');
+  assert.equal(nested.content, 'Do task');
+  const sectionOnly = parseQuickAdd('#Work do task /Admin', {projects: allProjects, sections: allSections, defaultProjectId: 'house'});
+  assert.equal(sectionOnly.projectId, 'work');
+  assert.equal(sectionOnly.sectionId, 'work-admin');
+});
+
+test('metadata scanners ignore confirmed project-name spans and dates inside URLs or email addresses', () => {
+  const allProjects = [...projects, {id: 'today', name: 'Today'}, {id: 'quoted', name: 'Shopping @Home P1 Today'}];
+  const project = parseQuickAdd('Finish #Today task', {projects: allProjects, sections, capturedAt: new Date(2026, 0, 1).getTime()});
+  assert.equal(project.projectId, 'today');
+  assert.equal(project.dueString, undefined);
+  const quoted = parseQuickAdd('#"Shopping @Home P1 Today"', {projects: allProjects, sections, capturedAt: new Date(2026, 0, 1).getTime()});
+  assert.equal(quoted.projectId, 'quoted');
+  assert.deepEqual(quoted.labels, []);
+  assert.equal(quoted.priority, undefined);
+  assert.equal(quoted.dueString, undefined);
+  const text = 'See https://example.com/2026-10-18 and mail a@tomorrow.com';
+  const protectedText = parseQuickAdd(text, {projects, sections});
+  assert.equal(protectedText.content, text);
+  assert.equal(protectedText.dueString, undefined);
+  const unknownHash = parseQuickAdd('Wait for #Tomorrow', {projects, sections});
+  assert.equal(unknownHash.content, 'Wait for #Tomorrow');
+  assert.equal(unknownHash.dueString, undefined);
+});
+
+test('conflicting priorities remain in source text and do not select either value', () => {
+  const conflict = parseQuickAdd('Handle this p1 p2', {});
+  assert.equal(conflict.content, 'Handle this p1 p2');
+  assert.equal(conflict.priority, undefined);
+  const repeated = parseQuickAdd('Handle this p2, p2', {});
+  assert.equal(repeated.content, 'Handle this');
+  assert.equal(repeated.priority, 3);
+});
+
 test('priority and labels map only from supported tokens and never treat #Project as a label', () => {
   for (const [token, expected] of [['p1', 4], ['p2', 3], ['p3', 2], ['p4', 1]]) {
     assert.equal(parseQuickAdd(`Task ${token}`, {}).priority, expected);
@@ -78,4 +120,19 @@ test('AI cannot erase a resolved destination by explicitly proposing Inbox', () 
   const proposal = {content: 'Task', description: '', dueDate: null, priority: 1, projectId: null, sectionId: null,
     labels: [], sourceRowIds: ['r1'], sourceText: source.sourceText, explicitFields: ['location']};
   assert.throws(() => validateProposal({tasks: [proposal]}, projects, sections, [source]), /must match an explicit/);
+});
+
+test('AI cannot treat metadata words inside a quoted project as source due, priority or labels', () => {
+  const project = {id: 'quoted', name: 'Shopping @Home P1 Today'};
+  const sourceText = '#"Shopping @Home P1 Today" Buy groceries';
+  const source = {rowId: 'r1', content: 'Buy groceries', sourceText, projectId: null, sectionId: null,
+    priority: 1, dueString: '', labels: []};
+  const proposal = {content: 'Buy groceries', description: '', dueDate: '2026-10-19', priority: 4,
+    projectId: 'quoted', sectionId: null, labels: ['Home'], sourceRowIds: ['r1'], sourceText,
+    explicitFields: ['location', 'dueString', 'priority', 'labels']};
+  const [result] = validateProposal({tasks: [proposal]}, [project], [], [source]);
+  assert.equal(result.projectId, 'quoted');
+  assert.equal(result.dueString, '');
+  assert.equal(result.priority, 1);
+  assert.deepEqual(result.labels, []);
 });

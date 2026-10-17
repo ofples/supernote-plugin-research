@@ -3,7 +3,7 @@ const hasBullet = line => BULLET.test(String(line));
 
 function groupOcrText(value, mode = 'lines', {explicitSplit = false} = {}) {
   const text = String(value);
-  const records = text.split(/(?<=\n)/).map(raw => {
+  const records = (text.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) || []).map(raw => {
     const ending = raw.match(/(?:\r\n|\n|\r)$/)?.[0] || '';
     return {text: ending ? raw.slice(0, -ending.length) : raw, ending};
   });

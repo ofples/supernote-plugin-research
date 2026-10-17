@@ -21,6 +21,7 @@ test('paragraph mode joins wrapped lines; explicit split always uses each line',
     {sourceText: 'Alpha'}, {sourceText: '  wrapped'}, {sourceText: 'Beta'},
   ]);
   assert.equal(splitRow([{content: 'Alpha\n  wrapped\nBeta'}], 0).length, 3);
+  assert.deepEqual(groupOcrText('A\r\nB\rC', 'paragraphs'), [{sourceText: 'A\r\nB\rC'}]);
 });
 
 test('offline due serialization retains local time with a floating timezone', () => {
@@ -34,6 +35,7 @@ test('offline due serialization retains local time with a floating timezone', ()
 });
 
 test('existing today and tomorrow due phrases retain date-only behavior', () => {
+  assert.deepEqual(resolveDue('2026-10-17', 1), {date: '2026-10-17', is_recurring: false});
   assert.equal(resolveDue('today', new Date(2026, 9, 17, 12).getTime()).date, '2026-10-17');
   assert.equal(resolveDue('tomorrow', new Date(2026, 9, 17, 12).getTime()).date, '2026-10-18');
 });
