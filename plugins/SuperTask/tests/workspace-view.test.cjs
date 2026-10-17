@@ -9,6 +9,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const prefs = require('../src/workspace/viewPreferences');
 const {rowIdentity, protectedOccurrence} = require('../src/workspace/intents');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 
 test('workspace preferences normalize per view and keep accounts isolated', () => {
   const stored = {accounts: {'private-account-a': {'project:4': {view: 'board', groupBy: 'collection', sortBy: 'priority'}}}};
@@ -119,7 +120,9 @@ test('selection actions remain in a fixed-height horizontal scroll slot', () => 
   assert.match(board, /key: 'workspace-completed'/);
   assert.match(board, /header: <SectionHeader title="Completed"/);
   assert.doesNotMatch(board, /renderCompletedSection\(\)/);
-  assert.match(boardSource, /<FlatList horizontal/);
+  assert.doesNotMatch(boardSource, /<FlatList horizontal/);
+  assert.match(boardSource, /paginateGroups/);
+  assert.match(boardSource, /<FlatList data=\{item\.tasks\}/);
 });
 
 test('an expanded description keeps its rendered height through multiselect while quick actions hide', () => {
@@ -156,12 +159,12 @@ test('an expanded description keeps its rendered height through multiselect whil
 });
 
 test('collapsed Completed board column has no empty-task message', () => {
-  const native = {View: 'View', Text: 'Text', StyleSheet: {create: value => value}, FlatList: ({data = [], renderItem, ListEmptyComponent, ListFooterComponent, ...props}) =>
+  const native = {View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: {create: value => value}, FlatList: ({data = [], renderItem, ListEmptyComponent, ListFooterComponent, ...props}) =>
     React.createElement('List', props, ...(data.length ? data.map((item, index) => React.createElement(React.Fragment, {key: index}, renderItem({item}))) : [ListEmptyComponent]), ListFooterComponent)};
   const filename = path.join(__dirname, '../src/components/WorkspaceBoard.tsx');
   const mod = new Module(filename, module); mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => name === 'react-native' ? native : name === '../utils/useFontScale' ? {useFontScale: () => 1} : normal(name);
+  mod.require = name => name === 'react-native' ? native : name === './KeyboardAvoidance' ? keyboardAvoidance : name === '../utils/useFontScale' ? {useFontScale: () => 1} : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true}}).outputText, filename);
   const Board = mod.exports.default;
@@ -180,7 +183,7 @@ test('project picker commits immediately only when its opt-in is enabled', () =>
   const mod = new Module(filename, module); mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const native = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', StyleSheet: {create: value => value}};
   const normal = mod.require.bind(mod);
-  mod.require = name => name === 'react-native' ? native : name === '../utils/useFontScale' ? {useFontScale: () => 1} : normal(name);
+  mod.require = name => name === 'react-native' ? native : name === './KeyboardAvoidance' ? keyboardAvoidance : name === '../utils/useFontScale' ? {useFontScale: () => 1} : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true}}).outputText, filename);
   const Picker = mod.exports.default;
   const commits = []; let renderer;

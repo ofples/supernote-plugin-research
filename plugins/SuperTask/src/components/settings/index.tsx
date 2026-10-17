@@ -14,7 +14,8 @@
  */
 
 import React from 'react';
-import {View, Text, Pressable, StyleSheet, TextInput} from 'react-native';
+import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {KeyboardAwareTextInput} from '../KeyboardAvoidance';
 import {useFontScale} from '../../utils/useFontScale';
 
 // Accessibility text scale (F-031): StyleSheets are static, so scaled sizes
@@ -267,7 +268,7 @@ export function InputSheet({
       <Pressable style={st.sheet} onPress={() => {}}>
         <Text style={[st.sheetTitle, {fontSize: fs(20)}]}>{title}</Text>
         {hint ? <Text style={[st.sheetIntro, {fontSize: fs(14)}]}>{hint}</Text> : null}
-        <TextInput
+        <KeyboardAwareTextInput
           style={[st.inputField, {fontSize: fs(16)}]}
           value={draft}
           onChangeText={setDraft}

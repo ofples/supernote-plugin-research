@@ -6,12 +6,13 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 function load(file, overrides = {}) {
   const filename = path.resolve(__dirname, file); const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+  mod.require = name => name.endsWith('KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true,
   }}).outputText, filename); return mod.exports;
@@ -73,6 +74,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     '../components/TaskRow': {__esModule: true, default: 'TaskRow'}, '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
   const componentOverrides = {'react-native': native, '../utils/useFontScale': {useFontScale: () => 1}};
   const Board = load('../src/components/WorkspaceBoard.tsx', componentOverrides).default;
+  const WorkspaceActionButtons = load('../src/components/WorkspaceActionButtons.tsx', componentOverrides);
   const ViewOptions = load('../src/components/WorkspaceViewOptions.tsx', componentOverrides).default;
   const Picker = load('../src/components/ProjectPicker.tsx', componentOverrides).default;
   const SectionHeader = props => React.createElement('Section', {...props,
@@ -103,6 +105,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
     '../components/ProjectOverview': {__esModule: true, default: 'Overview'}, '../components/SelectionBar': {__esModule: true, default: 'UndoBar'},
     '../components/SectionHeader': {__esModule: true, default: SectionHeader}, '../components/Chip': {__esModule: true, default: 'Chip'},
     '../components/WorkspaceBoard': {__esModule: true, default: Board}, '../components/WorkspaceViewOptions': {__esModule: true, default: ViewOptions},
+    '../components/WorkspaceActionButtons': {...WorkspaceActionButtons, __esModule: true},
     '../components/ProjectPicker': {__esModule: true, default: ProjectPicker},
   });
   const nav = {push: (...args) => navCalls.push(args)};
@@ -129,6 +132,27 @@ test('legacy Pending destination migrates to Today and opens the sync summary', 
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   assert.equal(tree.root.findByType('Sidebar').props.activeView, 'today');
   assert.equal(tree.root.findAllByType('Modal').length, 1);
+  await act(async () => tree.unmount());
+});
+test('sidebar collapse persists across opens and its toggle keeps its header slot in selection mode', async () => {
+  const model = workspace({sidebarCollapsed: true}); let tree;
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  const sidebar = () => tree.root.findByType('Sidebar').parent;
+  assert.equal(sidebar().props.style.display, 'none');
+  const header = () => tree.root.findAllByType('View').find(node => node.props.style?.some?.(style => style?.paddingRight === 60));
+  const originalHeaderHeight = header().props.style[1].height;
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Show sidebar'}).props.onPress());
+  await act(async () => model.flushSaves());
+  assert.equal(model.config.sidebarCollapsed, false);
+  assert.equal(sidebar().props.style.display, undefined);
+  await act(async () => tree.root.findAllByType('TaskRow')[0].props.onLongPress());
+  const toggle = tree.root.findByProps({accessibilityLabel: 'Hide sidebar'});
+  assert.equal(toggle.props.accessibilityState.expanded, true);
+  assert.equal(header().props.style[1].height, originalHeaderHeight);
+  await act(async () => tree.unmount());
+
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  assert.equal(tree.root.findByProps({accessibilityLabel: 'Hide sidebar'}).props.accessibilityState.expanded, true);
   await act(async () => tree.unmount());
 });
 test('project sidebar choice preserves navigation and groups collections in the pane; Tomorrow and Inbox are distinct', async () => {

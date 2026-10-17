@@ -7,6 +7,7 @@ const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
 const {DEFAULT_AI_MODELS} = require('../src/utils/aiModels');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 function loadFields() {
@@ -17,7 +18,7 @@ function loadFields() {
   const normal = mod.require.bind(mod);
   mod.require = name => name === 'react-native'
     ? {View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', StyleSheet: {create: value => value}}
-    : normal(name);
+    : name === './KeyboardAvoidance' ? keyboardAvoidance : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true,
   }}).outputText, filename);

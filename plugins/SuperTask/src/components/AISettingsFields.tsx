@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
-import {View, Text, TextInput, Pressable, StyleSheet} from 'react-native';
+import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {KeyboardAwareTextInput} from './KeyboardAvoidance';
 const {DEFAULT_AI_MODELS, addAIModel, normalizeAIModels, removeAIModel} = require('../utils/aiModels');
 
 export type AISettingsFieldsProps = {
@@ -43,7 +44,7 @@ export default function AISettingsFields({apiKey, model, models, status = '', sa
     <Text style={s.body}>Optional. Native handwriting recognition and offline saving work without AI.</Text>
     <Text style={s.body}>AI refinement sends the selected handwriting image and task details to OpenAI using your API account. Automatic requests happen only when AI by default is enabled for lasso capture.</Text>
     <Text style={s.label}>OpenAI API key</Text>
-    <TextInput accessibilityLabel="OpenAI API key" style={s.input} value={apiKey} onChangeText={onApiKeyChange} secureTextEntry
+    <KeyboardAwareTextInput accessibilityLabel="OpenAI API key" style={s.input} value={apiKey} onChangeText={onApiKeyChange} secureTextEntry
       autoCapitalize="none" autoCorrect={false} editable={!saving} placeholder="sk-…" />
     <Text style={s.body}>Stored in SuperTask’s private device folder. Clearing this field disables AI. InkToClipboard has its own settings.</Text>
     <Text style={s.label}>Model</Text>
@@ -61,7 +62,7 @@ export default function AISettingsFields({apiKey, model, models, status = '', sa
         </Pressable>
       </View>)}
       <Text style={s.label}>Add model ID</Text>
-      <TextInput accessibilityLabel="New AI model ID" style={s.input} value={newModel} onChangeText={setNewModel}
+      <KeyboardAwareTextInput accessibilityLabel="New AI model ID" style={s.input} value={newModel} onChangeText={setNewModel}
         autoCapitalize="none" autoCorrect={false} editable={!saving} placeholder="Model ID" />
       <Pressable accessibilityRole="button" accessibilityLabel="Add AI model" style={s.button} disabled={saving || !newModel.trim()} onPress={addModel}>
         <Text style={s.label}>Add model</Text>

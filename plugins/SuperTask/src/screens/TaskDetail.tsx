@@ -13,11 +13,10 @@ import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
 } from 'react-native';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {PluginCommAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
@@ -235,7 +234,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
 
   return (
     <View style={styles.wrapper}>
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView style={styles.scroll} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Pressable style={styles.headerBtn} onPress={() => {
@@ -298,7 +297,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Task</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           style={[styles.input, {fontSize: Math.round(16 * scale)}]}
           value={content}
           onChangeText={(t) => { log('TaskDetail', 'Task title edited'); setContent(t); }}
@@ -310,7 +309,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Description</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           style={[styles.input, styles.inputMultiline, {fontSize: Math.round(16 * scale)}]}
           value={description}
           onChangeText={(t) => { log('TaskDetail', 'description changed'); setDescription(t); }}
@@ -347,7 +346,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
 
       <View style={styles.section}>
         <Text style={[styles.label, {fontSize: Math.round(16 * scale)}]}>Labels</Text>
-        <TextInput style={[styles.input, {fontSize: Math.round(16 * scale)}]} value={labels}
+        <KeyboardAwareTextInput style={[styles.input, {fontSize: Math.round(16 * scale)}]} value={labels}
           onChangeText={setLabels} placeholder="Labels, separated by commas" />
       </View>
 
@@ -379,7 +378,7 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         <Text style={[styles.completeText, {fontSize: Math.round(18 * scale)}]}>Mark Complete</Text>
       </Pressable>
 
-    </ScrollView>
+    </KeyboardAwareScrollView>
     {status ? (
       <View style={styles.overlay}>
         <Text style={[styles.overlayText, {fontSize: Math.round(15 * scale)}]}>{status}</Text>

@@ -15,12 +15,11 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
   Clipboard,
 } from 'react-native';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig, saveConfig, getCachedConfig, getConfigSource, wasTemplateGenerated} from '../utils/config';
 import {setConfigLoader, testConnection, getProjects} from '../api/todoist';
@@ -516,7 +515,7 @@ export default function Config({nav, initialPage}: Props) {
         </View>
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
 
         {/* ── Setup page: Account & Sync ── */}
         {page === 'setup' && (
@@ -527,7 +526,7 @@ export default function Config({nav, initialPage}: Props) {
             onInfo={() => setInfoSheet('token')}
             saved={savedRow === 'token'}>
             <View style={s.inputRow}>
-              <TextInput
+              <KeyboardAwareTextInput
                 style={[s.input, {flex: 1}]}
                 value={token}
                 onChangeText={setToken}
@@ -865,7 +864,7 @@ export default function Config({nav, initialPage}: Props) {
           )}
         </Section>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* ── Info sheets (one template) ── */}
       <InfoSheet
