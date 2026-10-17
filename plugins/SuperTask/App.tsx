@@ -28,6 +28,7 @@ import {closePlugin} from './src/utils/closePlugin';
 import {loadConfig} from './src/utils/config';
 import {getTask as getRegistryTask} from './src/utils/taskRegistry';
 import {setConfigLoader, getTask as getApiTask, getProjects} from './src/api/todoist';
+import {KeyboardAvoidanceViewport} from './src/components/KeyboardAvoidance';
 
 declare global {
   var __superTaskButtonId: number | string | null;
@@ -247,6 +248,7 @@ function App(): React.JSX.Element {
   // Show debug log on error or when navigated to
   if (error || current.name === 'debug') {
     return (
+      <KeyboardAvoidanceViewport>
       <View style={styles.container}>
         <View style={styles.debugHeader}>
           <Text style={styles.debugTitle}>
@@ -289,12 +291,14 @@ function App(): React.JSX.Element {
           )}
         </ScrollView>
       </View>
+      </KeyboardAvoidanceViewport>
     );
   }
 
   const isOverlay = false;
 
   return (
+    <KeyboardAvoidanceViewport>
     <View style={[styles.container, isOverlay && styles.containerOverlay]}>
       {screenStack.filter(entry => entry.id === current.id || entry.name === 'task-home' || entry.name === 'task-add' || entry.name === 'task-batch').map(entry => {
         const active = entry.id === current.id;
@@ -349,6 +353,7 @@ function App(): React.JSX.Element {
         </View>;
       })}
     </View>
+    </KeyboardAvoidanceViewport>
   );
 }
 

@@ -43,6 +43,7 @@ import TaskRow, {WorkspaceContext} from '../workspace/WorkspaceTaskRow';
 import InlineTaskComposer from '../components/InlineTaskComposer';
 import WorkspaceSelectionBar from '../components/WorkspaceSelectionBar';
 import DatePicker from '../components/DatePicker';
+import {KeyboardAwareScrollView, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
 import ProjectPicker from '../components/ProjectPicker';
 import PriorityPicker from '../components/PriorityPicker';
 import ProjectOverview from '../components/ProjectOverview';
@@ -1414,10 +1415,10 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         </View>
       </View>
       <Modal visible={!!actionSheet} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setActionSheet(null)}>
-        <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
+        <View style={styles.sheetBackdrop}><KeyboardAvoidanceViewport style={styles.sheetViewport} contentStyle={styles.sheetViewportContent}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
-          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent}>
             {actionSheet?.kind === 'list-menu' && <View style={styles.actionRow}>
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
               {activeTab !== 'done' && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
@@ -1479,8 +1480,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
-          </ScrollView>
-        </View></View>
+          </KeyboardAwareScrollView>
+        </View></KeyboardAvoidanceViewport></View>
       </Modal>
       <Modal visible={syncSheetOpen} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
         <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
@@ -1628,6 +1629,8 @@ const styles = StyleSheet.create({
   newCollectionText: {fontSize: 15, color: '#000', fontWeight: '700'},
   syncSummary: {minWidth: 0, flex: 1, alignSelf: 'stretch', justifyContent: 'center', paddingRight: 10},
   sheetBackdrop: {flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center'},
+  sheetViewport: {flex: 1, alignSelf: 'stretch'},
+  sheetViewportContent: {flex: 1, justifyContent: 'center', alignItems: 'center'},
   sheet: {width: '90%', maxWidth: 720, maxHeight: '85%', flexShrink: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
   sheetScroll: {flexGrow: 0, flexShrink: 1},
   footerRefresh: {alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: 8},

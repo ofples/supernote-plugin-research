@@ -6,13 +6,14 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 function load(file, overrides) {
   const filename = path.resolve(__dirname, file);
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+  mod.require = name => name.endsWith('/components/KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);

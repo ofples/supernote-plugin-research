@@ -6,6 +6,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -16,6 +17,7 @@ function loadTaskDetail(updateTask) {
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
   const mocks = {
+    '../components/KeyboardAvoidance': keyboardAvoidance,
     'react-native': {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}},
     'sn-plugin-lib': {PluginCommAPI: {}},
     '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({})},

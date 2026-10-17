@@ -8,6 +8,7 @@ import ProjectPicker from '../components/ProjectPicker';
 import {useLocations} from '../collections/useLocations';
 import PriorityPicker from '../components/PriorityPicker';
 import DatePicker from '../components/DatePicker';
+import {KeyboardAwareScrollView, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
 import {useFontScale} from '../utils/useFontScale';
 const {fromText, mergeNext, splitRow, MAX_TASKS} = require('../batch/model');
 const {localDate} = require('../offline/model');
@@ -264,10 +265,10 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
         {!locked && <Pressable accessibilityRole="button" accessibilityLabel="Batch actions" style={s.button} onPress={() => setBatchActionsOpen(true)}><Text style={[s.label, scaledLabel]}>Batch actions</Text></Pressable>}
       </View>
       {!locked && batchActionsOpen && <Modal visible transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setBatchActionsOpen(false)}>
-        <View style={s.modalScreen}><View style={s.modalCard}>
+        <KeyboardAvoidanceViewport contentStyle={s.modalScreen}><View style={s.modalCard}>
           <View style={s.modalHeader}><Text style={[s.modalTitle, scaledTitle]}>Batch actions</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Close batch actions" style={s.button} onPress={() => setBatchActionsOpen(false)}><Text style={[s.label, scaledLabel]}>Close</Text></Pressable></View>
-          <ScrollView style={s.modalScroll} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView style={s.modalScroll} contentContainerStyle={s.modalContent}>
         {canChooseGrouping && <View style={s.actions} accessibilityLabel="OCR grouping">
           <Text style={[s.label, scaledLabel]}>Group recognized text</Text>
           <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'lines', disabled: !rows.every((row: any) => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
@@ -319,10 +320,10 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
             {busy && controller.current && <Pressable style={s.button} onPress={() => cancelRefinement()}><Text style={[s.label, scaledLabel]}>Stop AI</Text></Pressable>}
           </View>
         </View>
-          </ScrollView>
-        </View></View>
+          </KeyboardAwareScrollView>
+        </View></KeyboardAvoidanceViewport>
       </Modal>}
-      <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent}>
         {rows.map((row, index) => <View key={row.rowId} style={s.card}>
           <View style={s.actions}><Pressable style={s.button} onPress={() => update(index, {selected: !row.selected})} disabled={locked}><Text style={[s.label, scaledLabel]}>{row.selected ? '☑' : '□'} {index + 1}</Text></Pressable>
             <TextInput style={[s.input, scaledInput]} multiline value={row.content} onChangeText={content => edit(index, 'content', content)} editable={!locked} />
@@ -352,7 +353,7 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
             {!!(row.overrides?.labels || row.instructions?.labels) && <Pressable style={s.button} onPress={() => resetField(index, 'labels')}><Text style={[s.label, scaledLabel]}>Use batch labels</Text></Pressable>}
           </View>}
         </View>)}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>}
     {saved && postCreateAction !== 'auto-back' && <ScrollView style={s.rowsScroll} contentContainerStyle={s.rowsContent}>
       <Text style={[s.text, scaledText]}>Saved on this device. These tasks are pending sync.</Text>

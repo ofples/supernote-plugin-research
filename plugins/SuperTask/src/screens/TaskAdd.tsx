@@ -9,8 +9,8 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
 } from 'react-native';
+import {KeyboardAwareScrollView} from '../components/KeyboardAvoidance';
 import {PluginNoteAPI, PluginCommAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
@@ -309,7 +309,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
 
   return (
     <View style={styles.wrapper}>
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView style={styles.scroll} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Pressable onPress={() => {
           log('TaskAdd', 'BACK pressed');
@@ -401,7 +401,7 @@ export default function TaskAdd({nav, projects: initialProjects, defaultProjectI
           {submitting ? 'Saving...' : attempted ? 'Retry same task' : 'Save task'}
         </Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScrollView>
     {justCreated ? (
       <View style={styles.overlayCenter}>
         <View style={styles.overlayModal}>

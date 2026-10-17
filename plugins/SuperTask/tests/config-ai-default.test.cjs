@@ -6,6 +6,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 test('AI by default reverts to saved value after a failed write and can be retried', async () => {
@@ -28,6 +29,7 @@ test('AI by default reverts to saved value after a failed write and can be retri
   const normal = mod.require.bind(mod);
   mod.require = name => {
     if (name === 'react-native') return native;
+    if (name === '../components/KeyboardAvoidance') return keyboardAvoidance;
     if (name === '../utils/config') return configAPI;
     if (name === '../utils/permissions') return {PERMISSION_GROUPS: [], getPermissionStates: async () => ({supported: false, groups: {}}), ensurePermissionGroup: async () => true};
     if (name === '../utils/closePlugin') return {closePlugin() {}};
