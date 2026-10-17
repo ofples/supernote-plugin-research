@@ -49,7 +49,7 @@ function button(tree, label) {
 async function fixture(options = {}) {
   const ocr = deferred(), native = deferred(), ai = deferred(), clock = timers();
   const reviews = [], calls = [], recycled = [], selected = [{type: 0, id: 'native-element'}];
-  const config = {aiApiKey: 'test-only-key', defaultProjectId: 'p', defaultSectionId: 's'};
+  const config = {aiApiKey: options.noKey ? '' : 'test-only-key', aiByDefault: options.aiByDefault === true, defaultProjectId: 'p', defaultSectionId: 's'};
   let listener, removed = 0, closes = 0, tree;
   const failed = () => Promise.reject(new Error('Metadata unavailable'));
   const result = value => Promise.resolve({success: true, result: value});
@@ -108,6 +108,29 @@ test('AI image request starts while OCR is pending; successful AI owns review de
     await f.settleOCR('Late device title');
     assert.equal(f.reviews.length, 1, 'late OCR cannot replace the requested AI review');
     assert.deepEqual(f.recycled, [f.selected]);
+  } finally {await f.dispose();}
+});
+
+test('AI by default claims the capture before fast device OCR and opens AI review', async () => {
+  const f = await fixture({aiByDefault: true});
+  try {
+    assert.equal(f.calls.length, 1, 'opt-in starts one AI request automatically');
+    assert.equal(f.reviews.length, 0);
+    await f.settleOCR();
+    assert.equal(f.reviews.length, 0, 'fast OCR cannot navigate while AI owns the choice');
+    await f.settleAI();
+    assert.equal(f.reviews[0].props.initialRows[0].content, 'AI task');
+  } finally {await f.dispose();}
+});
+
+test('missing key keeps device OCR as the only path and shows setup guidance', async () => {
+  const f = await fixture({aiByDefault: true, noKey: true});
+  try {
+    assert.equal(f.calls.length, 0);
+    assert.ok(f.tree.root.findAllByType('Text').some(node => String(node.props.children).includes('no API key is configured')));
+    assert.equal(button(f.tree, 'Recognize with AI'), undefined);
+    await f.settleOCR();
+    assert.equal(f.reviews[0].props.initialContent, 'Device task');
   } finally {await f.dispose();}
 });
 

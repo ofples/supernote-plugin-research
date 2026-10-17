@@ -30,6 +30,7 @@ import {importTokenFromFile, findTokenFile, TOKEN_DIR_LABEL} from '../utils/toke
 import {PERMISSION_GROUPS, getPermissionStates, ensurePermissionGroup} from '../utils/permissions';
 import ProjectPicker from '../components/ProjectPicker';
 import AISettingsFields from '../components/AISettingsFields';
+const {normalizeAIModels} = require('../utils/aiModels');
 import LauncherSettings from '../launcher/LauncherSettings';
 const {isProjectVisible, toggleProjectVisibility} = require('../utils/projectVisibility');
 import {useLocations} from '../collections/useLocations';
@@ -132,6 +133,8 @@ export default function Config({nav, initialPage}: Props) {
   const [defaultSectionId, setDefaultSectionId] = useState<string | null>(cfg0?.defaultSectionId || null);
   const [aiApiKey, setAiApiKey] = useState(cfg0?.aiApiKey || '');
   const [aiModel, setAiModel] = useState(cfg0?.aiModel || 'gpt-4.1-mini');
+  const [aiModels, setAiModels] = useState<string[]>(() => normalizeAIModels(cfg0?.aiModels, cfg0?.aiModel || 'gpt-4.1-mini'));
+  const [aiByDefault, setAiByDefault] = useState(cfg0?.aiByDefault === true);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiStatus, setAiStatus] = useState('');
   const [aiSetupHintDismissed, setAiSetupHintDismissed] = useState(cfg0?.aiSetupHintDismissed === true);
@@ -192,6 +195,8 @@ export default function Config({nav, initialPage}: Props) {
       setDefaultSectionId(config.defaultSectionId || null);
       setAiApiKey(config.aiApiKey || '');
       setAiModel(config.aiModel || 'gpt-4.1-mini');
+      setAiModels(normalizeAIModels(config.aiModels, config.aiModel || 'gpt-4.1-mini'));
+      setAiByDefault(config.aiByDefault === true);
       setAiSetupHintDismissed(config.aiSetupHintDismissed === true);
       if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
       if (config.debugMode !== undefined) setDebugMode(config.debugMode);
@@ -261,9 +266,20 @@ export default function Config({nav, initialPage}: Props) {
   const handleSaveAISettings = async () => {
     setAiSaving(true);
     setAiStatus('');
-    const ok = await applyChange('aiSettings', {aiApiKey: aiApiKey.trim(), aiModel: aiModel.trim() || 'gpt-4.1-mini'});
+    const models = normalizeAIModels(aiModels, aiModel.trim() || 'gpt-4.1-mini');
+    const ok = await applyChange('aiSettings', {aiApiKey: aiApiKey.trim(), aiModel: aiModel.trim() || 'gpt-4.1-mini', aiModels: models});
     setAiStatus(ok ? 'Saved privately on this device.' : 'Could not save settings.');
     setAiSaving(false);
+  };
+
+  const handleSelectAIModel = async (value: string) => {
+    setAiModel(value);
+    setAiStatus('');
+    setAiSaving(true);
+    try {
+      const ok = await applyChange('aiSettings', {aiModel: value});
+      setAiStatus(ok ? 'Model saved privately on this device.' : 'Could not save the model.');
+    } finally {setAiSaving(false);}
   };
 
   const handleDismissAISetupHint = async () => {
@@ -757,8 +773,14 @@ export default function Config({nav, initialPage}: Props) {
                 <Text style={s.btnSmallText}>Dismiss</Text>
               </Pressable>
             </View>}
-            <AISettingsFields apiKey={aiApiKey} model={aiModel} status={aiStatus} saving={aiSaving}
-              onApiKeyChange={setAiApiKey} onModelChange={setAiModel} onSave={handleSaveAISettings} />
+            <CheckRow checked={aiByDefault} onToggle={() => {
+              const next = !aiByDefault;
+              setAiByDefault(next);
+              applyChange('aiByDefault', {aiByDefault: next});
+            }} label="AI by default" hint="For lasso captures, try AI automatically when an API key is set. Device OCR remains available." saved={savedRow === 'aiByDefault'} />
+            <AISettingsFields apiKey={aiApiKey} model={aiModel} models={aiModels} status={aiStatus} saving={aiSaving}
+              onApiKeyChange={setAiApiKey} onModelChange={handleSelectAIModel}
+              onModelsChange={setAiModels} onSave={handleSaveAISettings} />
           </Section>
         )}
 

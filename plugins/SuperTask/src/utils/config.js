@@ -16,6 +16,9 @@ const DEFAULT_CONFIG = {
   apiToken: '',
   aiApiKey: '',
   aiModel: 'gpt-4.1-mini',
+  // Explicit opt-in. Older configs inherit false and continue using device OCR.
+  aiByDefault: false,
+  aiModels: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   privacyWarning: '',
   debugServerUrl: '',
   defaultProjectId: null,
