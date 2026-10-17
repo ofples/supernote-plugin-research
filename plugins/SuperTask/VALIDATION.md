@@ -1,3 +1,15 @@
+# Beta.25 device validation — pending
+
+The beta.25 package is locally built and verified, but has not been installed on the Nomad. Beta.24 remains the installed version. It demonstrated that the TaskHome footer moves above the keyboard and that the New project modal reflows; it also exposed a failure in the deep Config > Setup **New AI model ID** field, which stays clipped below the keyboard. Beta.25 changes focused-field reveal to use native content-relative coordinates to avoid stale JS scroll offsets. This fix is not device-confirmed. Do not mark the checks below complete from automated geometry tests alone.
+
+1. Install `build/outputs/SuperTask-native-beta25.snplg` and verify Plugin Manager shows **0.4.0-beta.25**, code **30**, enabled ON. Record the installed file/version; the beta.24 result is historical.
+2. In Settings > Setup, expand the model list and focus **New AI model ID**. Verify the field and Add button are fully visible above the keyboard. Do not type a model ID or tap Add/Save. Focus the token field only to verify visibility; do not read or change its contents.
+3. Focus fields deep in TaskAdd, QuickAdd, TaskDetail and BatchAdd, including multiline description fields. Check batch labels in Batch actions, the New collection name in ProjectPicker, and TaskHome project/collection rename/create/labels dialogs. Confirm the focused field stays visible as the keyboard opens and as content grows. Dismiss the keyboard and confirm the screen returns to its prior layout.
+4. Repeat representative checks after rotating the device. Inspect a modal whose panel starts below the top edge to verify only its own covered viewport is reduced.
+5. Check the two-lane paged board, Previous/Next bounds and page reset, sidebar collapse/reopen persistence, right-aligned borderless header icons, and white per-task action buttons with the selection outline. Avoid task edits, completion, deletion, and note changes.
+
+Record each result separately. If the device is unavailable, leave these checks pending; beta.25 build and automated results do not prove hardware behavior.
+
 # Workflow validation — 3 October 2026
 
 This records the offline beta.4 checkpoint. The current combined overview/workflow artifact and pending installation are in [TESTING.md](TESTING.md).

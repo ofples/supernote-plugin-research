@@ -65,7 +65,7 @@ After creating a task, you have two options for marking the original handwriting
 
 Either way, the content on your note page is linked to the task in Todoist, and vice versa.
 
-For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.22 is built and installed; device checks verified Today/Done switching, the List/Board control and Board rendering, stationary multiselect, and the AI-by-default setting. Sorting/grouping details, handwriting capture, optional gestures/launcher and other workflows listed in [TESTING.md](TESTING.md) remain pending.
+For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.25 adds host-aware keyboard avoidance for text inputs and a paged two-lane board with a collapsible sidebar. The package is built and verified locally; beta.24 is the current device install. Beta.24's main footer clears the keyboard, but its deep New AI model ID field remains clipped. Beta.25's correction and the board/sidebar/action-icon changes still need hardware checks; see [TESTING.md](TESTING.md) and [VALIDATION.md](VALIDATION.md).
 
 ### Quick capture with finger gesture
 
