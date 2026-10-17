@@ -273,12 +273,35 @@ export default function Config({nav, initialPage}: Props) {
   };
 
   const handleSelectAIModel = async (value: string) => {
+    const previousModel = aiModel;
     setAiModel(value);
     setAiStatus('');
     setAiSaving(true);
     try {
       const ok = await applyChange('aiSettings', {aiModel: value});
+      if (!ok) setAiModel(getCachedConfig()?.aiModel || previousModel);
       setAiStatus(ok ? 'Model saved privately on this device.' : 'Could not save the model.');
+      return ok;
+    } finally {setAiSaving(false);}
+  };
+
+  const handleChangeAIModels = async (models: string[], selectedModel?: string) => {
+    setAiModels(models);
+    if (selectedModel !== undefined) setAiModel(selectedModel);
+    setAiSaving(true);
+    setAiStatus('');
+    try {
+      const changes: Record<string, any> = {aiModels: models};
+      if (selectedModel !== undefined) changes.aiModel = selectedModel;
+      const ok = await applyChange('aiSettings', changes);
+      if (!ok) {
+        const durable = getCachedConfig();
+        const savedModel = durable?.aiModel || 'gpt-4.1-mini';
+        setAiModels(normalizeAIModels(durable?.aiModels, savedModel));
+        if (selectedModel !== undefined) setAiModel(savedModel);
+      }
+      setAiStatus(ok ? 'Model list saved privately on this device.' : 'Could not save the model list.');
+      return ok;
     } finally {setAiSaving(false);}
   };
 
@@ -780,7 +803,7 @@ export default function Config({nav, initialPage}: Props) {
             }} label="AI by default" hint="For lasso captures, try AI automatically when an API key is set. Device OCR remains available." saved={savedRow === 'aiByDefault'} />
             <AISettingsFields apiKey={aiApiKey} model={aiModel} models={aiModels} status={aiStatus} saving={aiSaving}
               onApiKeyChange={setAiApiKey} onModelChange={handleSelectAIModel}
-              onModelsChange={setAiModels} onSave={handleSaveAISettings} />
+              onModelsChange={handleChangeAIModels} onSave={handleSaveAISettings} />
           </Section>
         )}
 

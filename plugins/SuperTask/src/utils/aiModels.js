@@ -2,12 +2,13 @@ const DEFAULT_AI_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
 
 function normalizeAIModels(models, currentModel) {
   const result = [];
-  for (const model of [...(Array.isArray(models) ? models : []), currentModel]) {
+  const savedModels = Array.isArray(models) ? models : DEFAULT_AI_MODELS;
+  for (const model of [...savedModels, currentModel]) {
     if (typeof model !== 'string') continue;
     const value = model.trim();
     if (value && !result.includes(value)) result.push(value);
   }
-  return result.length ? result : [...DEFAULT_AI_MODELS];
+  return result;
 }
 
 function addAIModel(models, model) {

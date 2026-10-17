@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {View, Text, TextInput, Pressable, StyleSheet} from 'react-native';
-const {addAIModel, normalizeAIModels, removeAIModel} = require('../utils/aiModels');
+const {DEFAULT_AI_MODELS, addAIModel, normalizeAIModels, removeAIModel} = require('../utils/aiModels');
 
 export type AISettingsFieldsProps = {
   apiKey: string;
@@ -9,8 +9,8 @@ export type AISettingsFieldsProps = {
   status?: string;
   saving?: boolean;
   onApiKeyChange: (value: string) => void;
-  onModelChange: (value: string) => void;
-  onModelsChange: (value: string[]) => void;
+  onModelChange: (value: string) => boolean | void | Promise<boolean | void>;
+  onModelsChange: (value: string[], selectedModel?: string) => boolean | void | Promise<boolean | void>;
   onSave: () => void | Promise<void>;
 };
 
@@ -19,17 +19,24 @@ export default function AISettingsFields({apiKey, model, models, status = '', sa
   const [expanded, setExpanded] = useState(false);
   const [newModel, setNewModel] = useState('');
   const options = normalizeAIModels(models, model);
-  const addModel = () => {
+  const addModel = async () => {
     const value = newModel.trim();
     if (!value) return;
-    onModelsChange(addAIModel(options, value));
-    onModelChange(value);
-    setNewModel('');
+    const saved = await onModelsChange(addAIModel(options, value), value);
+    if (saved !== false) {setNewModel(''); setExpanded(false);}
   };
-  const removeModel = (value: string) => {
-    const next = removeAIModel(options, value);
-    onModelsChange(next);
-    if (model === value) onModelChange(next[0]);
+  const removeModel = async (value: string) => {
+    let next = removeAIModel(options, value);
+    let selected: string | undefined;
+    if (model === value) {
+      if (!next.length) next = [DEFAULT_AI_MODELS[0]];
+      selected = next[0];
+    }
+    await onModelsChange(next, selected);
+  };
+  const selectModel = async (value: string) => {
+    try {await onModelChange(value);}
+    finally {setExpanded(false);}
   };
   return <View style={s.fields}>
     <Text style={s.heading}>AI refinement</Text>
@@ -40,16 +47,16 @@ export default function AISettingsFields({apiKey, model, models, status = '', sa
       autoCapitalize="none" autoCorrect={false} editable={!saving} placeholder="sk-…" />
     <Text style={s.body}>Stored in SuperTask’s private device folder. Clearing this field disables AI. InkToClipboard has its own settings.</Text>
     <Text style={s.label}>Model</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Selected AI model ${model}. ${expanded ? 'Hide' : 'Show'} model list`}
+    <Pressable accessibilityRole="button" accessibilityLabel={`Selected AI model ${model}. ${expanded ? 'Hide' : 'Show'} model list`} disabled={saving}
       style={s.input} onPress={() => setExpanded(value => !value)}>
       <Text style={s.modelText}>{model}  {expanded ? '▲' : '▼'}</Text>
     </Pressable>
     {expanded && <View style={s.modelList}>
       {options.map((value: string) => <View key={value} style={s.modelRow}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Select model ${value}`} style={s.modelSelect} onPress={() => onModelChange(value)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Select model ${value}`} disabled={saving} style={s.modelSelect} onPress={() => selectModel(value)}>
           <Text style={[s.modelText, value === model && s.selected]}>{value}{value === model ? '  ✓' : ''}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Remove model ${value}`} style={s.removeButton} onPress={() => removeModel(value)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove model ${value}`} disabled={saving} style={s.removeButton} onPress={() => removeModel(value)}>
           <Text style={s.label}>Remove</Text>
         </Pressable>
       </View>)}

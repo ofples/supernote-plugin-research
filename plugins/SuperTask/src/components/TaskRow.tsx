@@ -7,6 +7,7 @@ import Chip from './Chip';
 import {Check} from './settings';
 import {useFontScale} from '../utils/useFontScale';
 const {localDate} = require('../offline/model');
+const {formatDueLabel} = require('./taskDueLabel');
 
 const PRIORITY_LABELS: Record<number, string> = {
   4: 'P1',
@@ -51,13 +52,10 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   const dueDate = (task.due?.date || '').slice(0, 10);
   const today = localDate(new Date());
   const isOverdue = !checked && dueDate && dueDate < today;
-  const isToday = dueDate === today;
 
   const chips: Array<{label: string; inverted?: boolean; quiet?: boolean}> = [];
   if (completedAt) chips.push({label: `Done ${formatDate(completedAt.slice(0, 10))}`});
-  if (isOverdue) chips.push({label: `Overdue ${formatDate(dueDate)}`, inverted: true});
-  else if (isToday) chips.push({label: 'Today'});
-  else if (dueDate) chips.push({label: formatDate(dueDate)});
+  if (dueDate) chips.push({label: formatDueLabel(task.due?.date || '', today), inverted: !!isOverdue});
   if (priorityLabel) chips.push({label: priorityLabel});
   if (showProject) chips.push({label: showProject});
   if (showCollection) chips.push({label: showCollection, quiet: true});
@@ -117,15 +115,9 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   );
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + 'T00:00:00');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[date.getMonth()]} ${date.getDate()}`;
-}
-
 const styles = StyleSheet.create({
   rowHost: {position: 'relative'},
-  accessoryOverlay: {position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center', zIndex: 2},
+  accessoryOverlay: {position: 'absolute', right: 16, top: 14, zIndex: 2},
   syncTarget: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 4},
   syncSymbol: {fontSize: 23, fontWeight: '700', color: '#000'},
   row: {
