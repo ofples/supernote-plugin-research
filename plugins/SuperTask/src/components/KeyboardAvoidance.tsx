@@ -61,6 +61,35 @@ export function calculateFocusedInputScrollDelta(
   return 0;
 }
 
+/**
+ * Resolve an absolute scroll offset from the input's stable position inside
+ * ScrollView content. Screen-space input bounds decide whether it is already
+ * visible; this avoids relying on an onScroll event that may lag native focus
+ * scrolling on the plugin host.
+ */
+export function calculateFocusedInputScrollTarget(
+  viewport: ViewportFrame,
+  inputScreen: FocusedInputFrame,
+  inputContentTop: number,
+  keyboard: KeyboardFrame | null,
+  gap = 16,
+  inputContentHeight = inputScreen.height,
+): number | null {
+  const visibleTop = viewport.top;
+  const visibleBottom = Math.min(viewport.top + viewport.height, keyboard?.screenY ?? Number.POSITIVE_INFINITY);
+  const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+  if (visibleHeight === 0 || !Number.isFinite(inputScreen.top) || !Number.isFinite(inputScreen.height) || !Number.isFinite(inputContentTop)) return null;
+  const inputBottom = inputScreen.top + inputScreen.height;
+  const contentHeight = Number.isFinite(inputContentHeight) && inputContentHeight > 0 ? inputContentHeight : inputScreen.height;
+  const tooTall = contentHeight + gap * 2 > visibleHeight;
+  if (inputScreen.height > 0 && !tooTall && inputScreen.top >= visibleTop + gap && inputBottom <= visibleBottom - gap) return null;
+
+  const target = inputScreen.top < visibleTop + gap && !tooTall
+    ? inputContentTop - gap
+    : inputContentTop + contentHeight - visibleHeight + gap;
+  return Math.max(0, target);
+}
+
 /** Subscribe to the events that change the visible keyboard frame. */
 export function subscribeToKeyboardFrames(
   keyboard: typeof Keyboard,
@@ -165,10 +194,11 @@ export const KeyboardAwareTextInput = React.forwardRef<KeyboardInput, TextInputP
   const owner = React.useContext(KeyboardScrollContext);
   const inputRef = useRef<KeyboardInput>(null);
   const setRef = useCallback((input: KeyboardInput | null) => {
+    if (input == null && inputRef.current) owner?.blur(inputRef.current);
     inputRef.current = input;
     if (typeof forwardedRef === 'function') forwardedRef(input);
     else if (forwardedRef) forwardedRef.current = input;
-  }, [forwardedRef]);
+  }, [forwardedRef, owner]);
   return <TextInput {...props} ref={setRef}
     onFocus={event => {owner?.focus(inputRef.current); onFocus?.(event);}}
     onBlur={event => {owner?.blur(inputRef.current); onBlur?.(event);}} />;
@@ -194,7 +224,30 @@ export function KeyboardAwareScrollView({keyboardShouldPersistTaps = 'handled', 
       viewportRef.current = {top, height};
       input.measureInWindow((_inputX: number, inputTop: number, _inputWidth: number, inputHeight: number) => {
         if (!mounted.current || focusedInput.current !== input) return;
-        revealFocusedInput(view, currentOffset.current, viewportRef.current, {top: inputTop, height: inputHeight}, keyboardFrame.current);
+        const frame = {top: inputTop, height: inputHeight};
+        const innerView = view.getInnerViewRef?.();
+        if (innerView && typeof input.measureLayout === 'function') {
+          // Measure relative to ScrollView's content container. scrollTo takes
+          // an absolute content offset, so no asynchronous JS onScroll state is
+          // needed to correct a native focus scroll that raced this callback.
+          const fallback = () => {
+            if (!mounted.current || focusedInput.current !== input) return;
+            // Some host wrappers may not expose relative layout measurement.
+            // Preserve the screen-space fallback for those implementations.
+            revealFocusedInput(view, currentOffset.current, viewportRef.current, frame, keyboardFrame.current);
+          };
+          try {
+            input.measureLayout(innerView, (_contentX: number, contentTop: number, _contentWidth: number, contentHeight: number) => {
+              if (!mounted.current || focusedInput.current !== input) return;
+              const target = calculateFocusedInputScrollTarget(viewportRef.current, frame, contentTop, keyboardFrame.current, 16, contentHeight);
+              if (target != null) view.scrollTo?.({y: target, animated: false});
+            }, fallback);
+          } catch {
+            fallback();
+          }
+          return;
+        }
+        revealFocusedInput(view, currentOffset.current, viewportRef.current, frame, keyboardFrame.current);
       });
     });
   }, []);

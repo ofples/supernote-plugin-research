@@ -9,7 +9,7 @@ const {act, create} = require('react-test-renderer');
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top: 0, height: 40}, metrics = null, screenHeight = 1872} = {}) {
+function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top: 0, height: 40}, inputContentTop = 0, inputContentHeight = input.height, deferMeasureLayout = false, metrics = null, screenHeight = 1872} = {}) {
   const listeners = new Map();
   const removed = [];
   const keyboard = {
@@ -32,13 +32,20 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
     Platform: {OS: 'android'},
     View: 'View',
     TextInput: React.forwardRef((props, ref) => {
-      const instance = {measureInWindow(callback) {callback(0, input.top, 200, input.height);}};
+      const instance = {
+        measureInWindow(callback) {callback(0, input.top, 200, input.height);},
+        measureLayout(_relativeTo, callback, onFail) {
+          if (deferMeasureLayout) pendingMeasureLayoutError = onFail;
+          else callback(0, inputContentTop, 200, inputContentHeight);
+        },
+      };
       React.useImperativeHandle(ref, () => instance);
       return React.createElement('FakeTextInput', props);
     }),
     ScrollView: React.forwardRef((props, ref) => {
       const instance = {
         measureInWindow(callback) {callback(0, viewport.top, viewport.width, viewport.height);},
+        getInnerViewRef() {return {};},
         scrollTo(options) {scrolls.push(options);},
       };
       React.useImperativeHandle(ref, () => instance);
@@ -46,6 +53,7 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
     }),
   };
   const scrolls = [];
+  let pendingMeasureLayoutError = null;
   const filename = path.resolve(__dirname, '../src/components/KeyboardAvoidance.tsx');
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
@@ -54,7 +62,7 @@ function makeRuntime({viewport = {top: 0, height: 800, width: 200}, input = {top
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);
-  return {api: mod.exports, native, listeners, removed, scrolls, setMetrics(value) {metrics = value;}, setInputFrame(value) {input = value;}, dispatch(event, payload) {
+  return {api: mod.exports, native, listeners, removed, scrolls, setMetrics(value) {metrics = value;}, setInputFrame(value) {input = value;}, setInputContentTop(value) {inputContentTop = value;}, failPendingMeasureLayout() {pendingMeasureLayoutError?.();}, dispatch(event, payload) {
     for (const callback of listeners.get(event) || []) callback(payload);
   }};
 }
@@ -95,10 +103,24 @@ test('focused input scroll delta handles modal offsets, already-visible fields a
     'keeps the insertion end of a multiline field visible when it is taller than the viewport');
 });
 
+test('focused input scroll target uses content coordinates when native focus scrolling outruns JS onScroll', () => {
+  const {api} = makeRuntime();
+  const viewport = {top: 0, height: 500};
+  const keyboard = {screenY: 500};
+  assert.equal(api.calculateFocusedInputScrollTarget(viewport, {top: 470, height: 50}, 1070, keyboard), 636,
+    'absolute content target reveals a clipped field even if JS still thinks scrollY is zero');
+  assert.equal(api.calculateFocusedInputScrollTarget(viewport, {top: 200, height: 50}, 800, keyboard), null,
+    'an already-visible field does not jump to its content coordinate');
+  assert.equal(api.calculateFocusedInputScrollTarget({top: 300, height: 800}, {top: 670, height: 50}, 370, {screenY: 700}), 36,
+    'modal bounds still produce a minimal absolute scroll target');
+  assert.equal(api.calculateFocusedInputScrollTarget(viewport, {top: 470, height: 0}, 1070, keyboard, 16, 50), 636,
+    'stable content height preserves the target even if a clipped screen measurement reports zero height');
+});
+
 test('focused host input reveals after keyboard open and listener cleanup is complete', async () => {
   const oldRaf = global.requestAnimationFrame;
   global.requestAnimationFrame = callback => {callback(); return 1;};
-  const runtime = makeRuntime({viewport: {top: 300, height: 800}, input: {top: 670, height: 50}});
+  const runtime = makeRuntime({viewport: {top: 300, height: 800}, input: {top: 670, height: 50}, inputContentTop: 370});
   let tree;
   try {
     let callerFocusCount = 0;
@@ -114,6 +136,7 @@ test('focused host input reveals after keyboard open and listener cleanup is com
     assert.deepEqual(runtime.scrolls, [{y: 36, animated: false}], 'uses measured modal and keyboard bounds for a minimal scroll');
     await act(async () => scroll.props.onScroll({nativeEvent: {contentOffset: {y: 36}}}));
     runtime.setInputFrame({top: 690, height: 50});
+    runtime.setInputContentTop(426);
     runtime.setMetrics({screenY: 700});
     const secondInput = tree.root.findAllByType('FakeTextInput')[1];
     await act(async () => secondInput.props.onFocus({nativeEvent: {target: 8}}));
@@ -127,6 +150,66 @@ test('focused host input reveals after keyboard open and listener cleanup is com
     assert.equal(runtime.listeners.get('keyboardDidShow').size, 0);
     assert.equal(runtime.listeners.get('keyboardDidHide').size, 0);
     assert.equal(runtime.listeners.get('dimensions').size, 0);
+  } finally {
+    global.requestAnimationFrame = oldRaf;
+  }
+});
+
+test('keyboard reveal targets native content position without waiting for the native scroll event', async () => {
+  const oldRaf = global.requestAnimationFrame;
+  global.requestAnimationFrame = callback => {callback(); return 1;};
+  // A native focus scroll has already advanced the input in content to y=1070,
+  // but its onScroll event has not reached JS. The input is still clipped at
+  // the keyboard edge and the JS offset remains zero.
+  const runtime = makeRuntime({viewport: {top: 0, height: 500}, input: {top: 470, height: 50}, inputContentTop: 1070});
+  let tree;
+  try {
+    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null,
+      React.createElement(runtime.api.KeyboardAwareTextInput, null)));});
+    const input = tree.root.findByType('FakeTextInput');
+    await act(async () => input.props.onFocus({nativeEvent: {target: 7}}));
+    await act(async () => runtime.dispatch('keyboardDidShow', {endCoordinates: {screenY: 500}}));
+    assert.deepEqual(runtime.scrolls, [{y: 636, animated: false}],
+      'the target is the absolute content offset, not stale JS offset plus the screen-space delta');
+    await act(async () => tree.unmount());
+  } finally {
+    global.requestAnimationFrame = oldRaf;
+  }
+});
+
+test('a late native measureLayout failure after unmount cannot scroll the released input', async () => {
+  const oldRaf = global.requestAnimationFrame;
+  global.requestAnimationFrame = callback => {callback(); return 1;};
+  const runtime = makeRuntime({viewport: {top: 0, height: 500}, input: {top: 470, height: 50}, inputContentTop: 1070, deferMeasureLayout: true});
+  let tree;
+  try {
+    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null,
+      React.createElement(runtime.api.KeyboardAwareTextInput, null)));});
+    const input = tree.root.findByType('FakeTextInput');
+    await act(async () => input.props.onFocus({nativeEvent: {target: 7}}));
+    await act(async () => runtime.dispatch('keyboardDidShow', {endCoordinates: {screenY: 500}}));
+    await act(async () => tree.unmount());
+    runtime.failPendingMeasureLayout();
+    assert.deepEqual(runtime.scrolls, [], 'fallback checks mount and focus ownership before using native refs');
+  } finally {
+    global.requestAnimationFrame = oldRaf;
+  }
+});
+
+test('detaching a focused input clears its scroll owner before later keyboard events', async () => {
+  const oldRaf = global.requestAnimationFrame;
+  global.requestAnimationFrame = callback => {callback(); return 1;};
+  const runtime = makeRuntime({viewport: {top: 0, height: 500}, input: {top: 470, height: 50}, inputContentTop: 1070});
+  let tree;
+  try {
+    await act(async () => {tree = create(React.createElement(runtime.api.KeyboardAwareScrollView, null,
+      React.createElement(runtime.api.KeyboardAwareTextInput, null)));});
+    const input = tree.root.findByType('FakeTextInput');
+    await act(async () => input.props.onFocus({nativeEvent: {target: 7}}));
+    await act(async () => tree.update(React.createElement(runtime.api.KeyboardAwareScrollView, null, null)));
+    await act(async () => runtime.dispatch('keyboardDidShow', {endCoordinates: {screenY: 500}}));
+    assert.deepEqual(runtime.scrolls, [], 'removed focused rows are no longer measured or scrolled');
+    await act(async () => tree.unmount());
   } finally {
     global.requestAnimationFrame = oldRaf;
   }
