@@ -138,10 +138,10 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
     }
     const regrouped = fromText(rawInitialText, {...defaultsRef.current, description: initialDescription, overrides: {}},
       {projects, sections, capturedAt: captureTime, grouping});
-    const next = regrouped.map(row => {
+    const positions = new Map<string, number>();
+    const next = regrouped.map((row: any) => {
       const lines = row.sourceText.split(/\r?\n/);
-      const positions = new Map<string, number>();
-      const selected = lines.map(line => {
+      const selected = lines.map((line: string) => {
         const index = positions.get(line) || 0; positions.set(line, index + 1);
         return selectedByLine.get(line)?.[index] ?? true;
       });
@@ -270,10 +270,10 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
           <ScrollView style={s.modalScroll} contentContainerStyle={s.modalContent} keyboardShouldPersistTaps="handled">
         {canChooseGrouping && <View style={s.actions} accessibilityLabel="OCR grouping">
           <Text style={[s.label, scaledLabel]}>Group recognized text</Text>
-          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'lines', disabled: !rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
-            style={[s.button, ocrGrouping === 'lines' && s.ocrChoiceSelected]} disabled={!rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('lines')}><Text style={[s.label, scaledLabel, ocrGrouping === 'lines' && s.ocrChoiceText]}>Lines</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'paragraphs', disabled: !rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
-            style={[s.button, ocrGrouping === 'paragraphs' && s.ocrChoiceSelected]} disabled={!rows.every(row => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('paragraphs')}><Text style={[s.label, scaledLabel, ocrGrouping === 'paragraphs' && s.ocrChoiceText]}>Paragraphs</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'lines', disabled: !rows.every((row: any) => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
+            style={[s.button, ocrGrouping === 'lines' && s.ocrChoiceSelected]} disabled={!rows.every((row: any) => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('lines')}><Text style={[s.label, scaledLabel, ocrGrouping === 'lines' && s.ocrChoiceText]}>Lines</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{selected: ocrGrouping === 'paragraphs', disabled: !rows.every((row: any) => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)}}
+            style={[s.button, ocrGrouping === 'paragraphs' && s.ocrChoiceSelected]} disabled={!rows.every((row: any) => row.fieldProvenance?.content === 'transcription' && row.fieldProvenance?.description !== 'manual' && !Object.keys(row.overrides || {}).length)} onPress={() => changeOcrGrouping('paragraphs')}><Text style={[s.label, scaledLabel, ocrGrouping === 'paragraphs' && s.ocrChoiceText]}>Paragraphs</Text></Pressable>
         </View>}
         <View style={s.actions}>
           <Pressable style={s.button} onPress={() => setRows(prev => prev.map(row => ({...row, selected: true})))}><Text style={[s.label, scaledLabel]}>Select all</Text></Pressable>
@@ -385,4 +385,5 @@ const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {
   input: {flexGrow: 1, minWidth: 180, minHeight: 44, padding: 12, borderWidth: 1, color: '#000', textAlignVertical: 'top'},
   details: {gap: 12}, status: {paddingHorizontal: 16, paddingVertical: 8, color: '#000', fontWeight: '600'}, footer: {padding: 12, gap: 8, flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1},
   notice: {padding: 10, gap: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: '#000'},
-  primary: {padding: 14, backgroundColor: '#000'}, primaryText: {color: '#fff', fontWeight: '700'}});
+  primary: {padding: 14, backgroundColor: '#000'}, primaryText: {color: '#fff', fontWeight: '700'},
+  ocrChoiceSelected: {backgroundColor: '#000'}, ocrChoiceText: {color: '#fff'}});

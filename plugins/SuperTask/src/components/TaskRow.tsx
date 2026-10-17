@@ -115,6 +115,12 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
   );
 }
 
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getMonth()]} ${date.getDate()}`;
+}
+
 const styles = StyleSheet.create({
   rowHost: {position: 'relative'},
   accessoryOverlay: {position: 'absolute', right: 16, top: 14, zIndex: 2},
