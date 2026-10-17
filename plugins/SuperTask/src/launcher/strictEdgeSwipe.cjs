@@ -1,4 +1,5 @@
 // MotionEvent coordinates are physical pixels. Never infer screen bounds from contacts.
+const EDGE_START_Y_FRACTION = 0.92;
 class StrictEdgeSwipe {
   constructor() {
     this.width = 0;
@@ -45,7 +46,7 @@ class StrictEdgeSwipe {
     )
       return reject();
     if (
-      points.length > 3 ||
+      points.length > 2 ||
       new Set(points.map(p => p.pointerId)).size !== points.length ||
       points.some(
         p =>
@@ -64,7 +65,7 @@ class StrictEdgeSwipe {
       if (
         this.session ||
         points.length !== 1 ||
-        points[0].y < this.height * 0.96
+        points[0].y < this.height * EDGE_START_Y_FRACTION
       )
         return reject();
       this.session = {
@@ -90,12 +91,12 @@ class StrictEdgeSwipe {
     if (action === 0 || action === 5) {
       if (
         s.release !== null ||
-        t - s.start > 250 ||
+        t - s.start > 500 ||
         points.length !== active.length + 1
       )
         return reject();
       const added = points.filter(p => !s.contacts.has(p.pointerId));
-      if (added.length !== 1 || added[0].y < this.height * 0.96)
+      if (added.length !== 1 || added[0].y < this.height * EDGE_START_Y_FRACTION)
         return reject();
       const p = added[0];
       s.contacts.set(p.pointerId, {
@@ -112,7 +113,7 @@ class StrictEdgeSwipe {
         ) ||
         Math.max(...starts.map(p1 => p1.x)) -
           Math.min(...starts.map(p1 => p1.x)) >
-          Math.min(350, this.width * 0.4)
+          Math.min(240, this.width * 0.2)
       )
         return reject();
     } else if (points.length !== active.length) return reject();
@@ -135,7 +136,7 @@ class StrictEdgeSwipe {
     if (action === 2 && s.contacts.size >= 2 && s.release === null) {
       s.moves++;
       s.qualified =
-        s.moves >= 3 && t - s.start >= 300 && travels.every(d => d >= 150);
+        s.moves >= 2 && t - s.start >= 300 && travels.every(d => d >= 150);
     }
     if (action === 6 || action === 1) {
       // Require all contacts to qualify while concurrently down, before any lift.
@@ -166,4 +167,4 @@ class StrictEdgeSwipe {
     return false;
   }
 }
-module.exports = {StrictEdgeSwipe};
+module.exports = {StrictEdgeSwipe, EDGE_START_Y_FRACTION};

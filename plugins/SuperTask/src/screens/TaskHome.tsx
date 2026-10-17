@@ -48,6 +48,9 @@ import PriorityPicker from '../components/PriorityPicker';
 import ProjectOverview from '../components/ProjectOverview';
 import SectionHeader from '../components/SectionHeader';
 import Chip from '../components/Chip';
+import WorkspaceBoard from '../components/WorkspaceBoard';
+import WorkspaceViewOptions from '../components/WorkspaceViewOptions';
+const {normalizePreferences, preferencesForAccount, mergePreferencePatches, sortTasks, groupTasks, defaults: viewDefaults} = require('../workspace/viewPreferences');
 
 type Nav = {
   push: (name: string, params?: Record<string, any>) => void;
@@ -137,7 +140,17 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [doneFetched, setDoneFetched] = useState(false);
   // F-030: footer toggle -- show completed-today tasks inline on the Today
   // tab, same row pattern as the Done tab (filled box, Done chip, reopen)
-  const [completedExpanded, setCompletedExpanded] = useState<Record<string, boolean>>({});
+  const [workspacePreferences, setWorkspacePreferences] = useState<any>(() => {
+    const accountKey = cached0?.accountKey;
+    return preferencesForAccount(cfg0?.workspacePreferences, accountKey);
+  });
+  const [workspacePreferenceAccountKey, setWorkspacePreferenceAccountKey] = useState<string | null>(() => cached0?.accountKey || null);
+  const workspacePreferencesRef = useRef(workspacePreferences);
+  const workspacePreferenceAccountRef = useRef(workspacePreferenceAccountKey);
+  const preferenceRevision = useRef(0);
+  const localPreferencePatches = useRef<Record<string, any>>({});
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const [preferenceSaveError, setPreferenceSaveError] = useState('');
   const [historyDays, setHistoryDays] = useState(30);
   const [historyLimit, setHistoryLimit] = useState(20);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -170,8 +183,43 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const resolvedTab = activeTab.startsWith('project:') ? `project:${resolveContainerId(activeTab.slice(8), projectList)}` : activeTab;
   const activeProject = resolvedTab.startsWith('project:') ? projectList.find(project => String(project.id) === resolvedTab.slice(8)) : null;
   const completedViewKey = activeProject ? `project:${activeProject.localId || activeProject.id}` : resolvedTab;
-  const showDone = completedExpanded[completedViewKey] !== false;
-  const setShowDone = (update: (value: boolean) => boolean) => setCompletedExpanded(previous => ({...previous, [completedViewKey]: update(previous[completedViewKey] !== false)}));
+  const preferenceAccountKey = syncInfo?.accountKey || cached0?.accountKey;
+  const scopedWorkspacePreferences = workspacePreferenceAccountKey === preferenceAccountKey ? workspacePreferences : {};
+  const viewPreferences = normalizePreferences(scopedWorkspacePreferences[completedViewKey], completedViewKey);
+  const showDone = viewPreferences.completedExpanded;
+  const persistWorkspacePreferencePatches = (accountKey: string, accountToken: string | undefined, patches: Record<string, any>) => saveConfig((latestConfig: any) => {
+    if (getCachedWorkspace()?.accountKey !== accountKey || getCachedConfig()?.apiToken !== accountToken) return null;
+    const store = latestConfig.workspacePreferences || {};
+    const accountPreferences = preferencesForAccount(store, accountKey);
+    const merged = mergePreferencePatches(accountPreferences, patches);
+    return {workspacePreferences: {...store, accounts: {...(store.accounts || {}), [accountKey]: merged}}};
+  }).then(saved => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) {
+      setPreferenceSaveError(saved ? '' : 'View preferences could not be saved.');
+    }
+    return saved;
+  }).catch(() => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) setPreferenceSaveError('View preferences could not be saved.');
+    return false;
+  });
+  const updateViewPreferences = (patch: any, context = completedViewKey) => {
+    const accountKey = getCachedWorkspace()?.accountKey;
+    if (!accountKey) return;
+    const storedForAccount = preferencesForAccount(getCachedConfig()?.workspacePreferences, accountKey);
+    const currentForAccount = workspacePreferenceAccountRef.current === accountKey
+      ? workspacePreferencesRef.current : storedForAccount;
+    const nextForAccount = {...currentForAccount, [context]: normalizePreferences({...currentForAccount[context], ...patch}, context)};
+    workspacePreferencesRef.current = nextForAccount;
+    workspacePreferenceAccountRef.current = accountKey;
+    preferenceRevision.current += 1;
+    localPreferencePatches.current[accountKey] = {...(localPreferencePatches.current[accountKey] || {}), [context]: {
+      ...(localPreferencePatches.current[accountKey]?.[context] || {}), ...patch,
+    }};
+    setWorkspacePreferenceAccountKey(accountKey);
+    setWorkspacePreferences(nextForAccount);
+    persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, {[context]: patch});
+  };
+  const setShowDone = (update: (value: boolean) => boolean) => updateViewPreferences({completedExpanded: update(showDone)});
   const seedTasks = useMemo(() => {
     const seen = new Set();
     return [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
@@ -185,6 +233,24 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     if (!active) return;
     loadConfig().then(withCurrentAccount(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);})).catch(() => {});
   }, [active]);
+  useEffect(() => {
+    const accountKey = getCachedWorkspace()?.accountKey;
+    if (!accountKey) return;
+    const revision = preferenceRevision.current;
+    loadConfig().then(withCurrentAccount(config => {
+      if (getCachedWorkspace()?.accountKey !== accountKey) return;
+      const loaded = preferencesForAccount(config.workspacePreferences, accountKey);
+      const patches = localPreferencePatches.current[accountKey] || {};
+      const resolved = revision === preferenceRevision.current ? loaded : mergePreferencePatches(loaded, patches);
+      workspacePreferencesRef.current = resolved;
+      workspacePreferenceAccountRef.current = accountKey;
+      setWorkspacePreferenceAccountKey(accountKey);
+      setWorkspacePreferences(resolved);
+      if (revision !== preferenceRevision.current) {
+        persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, patches);
+      }
+    })).catch(() => {});
+  }, [syncInfo?.accountKey]);
 
   // B-033 (SNDEV-69): the plugin view appears via partial refresh, and the
   // mostly-white first frames leave the note's top half ghosting through
@@ -666,6 +732,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       );
     }
 
+    const boardProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const customPresentation = viewPreferences.view === 'board' || viewPreferences.sortBy !== 'manual' || viewPreferences.groupBy !== viewDefaults(resolvedTab).groupBy;
+    if (customPresentation && boardProjectId && !isProjectVisible(visibilityConfig, boardProjectId, projectList)) {
+      return <View style={styles.centered}><Text style={styles.emptyText}>This project is hidden in Settings. Choose a visible project from the sidebar.</Text></View>;
+    }
+    if (viewPreferences.view === 'board') return renderWorkspaceBoard();
+    if (viewPreferences.sortBy !== 'manual' || viewPreferences.groupBy !== viewDefaults(resolvedTab).groupBy) return renderWorkspaceList();
+
     if (activeTab === 'note') return <ScrollView onScrollBeginDrag={() => setExpandedId(null)}>{renderThisNote()}{renderCompletedSection()}</ScrollView>;
     if (activeTab === 'tomorrow') return renderSimpleTasks(projectFiltered(tasks).filter(task => (task.due?.date || '').slice(0, 10) === tomorrow), 'No tasks due tomorrow');
     if (activeTab === 'inbox') return renderProjectTasks(inboxProject?.id, 'Inbox');
@@ -962,6 +1036,84 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
   const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
   const selectableKey = selectableTasks.map((task: any) => rowIdentity(task)).join('|');
+  const recentDoneTasks = () => contextTasks.slice().sort((a: any, b: any) =>
+    (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || '')).slice(0, historyLimit);
+  const renderOlderHistoryControl = () => <Pressable style={styles.historyLink} accessibilityRole="button" accessibilityLabel="Load older completed tasks"
+    disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>;
+  const renderWorkspaceList = () => {
+    const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const displayed = groupTasks(sortTasks(displayedTasks, viewPreferences.sortBy), viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
+      projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
+    const rows: any[] = displayed.flatMap((group: any) => [
+      ...(viewPreferences.groupBy === 'none' ? [] : [{key: `header:${group.key}`, type: 'header', group}]),
+      ...group.tasks.map((task: any) => ({key: rowIdentity(task), type: 'task', task})),
+    ]);
+    return <FlatList data={rows} keyExtractor={item => item.key} onScrollBeginDrag={() => setExpandedId(null)}
+      ListHeaderComponent={activeTab === 'note' ? <View style={styles.thisPageHeader}>
+        <Text style={[styles.thisPageTitle, {fontSize: Math.round(13 * scale)}]}>This Note</Text><Chip label={String(noteTasks.length)} />
+        {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
+      </View> : null}
+      ListEmptyComponent={<View style={styles.emptyList}><Text style={styles.emptyText}>{activeTab === 'note' ? 'No active tasks in this note' : 'No tasks in this view'}</Text></View>}
+      ListFooterComponent={activeTab === 'done' ? renderOlderHistoryControl() : renderCompletedSection()} extraData={{selectedIds, selectionMode, sortBy: viewPreferences.sortBy, historyLimit}}
+      renderItem={({item}) => {
+        if (item.type === 'header') return <SectionHeader title={item.group.title} count={item.group.tasks.length} />;
+        const task = item.task;
+        const note = activeTab === 'note' ? noteTasks.find((entry: any) => sameTaskReference(entry.task, task)) : null;
+        const device = activeTab === 'device' ? deviceEntries.find((entry: any) => sameTaskReference(entry, task)) : null;
+        const pageNum = note?.pageNum ?? device?.pageNum;
+        const path = activeTab === 'device' ? device?.notePath || device?.source?.filePath : noteCtx?.filePath;
+        return <TaskRow task={task} checked={!!task.completed} completedAt={task.occurrenceCompletedAt || task.completed_at}
+          onCheckPress={task.completed ? handleReopen : sel.completeOne} disabled={sel.busy}
+          onSyncPress={() => setSyncSheetOpen(true)} onPress={handleTaskPress}
+          showProject={projectMap[task.project_id]} showCollection={collectionName(task)} pageNum={pageNum}
+          onOpenNote={path && pageNum !== undefined && (activeTab !== 'note' || pageNum !== noteCtx?.pageNum)
+            ? () => handleOpenNote(path, pageNum, task.id) : undefined} />;
+      }} />;
+  };
+  const renderWorkspaceBoard = () => {
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const sorted = sortTasks(displayedTasks, viewPreferences.sortBy);
+    const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const groups = groupTasks(sorted, viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
+      projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
+    if (activeTab === 'done') {
+      if (!groups.length) groups.push({key: 'done-empty', title: 'Completed', tasks: []});
+      groups[groups.length - 1] = {...groups[groups.length - 1], footer: renderOlderHistoryControl()};
+    } else groups.push({key: 'workspace-completed', title: 'Completed', tasks: showDone ? completedItems.slice(0, historyLimit) : [], emptyMessage: null,
+      header: <SectionHeader title="Completed" count={completedItems.length} expanded={showDone}
+        onToggle={() => {setExpandedId(null); setShowDone(value => !value);}} />,
+      footer: showDone ? <>
+        {!!doneError && <Text accessibilityRole="alert" style={styles.sheetText}>{doneError}</Text>}
+        <Pressable accessibilityRole="button" accessibilityLabel="Load older completed tasks" style={styles.historyLink}
+          disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.historyLinkText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>
+      </> : null});
+    const renderTask = (task: any, group: any) => {
+      if (group.key === 'workspace-completed') return <TaskRow key={rowIdentity(task)} task={task} checked
+        completedAt={task.occurrenceCompletedAt || task.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress}
+        onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[task.project_id]} showCollection={collectionName(task)} />;
+      const note = activeTab === 'note' ? noteTasks.find((item: any) => sameTaskReference(item.task, task)) : null;
+      const device = activeTab === 'device' ? deviceEntries.find((item: any) => sameTaskReference(item, task)) : null;
+      const pageNum = note?.pageNum ?? device?.pageNum;
+      const path = activeTab === 'device' ? device?.notePath || device?.source?.filePath : noteCtx?.filePath;
+      return <TaskRow key={rowIdentity(task)} task={task} selected={selectedIds.includes(rowIdentity(task))}
+        checked={!!task.completed} completedAt={task.occurrenceCompletedAt || task.completed_at}
+        onCheckPress={task.completed ? handleReopen : sel.completeOne} disabled={sel.busy}
+        onSyncPress={() => setSyncSheetOpen(true)} onPress={handleTaskPress}
+        showProject={projectMap[task.project_id]} showCollection={collectionName(task)} pageNum={pageNum}
+        onOpenNote={path && pageNum !== undefined && (activeTab !== 'note' || pageNum !== noteCtx?.pageNum)
+          ? () => handleOpenNote(path, pageNum, task.id) : undefined} />;
+    };
+    return <View style={{flex: 1}}>
+      {activeTab === 'note' && <View style={styles.thisPageHeader}>
+        <Text style={[styles.thisPageTitle, {fontSize: Math.round(13 * scale)}]}>This Note</Text>
+        <Chip label={String(noteTasks.length)} />
+        {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
+      </View>}
+      <WorkspaceBoard groups={groups} renderTask={renderTask} taskKey={rowIdentity}
+        extraData={{selectedIds, selectionMode, showDone, sortBy: viewPreferences.sortBy}} />
+    </View>;
+  };
   const excludedKeepProjects = new Set([actionSheet?.id, ...(containerProof?.projects || [])].filter(id => id != null).map(String));
   let excludedChanged = true;
   while (excludedChanged) {
@@ -1100,6 +1252,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     } finally {submission.saving = false;}
   };
   const canOrder = (task: any, direction: string) => {
+    if (viewPreferences.sortBy !== 'manual') return false;
     if (!resolvedTab.startsWith('project:') && activeTab !== 'inbox' && activeTab !== 'projects') return false;
     const siblings = tasks.filter(value => String(value.project_id) === String(task.project_id) &&
       String(value.section_id || '') === String(task.section_id || '') && String(value.parent_id || '') === String(task.parent_id || ''));
@@ -1121,6 +1274,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }};
   const changeView = (view: string) => {
     const next = normalizeTaskView(view);
+    setViewOptionsOpen(false);
     sel.clearSelection(); setActiveTab(next); setSessionTab(next);
     setExpandedId(null); setHistoryLimit(20);
     setComposer(previous => previous.value.trim() ? previous : {...previous, explicit: false});
@@ -1150,10 +1304,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     finally {setSyncRetrying(false);}
   };
   const renderCompletedSection = () => <View accessibilityLabel="Completed section">
-    <Pressable accessibilityRole="button" accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}}
-      onPress={() => {setExpandedId(null); setShowDone(value => !value);}}>
-      <SectionHeader title={`${showDone ? '⌄' : '›'} Completed`} count={completedItems.length} />
-    </Pressable>
+    <SectionHeader title="Completed" count={completedItems.length} expanded={showDone}
+      onToggle={() => {setExpandedId(null); setShowDone(value => !value);}} />
     {showDone && completedItems.slice(0, historyLimit).map(task => <TaskRow key={rowIdentity(task)} task={task} checked
       completedAt={task.occurrenceCompletedAt || task.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress}
       onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[task.project_id]} showCollection={collectionName(task)} />)}
@@ -1190,7 +1342,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     <WorkspaceContext.Provider value={workspace}>
     <View style={styles.container}>
       {/* Keep the header height stable when the undo action replaces its controls. */}
-      <View style={[styles.header, {minHeight: Math.round(22 * scale * 1.3) + 32}]}>
+      <View style={[styles.header, {height: Math.max(76, Math.round(22 * scale * 1.3) + 32)}]}>
         {selectionMode ? <WorkspaceSelectionBar count={selectedIds.length}
           allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
           onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
@@ -1229,21 +1381,25 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           onCreateProject={() => openContainerAction('project')} />
         <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
           <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
-          {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
+            <View style={styles.viewControls}>
+              <Pressable style={({pressed}) => [styles.headerButton, styles.compactButton, pressed && styles.pressed]} accessibilityLabel="Workspace view options" accessibilityState={{expanded: viewOptionsOpen}} onPress={() => setViewOptionsOpen(value => !value)}><Text style={styles.headerButtonText}>View</Text></Pressable>
+              <Pressable style={({pressed}) => [styles.headerButton, styles.compactButton, pressed && styles.pressed]} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable>
+            </View></View>
+          {activeTab !== 'done' && <View pointerEvents={selectionMode ? 'none' : 'auto'} style={[styles.composerSlot, selectionMode && styles.composerHidden]}><InlineTaskComposer value={composer.value}
             onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
               source: previous.value ? previous.source : activeTab === 'note' && noteCtx ? {filePath: noteCtx.filePath, pageNum: noteCtx.pageNum} : null}))} dueDate={composerLocation.dueDate}
             destinationLabel={destinationLabel} onSubmit={saveComposer}
             onChooseDate={() => {setActionDate(composerLocation.dueDate); setActionSheet({kind: 'composer-date'});}}
-            onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
+            onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} /></View>}
           {renderContent()}
+          {viewOptionsOpen && <WorkspaceViewOptions value={viewPreferences} onClose={() => setViewOptionsOpen(false)} onChange={patch => updateViewPreferences(patch)} />}
 
         </View>
       </View>
 
       <View style={[styles.footer, {height: Math.max(30, Math.round(13 * scale) + 12)}]}>
-        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {syncMessage || 'Sync details'}</Text>
+        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${preferenceSaveError || syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {preferenceSaveError || syncMessage || 'Sync details'}</Text>
         </Pressable>
         <View style={styles.footerRight}>
           <Pressable style={styles.footerRefresh} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
@@ -1300,12 +1456,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             }} />}
             {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
               <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
+                commitOnSelect
+                onCreateCollection={(projectId, name) => workspaceService.createOfflineCollection(projectId, name)}
+                onCommitSelection={(projectId, sectionId) => {
+                  if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, projectId, sectionId, explicit: true}));
+                  else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: projectId, section_id: sectionId}});
+                  setActionSheet(null);
+                }}
                 onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
-              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionLocation.projectId} onPress={() => {
-                if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, ...actionLocation, explicit: true}));
-                else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: actionLocation.projectId, section_id: actionLocation.sectionId}});
-                setActionSheet(null);
-              }}><Text style={styles.headerButtonText}>Use this location</Text></Pressable>
             </>}
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
             {actionSheet?.kind === 'more' && <View style={styles.actionRow}>
@@ -1460,6 +1618,10 @@ const styles = StyleSheet.create({
   pressed: {backgroundColor: '#eeeeee'},
   workspace: {flex: 1, flexDirection: 'row'},
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
+  viewControls: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  compactButton: {minWidth: 44, minHeight: 40, paddingHorizontal: 9, paddingVertical: 6},
+  composerSlot: {alignSelf: 'stretch'},
+  composerHidden: {opacity: 0},
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   newCollection: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, alignSelf: 'stretch', backgroundColor: '#fff'},

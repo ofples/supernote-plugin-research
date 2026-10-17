@@ -16,9 +16,12 @@ type Props = {
   onSectionChange?: (sectionId: string | null) => void;
   onCreateCollection?: (projectId: string, name: string) => Promise<any>;
   requireExplicit?: boolean;
+  /** Commit a chosen destination immediately; existing callers remain staged. */
+  commitOnSelect?: boolean;
+  onCommitSelection?: (projectId: string, sectionId: string | null) => void;
 };
 
-export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection, requireExplicit = false}: Props) {
+export default function ProjectPicker({projects, selectedId, onChange, sections = [], selectedSectionId = null, onSectionChange, onCreateCollection, requireExplicit = false, commitOnSelect = false, onCommitSelection}: Props) {
   const scale = useFontScale();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -60,6 +63,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
       if (mounted.current) {
         onChange(selectedProject.id);
         onSectionChange?.(section.id);
+        if (commitOnSelect) onCommitSelection?.(selectedProject.id, section.id);
         setCreating(false);
         setName('');
       }
@@ -83,20 +87,20 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
             accessibilityLabel={`Choose project ${p.name}`}
             accessibilityState={{selected}}
             style={[styles.choice, selected && styles.choiceSelected]}
-            disabled={saving} onPress={() => onChange(p.id)}>
+            disabled={saving} onPress={() => {onChange(p.id); if (commitOnSelect && !projectSections(sections, p.id).length) onCommitSelection?.(p.id, null);}}>
             <Text style={[styles.text, {fontSize: Math.round(14 * scale)}, selected && styles.textSelected]}>{p.name}</Text>
           </Pressable>;
         })}
       </View>
 
       {!!selectedProject && !!onSectionChange && <View style={styles.collections}>
-        {collections.length > 0 && <View style={styles.row} accessibilityLabel="Collections">
+        {(collections.length > 0 || commitOnSelect) && <View style={styles.row} accessibilityLabel="Collections">
           {[{id: null, name: 'No collection'}, ...collections].map((section: any) => {
             const selected = selectedSectionId === section.id || (!!selectedSectionId && selectedSectionId === section.localId);
             return <Pressable key={section.id || 'none'} accessibilityRole="button"
               accessibilityLabel={`Choose collection ${section.name}`} accessibilityState={{selected}}
               style={[styles.choice, selected && styles.choiceSelected]}
-              onPress={() => {onChange(selectedProject.id); onSectionChange(section.id);}}>
+              onPress={() => {onChange(selectedProject.id); onSectionChange(section.id); if (commitOnSelect) onCommitSelection?.(selectedProject.id, section.id);}}>
               <Text style={[styles.text, {fontSize: Math.round(14 * scale)}, selected && styles.textSelected]}>{section.name}</Text>
             </Pressable>;
           })}

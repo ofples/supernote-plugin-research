@@ -1,5 +1,23 @@
 # Native interactions beta verification
 
+## Beta.22 validation status — local checks and limited install verified
+
+Runtime source `e851e34744739c0463bb75328b71c807ce11fe89` is from `feature/capture-review-polish`; testing integration and ancestry are managed through `syncTestingBranch.ps1`. Package **0.4.0-beta.22/code 27**, `build/outputs/SuperTask.snplg`, is **7,606,256 bytes**, SHA-256 `34ccedf5b05679b882b8e01af2db67de1fad53f0a88b97c03fcc5206bbf40723`. Verifier-only maintenance commit `98710a9a5160fc45913f76435c94ed04715647b4` followed without changing runtime source. The offline suite passed 316/316, TypeScript/ESLint reported zero errors, native build/package verification passed (including identity, config, icon, JS, native classes and ARM64), and pinned Hermes compile exited 0 (5,008,281-byte HBC, magic `c61fbc03`; warnings present, no errors).
+
+Luna installed the inspected package through Supernote Settings > Apps > Plugins. Plugin Manager showed v0.4.0-beta.22 enabled ON; the exact beta.21 installer and temporary beta.22 installer were removed, leaving canonical `/storage/emulated/0/MyStyle/Plugins/SuperTask.snplg`. SuperTask Settings opened and General loaded. Tasks Today/Done switching worked; stationary multiselect preserved checkbox bounds and Cancel cleared it. AI-by-default remained unchecked. The **Workspace view options** control at `[1190,166][1288,241]` opened List/Board; Board was selected and rendered, then List was restored and the panel closed. No task/note changed. This verifies the beta.22 TaskHome runtime, but not board scope/columns, sort/group behavior, expanded-description geometry or preference persistence. Beta.21 hardware observations below remain historical.
+
+The pending runtime review includes:
+
+- Batch actions modal size, transparent undimmed background, no animation, stable Save/Saving/Retry control geometry, and task rows remaining in the primary viewport.
+- Device OCR as baseline/fallback; explicit AI refinement consent, AI-by-default behavior only when enabled, model selection, cancellation/timeout, and image/text disclosure.
+- OCR Lines/Paragraphs grouping before edits, bullet boundaries, wrapped-line joining, and manual newline split; title-description spaced-dash handling.
+- Supported shorthand, retained unknown/conflicting directives, multiword project/collection matches, and unchanged row overrides.
+- Account/view-scoped List/Board, grouping, sort and Completed expansion preferences across relaunch and account changes.
+- Inline composer and active-task destination selection applying a project, collection, or No collection immediately (single task and multiselect); settings and other staged ProjectPicker flows should retain their existing behavior.
+- Optional two-finger bottom-edge gesture cooldown/rejection behavior and optional launcher permission, position, rotation, hide, and coexistence behavior. Both need device evidence; the launcher remains off by default.
+
+Pending: Board scope/columns; sort/group and Completed column; immediate composer/task/multiselect move destinations; expanded descriptions/selection geometry and workspace stability; preference persistence across relaunch/account switch; Batch panel behavior and grouping/splitting; handwriting OCR/AI capture fallback and cancellation; source-note return; physical gesture cooldown/rejection and optional launcher behavior. Update only from observed checks. No real task/note edits are needed for layout checks.
+
 This record distinguishes automated checks, scratch server evidence and device checks. Specification: `NATIVE_INTERACTIONS.md`; activated goal: `NATIVE_INTERACTIONS_GOAL.md`. Beta.14 is installed/enabled and startup/layout/separators inspected; see TESTING.md for the exact artifact hash. Beta.12/initial beta.13 local-delivery records below are historical.
 
 ## Reconnected-device smoke check

@@ -65,6 +65,8 @@ After creating a task, you have two options for marking the original handwriting
 
 Either way, the content on your note page is linked to the task in Todoist, and vice versa.
 
+For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.22 is built and installed; device checks verified Today/Done switching, the List/Board control and Board rendering, stationary multiselect, and the AI-by-default setting. Sorting/grouping details, handwriting capture, optional gestures/launcher and other workflows listed in [TESTING.md](TESTING.md) remain pending.
+
 ### Quick capture with finger gesture
 
 If enabled in settings (Preferences > Handwriting), you can hold your finger on the page for 400ms then drag to draw a selection area. This opens the quick-add overlay directly, skipping the lasso tool step.

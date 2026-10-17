@@ -35,7 +35,7 @@ async function fixture(initial = {}) {
     saveConfig: async value => Object.assign(config, value), getCachedConfig: () => config};
   const debug = {log: (...args) => calls.logs.push(args), logError: (...args) => calls.logs.push(args),
     getEntries: () => [], setListener() {}, exportLog: async () => 'Done', setDebugMode() {}};
-  const native = {View: 'View', Text: 'Text', ScrollView: 'ScrollView', TextInput: 'Input', Pressable: 'Pressable', StyleSheet: {create: value => value}};
+  const native = {View: 'View', Text: 'Text', ScrollView: 'ScrollView', TextInput: 'Input', Pressable: 'Pressable', Modal: 'Modal', StyleSheet: {create: value => value}};
   const sdk = {PluginManager: {registerConfigButtonListener: () => ({remove() {}}),
     registerButtonListener: () => ({remove() {}}), registerPluginLifeListener: () => ({remove() {}})}, PluginNoteAPI: {}, PluginCommAPI: {}};
   const api = {setConfigLoader() {}, getTask: async () => ({id: 'r', content: 'PRIVATE_DEEP_LINK_TITLE'}), getProjects: async () => projects,
@@ -162,7 +162,7 @@ test('unsaved batch titles and exclusions survive Settings push/pop with the rea
     const inputs = f.tree.root.findAllByType('Input'); assert.equal(inputs.length, 2);
     await act(async () => {inputs[0].props.onChangeText('Edited unsaved title'); await flush();});
     const form = f.tree.root.findByType(f.Batch);
-    await f.tap('Select none'); await f.tap('AI settings'); assertHidden(form);
+    await f.tap('Batch actions'); await f.tap('Select none'); await f.tap('AI settings'); assertHidden(form);
     assert.equal(f.tree.root.findAllByType('Settings').length, 1);
     await f.tap('Settings Back');
     assert.equal(f.tree.root.findAllByType('Input')[0].props.value, 'Edited unsaved title');
@@ -209,7 +209,7 @@ test('App deep-link and navigation logs contain no task title or serialized task
 test('Settings key save refreshes retained batch hint on Back without replacing its unsaved draft', async () => {
   const f = await fixture({config: {aiApiKey: '', aiSetupHintDismissed: false}});
   try {
-    await f.tap('Start batch'); assert.ok(byLabel(f.tree, 'Set up AI'));
+    await f.tap('Start batch'); await f.tap('Batch actions'); assert.ok(byLabel(f.tree, 'Set up AI'));
     await act(async () => {f.tree.root.findAllByType('Input')[0].props.onChangeText('Keep this edited draft'); await flush();});
     await f.tap('Select none'); await f.tap('Set up AI');
     assert.equal(f.tree.root.findByType(f.Batch).props.active, false);
@@ -225,7 +225,7 @@ test('a deactivated batch cannot publish a stale config read after a newer Setti
   const f = await fixture();
   try {
     const finishOldRead = f.stallNextConfigRead();
-    await f.tap('Start batch'); await f.tap('AI settings');
+    await f.tap('Start batch'); await f.tap('Batch actions'); await f.tap('AI settings');
     await f.tap('Save AI key'); await f.tap('Settings Back');
     assert.equal(byLabel(f.tree, 'Set up AI'), undefined);
     await act(async () => {finishOldRead({postCreateAction: 'auto-back', aiApiKey: '', aiSetupHintDismissed: false}); await flush();});

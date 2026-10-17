@@ -150,7 +150,8 @@ test('AI refinement keeps manual text and excluded rows, omits the crop for excl
   let receivedImage = 'not-called'; let receivedRowIds;
   const proposal = {content: 'AI title', description: 'AI description', projectId: 'house', sectionId: null, dueString: '', priority: 4,
     labels: [], selected: true, sourceRowIds: ['A'], explicitFields: []};
-  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView',
+    Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null, StyleSheet: {create: value => value}};
   const BatchAdd = load('../src/screens/BatchAdd.tsx', {
     'react-native': rn,
     '../utils/useFontScale': {useFontScale: () => 1},
@@ -177,6 +178,7 @@ test('AI refinement keeps manual text and excluded rows, omits the crop for excl
     button.props.onPress();
     await Promise.resolve();
   });
+  await click('Batch actions');
   await click('Refine with AI');
   assert.deepEqual(receivedRowIds, ['A']);
   assert.equal(receivedImage, undefined);
@@ -286,7 +288,8 @@ test('BatchAdd merge keeps an edited description together with the next transcri
 test('BatchAdd scales text and inputs while keeping batch controls reachable outside the row scroller', async () => {
   for (const scale of [1.5, 2]) {
     let styles;
-    const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => (styles = value)}};
+    const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView',
+      Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null, StyleSheet: {create: value => (styles = value)}};
     const BatchAdd = load('../src/screens/BatchAdd.tsx', {
       'react-native': rn, '../utils/useFontScale': {useFontScale: () => scale},
       'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
@@ -301,12 +304,15 @@ test('BatchAdd scales text and inputs while keeping batch controls reachable out
     const texts = tree.root.findAllByType('Text');
     assert.equal(texts.find(node => node.props.children === 'Review tasks').props.style[1].fontSize, 24 * scale);
     assert.equal(tree.root.findAllByType('Input')[0].props.style[1].fontSize, 18 * scale);
-    assert.equal(texts.find(node => node.props.children === 'Today').props.style[1].fontSize, 16 * scale);
+    assert.ok(texts.some(node => node.props.children === 'Batch actions'));
+    const open = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityLabel === 'Batch actions');
+    await act(async () => open.props.onPress());
     const dateButton = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Tomorrow'));
     assert.ok(dateButton);
+    assert.equal(tree.root.findAllByType('Text').find(node => node.props.children === 'Today').props.style[1].fontSize, 16 * scale);
     let parent = dateButton.parent;
-    while (parent && parent.type !== 'ScrollView') parent = parent.parent;
-    assert.equal(parent, null, 'batch date shortcuts stay reachable outside the row scroller');
+    while (parent && parent.type !== 'Modal') parent = parent.parent;
+    assert.ok(parent, 'batch date shortcuts stay reachable in the compact actions modal');
     assert.equal(styles.actions.flexWrap, 'wrap');
     assert.equal(styles.header.flexWrap, 'wrap');
     await act(async () => tree.unmount());
@@ -318,7 +324,7 @@ test('BatchAdd reopens a known pre-commit failure for correction but retries unc
   let failure = Object.assign(new Error('Invalid destination'), {uncertainCommit: false});
   const requests = [];
   const BatchAdd = load('../src/screens/BatchAdd.tsx', {
-    'react-native': rn, '../utils/useFontScale': {useFontScale: () => 1},
+    'react-native': {...rn, Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null}, '../utils/useFontScale': {useFontScale: () => 1},
     'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
     '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
     '../offline/service': {saveOfflineBatch: async (_rows, _context, _time, request) => {requests.push(request); throw failure;}},
@@ -334,14 +340,75 @@ test('BatchAdd reopens a known pre-commit failure for correction but retries unc
     assert.ok(button, `expected button ${label}`); button.props.onPress(); await Promise.resolve();
   });
   await click('Save 1 task');
-  assert.ok(tree.root.findAllByType('Pressable').some(node => node.findAllByType('Text').some(text => text.props.children === 'Save 1 task')));
+  assert.ok(tree.root.findAllByType('Pressable').some(node => node.findAllByType('Text').some(text => text.props.children === 'Try again')));
   assert.equal(tree.root.findByType('Input').props.editable, true);
   assert.match(tree.root.findAllByType('Text').map(node => String(node.props.children)).join(' '), /No tasks were saved/);
   failure = Object.assign(new Error('Storage could not be verified'), {uncertainCommit: true});
-  await click('Save 1 task');
+  await click('Try again');
   const firstRequest = requests.at(-1);
   assert.ok(tree.root.findAllByType('Pressable').some(node => node.findAllByType('Text').some(text => text.props.children === 'Retry same batch')));
   await click('Retry same batch');
   assert.equal(requests.at(-1), firstRequest, 'uncertain retries retain the exact request identity');
+  await act(async () => tree.unmount());
+});
+
+test('BatchAdd exposes retry only after a failed save, and clears it during a successful retry', async () => {
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  let finishSave;
+  let shouldFail = true;
+  const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+    'react-native': {...rn, Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null},
+    '../utils/useFontScale': {useFontScale: () => 1},
+    'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
+    '../offline/service': {saveOfflineBatch: () => new Promise((resolve, reject) => {finishSave = () => shouldFail ? reject(new Error('Offline write failed')) : resolve([]);})},
+    '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+    '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+  }).default;
+  let tree;
+  await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [], initialContent: 'Task'}));});
+  const press = label => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
+  await act(async () => {press('Save 1 task').props.onPress();});
+  assert.equal(press('Retry same batch'), undefined, 'retry must not flash while the initial save is pending');
+  await act(async () => {finishSave(); await Promise.resolve();});
+  assert.ok(press('Try again'), 'failed save offers a fresh attempt');
+  shouldFail = false;
+  await act(async () => {press('Try again').props.onPress();});
+  assert.equal(press('Retry same batch'), undefined, 'retry disappears while the next save is pending');
+  await act(async () => {finishSave(); await Promise.resolve();});
+  assert.equal(press('Retry same batch'), undefined, 'successful save does not show retry');
+  await act(async () => tree.unmount());
+});
+
+test('Batch actions modal applies defaults without replacing a manual row date override', async () => {
+  const rn = {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}};
+  const BatchAdd = load('../src/screens/BatchAdd.tsx', {
+    'react-native': {...rn, Modal: props => props.visible ? React.createElement('Modal', props, props.children) : null},
+    '../utils/useFontScale': {useFontScale: () => 1},
+    'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/closePlugin': {closePlugin() {}}, '../utils/config': {loadConfig: async () => ({postCreateAction: 'prompt'})},
+    '../offline/service': {saveOfflineBatch: async () => []},
+    '../batch/refine': {refineBatch: async () => [], refinementError: () => 'AI error'},
+    '../collections/useLocations': {useLocations: projects => ({projects, sections: []})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null}, '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null}, '../offline/model': {localDate: () => '2026-10-04'},
+  }).default;
+  const initialRows = [
+    {rowId: 'manual', content: 'Manual date', selected: true, projectId: null, sectionId: null, dueString: '2026-10-08', priority: 1, labels: [], overrides: {dueString: true}},
+    {rowId: 'default', content: 'Batch date', selected: true, projectId: null, sectionId: null, dueString: '', priority: 1, labels: [], overrides: {}},
+  ];
+  let tree;
+  await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [], initialRows}));});
+  const press = label => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
+  await act(async () => press('Batch actions').props.onPress());
+  const modal = tree.root.findByType('Modal');
+  assert.equal(modal.props.transparent, true);
+  assert.equal(modal.props.animationType, 'none');
+  await act(async () => press('Today').props.onPress());
+  const metadata = tree.root.findAllByType('Text').map(node => String(node.props.children));
+  assert.ok(metadata.some(value => value.includes('2026-10-08')), `manual date stays on its row: ${metadata.join(' | ')}`);
+  assert.ok(metadata.some(value => value.includes('2026-10-04')), `batch date applies to the default row: ${metadata.join(' | ')}`);
   await act(async () => tree.unmount());
 });

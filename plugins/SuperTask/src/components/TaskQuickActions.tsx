@@ -61,12 +61,13 @@ function ActionIcon({name}: {name: TaskQuickAction | 'close'}) {
   }
   if (name === 'move') {
     return <View style={styles.iconBox}>
-      <View style={styles.diagonal} /><View style={styles.moveArrowTop} /><View style={styles.moveArrowRight} />
+      <View style={styles.folderTab} /><View style={styles.folder} /><View style={styles.folderArrow} />
+      <View style={styles.folderArrowHeadTop} /><View style={styles.folderArrowHeadBottom} />
     </View>;
   }
   if (name === 'priority') {
     return <View style={styles.iconBox}>
-      <View style={styles.priorityStem} /><View style={styles.priorityDot} />
+      <View style={styles.flagPole} /><View style={styles.flagTop} /><View style={styles.flagMiddle} /><View style={styles.flagBottom} />
     </View>;
   }
   if (name === 'up' || name === 'down') {
@@ -87,9 +88,9 @@ function ActionIcon({name}: {name: TaskQuickAction | 'close'}) {
 }
 
 const styles = StyleSheet.create({
-  container: {backgroundColor: '#ffffff', flexGrow: 0, flexShrink: 1, alignSelf: 'flex-end', borderWidth: 1, borderColor: '#000000'},
-  actions: {flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff'},
-  action: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', borderLeftWidth: 1, borderColor: '#000000'},
+  container: {backgroundColor: 'transparent', flexGrow: 0, flexShrink: 1, alignSelf: 'flex-end'},
+  actions: {flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent'},
+  action: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', borderLeftWidth: 1, borderColor: '#000000'},
   firstAction: {borderLeftWidth: 0},
   dismissAction: {width: 44},
   iconBox: {width: 22, height: 22, alignItems: 'center', justifyContent: 'center'},
@@ -101,11 +102,15 @@ const styles = StyleSheet.create({
   pencil: {position: 'absolute', width: 16, height: 4, backgroundColor: '#000000', transform: [{rotate: '-45deg'}]},
   pencilTip: {position: 'absolute', width: 0, height: 0, right: 2, top: 2, borderTopWidth: 3, borderBottomWidth: 3, borderLeftWidth: 4, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: '#000000'},
   editRule: {position: 'absolute', width: 7, height: 1.5, backgroundColor: '#000000', left: 2, bottom: 2},
-  diagonal: {position: 'absolute', width: 15, height: 1.5, backgroundColor: '#000000', transform: [{rotate: '-45deg'}]},
-  moveArrowTop: {position: 'absolute', width: 7, height: 1.5, backgroundColor: '#000000', right: 1, top: 4, transform: [{rotate: '-45deg'}]},
-  moveArrowRight: {position: 'absolute', width: 7, height: 1.5, backgroundColor: '#000000', right: 1, top: 4, transform: [{rotate: '45deg'}]},
-  priorityStem: {width: 2, height: 12, backgroundColor: '#000000', marginBottom: 3},
-  priorityDot: {position: 'absolute', width: 3, height: 3, borderRadius: 2, backgroundColor: '#000000', bottom: 1},
+  folderTab: {position: 'absolute', left: 2, top: 4, width: 8, height: 3, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderRightWidth: 1.5, borderColor: '#000000'},
+  folder: {position: 'absolute', left: 2, top: 7, width: 17, height: 11, borderWidth: 1.5, borderColor: '#000000'},
+  folderArrow: {position: 'absolute', left: 5, top: 12, width: 11, height: 1.5, backgroundColor: '#000000'},
+  folderArrowHeadTop: {position: 'absolute', right: 5, top: 9, width: 6, height: 1.5, backgroundColor: '#000000', transform: [{rotate: '45deg'}]},
+  folderArrowHeadBottom: {position: 'absolute', right: 5, top: 13, width: 6, height: 1.5, backgroundColor: '#000000', transform: [{rotate: '-45deg'}]},
+  flagPole: {position: 'absolute', left: 5, top: 2, width: 1.5, height: 19, backgroundColor: '#000000'},
+  flagTop: {position: 'absolute', left: 7, top: 3, width: 11, height: 5, borderTopWidth: 1.5, borderRightWidth: 1.5, borderColor: '#000000', transform: [{skewY: '-12deg'}]},
+  flagMiddle: {position: 'absolute', left: 7, top: 8, width: 10, height: 1.5, backgroundColor: '#000000'},
+  flagBottom: {position: 'absolute', left: 7, top: 9, width: 8, height: 5, borderBottomWidth: 1.5, borderRightWidth: 1.5, borderColor: '#000000', transform: [{skewY: '12deg'}]},
   arrowStem: {width: 1.5, height: 14, backgroundColor: '#000000', marginTop: 6},
   arrowStemDown: {marginTop: 0, marginBottom: 6},
   arrowLeft: {position: 'absolute', width: 8, height: 1.5, backgroundColor: '#000000', top: 4, left: 4, transform: [{rotate: '-45deg'}]},

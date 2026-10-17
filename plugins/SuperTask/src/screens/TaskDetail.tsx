@@ -155,15 +155,19 @@ export default function TaskDetail({nav, task, projects: initialProjects}: Props
         fullDescription = fullDescription ? fullDescription + noteRef : noteRef.trim();
       }
 
-      const updated = await updateTask(task.id, {
+      const changes: Record<string, any> = {
         content: content.trim(),
         description: fullDescription,
         priority,
         labels: labels.split(',').map((label: string) => label.trim()).filter(Boolean),
-        dueString: dueString.trim(),
         projectId: projectId || null,
         sectionId,
-      });
+      };
+      // Keep the original due object intact when an unrelated field changes.
+      // A recurring or timed remote due may not fit the editable one-shot string.
+      const originalDueString = task.due?.string || task.due?.date || '';
+      if (dueString.trim() !== originalDueString.trim()) changes.dueString = dueString.trim();
+      const updated = await updateTask(task.id, changes);
       log('TaskDetail', `Updated task ${task.id}`);
       // Update the task reference so isDirty resets
       if (updated) Object.assign(task, updated);
