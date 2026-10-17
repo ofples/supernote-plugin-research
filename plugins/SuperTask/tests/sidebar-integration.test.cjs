@@ -139,8 +139,8 @@ test('sidebar collapse persists across opens and its toggle keeps its header slo
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   const sidebar = () => tree.root.findByType('Sidebar').parent;
   assert.equal(sidebar().props.style.display, 'none');
-  const header = () => tree.root.findAllByType('View').find(node => node.props.style?.some?.(style => style?.paddingRight === 60));
-  const originalHeaderHeight = header().props.style[1].height;
+  const header = reserve => tree.root.findAllByType('View').find(node => node.props.style?.some?.(style => style?.paddingRight === reserve));
+  const originalHeaderHeight = header(44).props.style[1].height;
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Show sidebar'}).props.onPress());
   await act(async () => model.flushSaves());
   assert.equal(model.config.sidebarCollapsed, false);
@@ -148,7 +148,7 @@ test('sidebar collapse persists across opens and its toggle keeps its header slo
   await act(async () => tree.root.findAllByType('TaskRow')[0].props.onLongPress());
   const toggle = tree.root.findByProps({accessibilityLabel: 'Hide sidebar'});
   assert.equal(toggle.props.accessibilityState.expanded, true);
-  assert.equal(header().props.style[1].height, originalHeaderHeight);
+  assert.equal(header(60).props.style[1].height, originalHeaderHeight);
   await act(async () => tree.unmount());
 
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
@@ -627,18 +627,20 @@ test('selection mode keeps the header height and mounted composer slot unchanged
   await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
   const headerStyle = () => tree.toJSON().children[0].props.style;
   const composerSlot = () => tree.root.findByType('Composer').parent;
-  const beforeHeader = JSON.stringify(headerStyle());
+  const beforeHeight = headerStyle()[1].height;
   const beforeComposerLayout = JSON.stringify(composerSlot().props.style[0]);
   assert.equal(tree.root.findAllByType('Composer').length, 1);
   const row = tree.root.findAllByType('TaskRow').find(value => value.props.task.id === 'one');
   await act(async () => row.props.onLongPress());
-  assert.equal(JSON.stringify(headerStyle()), beforeHeader);
+  assert.equal(headerStyle()[1].height, beforeHeight);
+  assert.equal(headerStyle()[1].paddingRight, 60);
   assert.equal(JSON.stringify(composerSlot().props.style[0]), beforeComposerLayout);
   assert.equal(composerSlot().props.style[1].opacity, 0);
   assert.equal(composerSlot().props.pointerEvents, 'none');
   assert.equal(tree.root.findAllByType('Composer').length, 1, 'selection must hide the mounted composer instead of removing its slot');
   await act(async () => tree.root.findByType('Selection').props.onCancel());
-  assert.equal(JSON.stringify(headerStyle()), beforeHeader);
+  assert.equal(headerStyle()[1].height, beforeHeight);
+  assert.equal(headerStyle()[1].paddingRight, 44);
   assert.equal(JSON.stringify(composerSlot().props.style[0]), beforeComposerLayout);
   assert.equal(composerSlot().props.pointerEvents, 'auto');
   await act(async () => tree.unmount());

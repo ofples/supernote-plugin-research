@@ -27,7 +27,8 @@ with zipfile.ZipFile(artifact) as plugin:
     bundle = plugin.read('SuperTask.bundle')
     assert len(bundle) > 1_000_000
     assert b'config.local' not in bundle
-    for marker in [b'Review tasks', b'Refine with AI', b'Saved ', b'getLassoElements', b'json_schema']:
+    for marker in [b'Review tasks', b'Batch actions', b'Task destination:', b'Change destination',
+                   b'Refine with AI', b'Saved ', b'getLassoElements', b'json_schema']:
         assert marker in bundle, f'Missing JS implementation: {marker}'
     if (root / 'src/overview/model.js').exists():
         for marker in [b'Expand all', b'Collapse all', b'Comfortable']:

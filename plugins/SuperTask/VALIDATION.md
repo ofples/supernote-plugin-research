@@ -1,14 +1,16 @@
-# Beta.25 device validation — pending
+# Beta.26 device validation — pending
 
-The beta.25 package is locally built and verified, but has not been installed on the Nomad. Beta.24 remains the installed version. It demonstrated that the TaskHome footer moves above the keyboard and that the New project modal reflows; it also exposed a failure in the deep Config > Setup **New AI model ID** field, which stays clipped below the keyboard. Beta.25 changes focused-field reveal to use native content-relative coordinates to avoid stale JS scroll offsets. This fix is not device-confirmed. Do not mark the checks below complete from automated geometry tests alone.
+The beta.26 package `build/outputs/SuperTask-native-beta26.snplg` is built and package-verified locally. Beta.24 is the only installed version confirmed; beta.25 and beta.26 have not been installed. Beta.24 demonstrated that the TaskHome footer moves above the keyboard and that the New project modal reflows. In Config > Setup, the deep **New AI model ID** field and Add button remained clipped below the keyboard. This field has not been rechecked on beta.25 or beta.26. Automated checks and package inspection do not establish device behavior.
 
-1. Install `build/outputs/SuperTask-native-beta25.snplg` and verify Plugin Manager shows **0.4.0-beta.25**, code **30**, enabled ON. Record the installed file/version; the beta.24 result is historical.
+1. Install the exact beta.26 package and verify Plugin Manager shows **0.4.0-beta.26**, code **31**, enabled ON.
 2. In Settings > Setup, expand the model list and focus **New AI model ID**. Verify the field and Add button are fully visible above the keyboard. Do not type a model ID or tap Add/Save. Focus the token field only to verify visibility; do not read or change its contents.
-3. Focus fields deep in TaskAdd, QuickAdd, TaskDetail and BatchAdd, including multiline description fields. Check batch labels in Batch actions, the New collection name in ProjectPicker, and TaskHome project/collection rename/create/labels dialogs. Confirm the focused field stays visible as the keyboard opens and as content grows. Dismiss the keyboard and confirm the screen returns to its prior layout.
-4. Repeat representative checks after rotating the device. Inspect a modal whose panel starts below the top edge to verify only its own covered viewport is reduced.
-5. Check the two-lane paged board, Previous/Next bounds and page reset, sidebar collapse/reopen persistence, right-aligned borderless header icons, and white per-task action buttons with the selection outline. Avoid task edits, completion, deletion, and note changes.
+3. Check TaskHome Settings/Close alignment against the host Home control and inspect View/ellipsis controls. Confirm selection mode keeps the header height and its existing clearance; inspect sidebar collapse/reopen and task quick actions with the white background and selection outline.
+4. Use the inline composer in portrait and large font with Inbox and a long project/collection name. Confirm the destination and date remain single-line and truncate, all controls stay reachable, and Add remains available.
+5. Open BatchAdd and confirm the header contains Review tasks, Batch actions and Cancel. Open Batch actions and check its controls; verify row editing, status/error messages and saved confirmation remain usable.
+6. Focus fields deep in TaskAdd, QuickAdd, TaskDetail and BatchAdd, including multiline descriptions. Check ProjectPicker's New collection name and TaskHome rename/create/labels dialogs. Confirm focused fields stay visible as the keyboard opens and as content grows, then dismiss the keyboard and confirm the screen returns to its prior layout.
+7. Repeat representative checks after rotation. Inspect a modal whose panel starts below the top edge, and check the two-lane board pager, Previous/Next bounds and page reset.
 
-Record each result separately. If the device is unavailable, leave these checks pending; beta.25 build and automated results do not prove hardware behavior.
+Record each result separately. Do not edit, complete or delete tasks, modify notes, or change token/model settings during layout checks. See [TESTING.md](TESTING.md) for local package and automated results.
 
 # Workflow validation — 3 October 2026
 

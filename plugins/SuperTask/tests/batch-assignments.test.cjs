@@ -303,10 +303,17 @@ test('BatchAdd scales text and inputs while keeping batch controls reachable out
     let tree;
     await act(async () => {tree = create(React.createElement(BatchAdd, {nav: {}, projects: [{id: 'house', name: 'House'}], initialContent: 'A review row'}));});
     const texts = tree.root.findAllByType('Text');
-    assert.equal(texts.find(node => node.props.children === 'Review tasks').props.style[1].fontSize, 24 * scale);
+    assert.equal(texts.find(node => node.props.children === 'Review tasks').props.style[2].fontSize, 24 * scale);
     assert.equal(tree.root.findAllByType('Input')[0].props.style[1].fontSize, 18 * scale);
     assert.ok(texts.some(node => node.props.children === 'Batch actions'));
+    assert.equal(texts.some(node => String(node.props.children).includes('Captured')), false);
+    assert.equal(texts.some(node => String(node.props.children).includes('selected.')), false);
+    assert.equal(texts.some(node => node.props.children === 'One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.'), false);
     const open = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityLabel === 'Batch actions');
+    const header = tree.root.findByProps({style: styles.header});
+    assert.equal(header.props.style.flexDirection, 'row');
+    assert.equal(header.props.style.flexWrap, undefined);
+    assert.deepEqual(header.findAllByType('Text').map(node => node.props.children), ['Review tasks', 'Batch actions', 'Cancel']);
     await act(async () => open.props.onPress());
     const dateButton = tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === 'Tomorrow'));
     assert.ok(dateButton);
@@ -315,7 +322,7 @@ test('BatchAdd scales text and inputs while keeping batch controls reachable out
     while (parent && parent.type !== 'Modal') parent = parent.parent;
     assert.ok(parent, 'batch date shortcuts stay reachable in the compact actions modal');
     assert.equal(styles.actions.flexWrap, 'wrap');
-    assert.equal(styles.header.flexWrap, 'wrap');
+    assert.equal(styles.header.flexWrap, undefined);
     await act(async () => tree.unmount());
   }
 });
