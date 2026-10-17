@@ -88,9 +88,9 @@ function ActionIcon({name}: {name: TaskQuickAction | 'close'}) {
 }
 
 const styles = StyleSheet.create({
-  container: {backgroundColor: 'transparent', flexGrow: 0, flexShrink: 1, alignSelf: 'flex-end'},
-  actions: {flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent'},
-  action: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', borderLeftWidth: 1, borderColor: '#000000'},
+  container: {backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#000000', flexGrow: 0, flexShrink: 1, alignSelf: 'flex-end'},
+  actions: {flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff'},
+  action: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', borderLeftWidth: 1, borderColor: '#000000'},
   firstAction: {borderLeftWidth: 0},
   dismissAction: {width: 44},
   iconBox: {width: 22, height: 22, alignItems: 'center', justifyContent: 'center'},

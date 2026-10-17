@@ -54,9 +54,12 @@ test('expansion reveals the user description, preserves editor action and draws 
   const overlay = tree.root.findAllByType('View').find(node => node.props.style?.zIndex === 2);
   assert.ok(overlay);
   assert.equal(overlay.props.style.top, 14, 'accessory stays aligned with title instead of expanded description');
+  assert.equal(overlay.props.style.right, 16, 'action strip is inset from the task border');
   assert.equal(overlay.props.style.bottom, undefined);
   assert.equal(overlay.props.style.justifyContent, undefined);
   assert.ok(outlineIndex > tree.root.findAllByType('View').indexOf(overlay));
+  assert.equal(outline.props.style.right, 0);
+  assert.equal(outline.props.style.zIndex, 3, 'selected outline stays above the action strip');
   assert.equal(overlay.props.style.backgroundColor, undefined);
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Edit task'}).props.onPress());
   assert.deepEqual(calls.at(-1), ['edit', 'remote:task-1']);

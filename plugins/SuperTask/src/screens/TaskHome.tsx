@@ -39,6 +39,7 @@ const {localDate} = require('../offline/model');
 const {splitTitleDescription} = require('../batch/descriptionParser');
 import {log, logError} from '../utils/debug';
 import TaskSidebar from '../components/NativeTaskSidebar';
+import {HeaderActionButtons, WorkspaceViewControls} from '../components/WorkspaceActionButtons';
 import TaskRow, {WorkspaceContext} from '../workspace/WorkspaceTaskRow';
 import InlineTaskComposer from '../components/InlineTaskComposer';
 import WorkspaceSelectionBar from '../components/WorkspaceSelectionBar';
@@ -1350,10 +1351,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
           onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} /> : <>
           <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
-          <View style={styles.headerButtons}>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
-          </View>
+          <HeaderActionButtons onSettings={() => nav.push('config')} onClose={closePlugin} />
         </>}
       </View>
 
@@ -1382,10 +1380,10 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
           onCreateProject={() => openContainerAction('project')} />
         <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
           <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
-            <View style={styles.viewControls}>
-              <Pressable style={({pressed}) => [styles.headerButton, styles.compactButton, pressed && styles.pressed]} accessibilityLabel="Workspace view options" accessibilityState={{expanded: viewOptionsOpen}} onPress={() => setViewOptionsOpen(value => !value)}><Text style={styles.headerButtonText}>View</Text></Pressable>
-              <Pressable style={({pressed}) => [styles.headerButton, styles.compactButton, pressed && styles.pressed]} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable>
-            </View></View>
+            <WorkspaceViewControls viewOptionsOpen={viewOptionsOpen}
+              onViewOptions={() => setViewOptionsOpen(value => !value)}
+              onListMenu={() => setActionSheet({kind: 'list-menu'})} />
+          </View>
           {activeTab !== 'done' && <View pointerEvents={selectionMode ? 'none' : 'auto'} style={[styles.composerSlot, selectionMode && styles.composerHidden]}><InlineTaskComposer value={composer.value}
             onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
               source: previous.value ? previous.source : activeTab === 'note' && noteCtx ? {filePath: noteCtx.filePath, pageNum: noteCtx.pageNum} : null}))} dueDate={composerLocation.dueDate}
@@ -1619,8 +1617,6 @@ const styles = StyleSheet.create({
   pressed: {backgroundColor: '#eeeeee'},
   workspace: {flex: 1, flexDirection: 'row'},
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
-  viewControls: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  compactButton: {minWidth: 44, minHeight: 40, paddingHorizontal: 9, paddingVertical: 6},
   composerSlot: {alignSelf: 'stretch'},
   composerHidden: {opacity: 0},
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
@@ -1655,10 +1651,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#000000',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
   },
   iconButton: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center'},
   emptyList: {padding: 24},
