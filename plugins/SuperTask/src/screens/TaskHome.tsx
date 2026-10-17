@@ -187,6 +187,21 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const scopedWorkspacePreferences = workspacePreferenceAccountKey === preferenceAccountKey ? workspacePreferences : {};
   const viewPreferences = normalizePreferences(scopedWorkspacePreferences[completedViewKey], completedViewKey);
   const showDone = viewPreferences.completedExpanded;
+  const persistWorkspacePreferencePatches = (accountKey: string, accountToken: string | undefined, patches: Record<string, any>) => saveConfig((latestConfig: any) => {
+    if (getCachedWorkspace()?.accountKey !== accountKey || getCachedConfig()?.apiToken !== accountToken) return null;
+    const store = latestConfig.workspacePreferences || {};
+    const accountPreferences = preferencesForAccount(store, accountKey);
+    const merged = mergePreferencePatches(accountPreferences, patches);
+    return {workspacePreferences: {...store, accounts: {...(store.accounts || {}), [accountKey]: merged}}};
+  }).then(saved => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) {
+      setPreferenceSaveError(saved ? '' : 'View preferences could not be saved.');
+    }
+    return saved;
+  }).catch(() => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) setPreferenceSaveError('View preferences could not be saved.');
+    return false;
+  });
   const updateViewPreferences = (patch: any, context = completedViewKey) => {
     const accountKey = getCachedWorkspace()?.accountKey;
     if (!accountKey) return;
@@ -202,10 +217,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }};
     setWorkspacePreferenceAccountKey(accountKey);
     setWorkspacePreferences(nextForAccount);
-    const current = getCachedConfig()?.workspacePreferences || {};
-    saveConfig({workspacePreferences: {...current, accounts: {...(current.accounts || {}), [accountKey]: nextForAccount}}})
-      .then(saved => {setPreferenceSaveError(saved ? '' : 'View preferences could not be saved.');})
-      .catch(() => setPreferenceSaveError('View preferences could not be saved.'));
+    persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, {[context]: patch});
   };
   const setShowDone = (update: (value: boolean) => boolean) => updateViewPreferences({completedExpanded: update(showDone)});
   const seedTasks = useMemo(() => {
@@ -235,10 +247,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       setWorkspacePreferenceAccountKey(accountKey);
       setWorkspacePreferences(resolved);
       if (revision !== preferenceRevision.current) {
-        const current = getCachedConfig()?.workspacePreferences || {};
-        saveConfig({workspacePreferences: {...current, accounts: {...(current.accounts || {}), [accountKey]: resolved}}})
-          .then(saved => {setPreferenceSaveError(saved ? '' : 'View preferences could not be saved.');})
-          .catch(() => setPreferenceSaveError('View preferences could not be saved.'));
+        persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, patches);
       }
     })).catch(() => {});
   }, [syncInfo?.accountKey]);
@@ -1027,11 +1036,16 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
   const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
   const selectableKey = selectableTasks.map((task: any) => rowIdentity(task)).join('|');
+  const recentDoneTasks = () => contextTasks.slice().sort((a: any, b: any) =>
+    (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || '')).slice(0, historyLimit);
+  const renderOlderHistoryControl = () => <Pressable style={styles.historyLink} accessibilityRole="button" accessibilityLabel="Load older completed tasks"
+    disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>;
   const renderWorkspaceList = () => {
     const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
-    const grouped = groupTasks(sortTasks(contextTasks, viewPreferences.sortBy), viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const displayed = groupTasks(sortTasks(displayedTasks, viewPreferences.sortBy), viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
       projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
-    const rows: any[] = grouped.flatMap((group: any) => [
+    const rows: any[] = displayed.flatMap((group: any) => [
       ...(viewPreferences.groupBy === 'none' ? [] : [{key: `header:${group.key}`, type: 'header', group}]),
       ...group.tasks.map((task: any) => ({key: rowIdentity(task), type: 'task', task})),
     ]);
@@ -1041,7 +1055,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
       </View> : null}
       ListEmptyComponent={<View style={styles.emptyList}><Text style={styles.emptyText}>{activeTab === 'note' ? 'No active tasks in this note' : 'No tasks in this view'}</Text></View>}
-      ListFooterComponent={activeTab === 'done' ? null : renderCompletedSection()} extraData={{selectedIds, selectionMode, sortBy: viewPreferences.sortBy}}
+      ListFooterComponent={activeTab === 'done' ? renderOlderHistoryControl() : renderCompletedSection()} extraData={{selectedIds, selectionMode, sortBy: viewPreferences.sortBy, historyLimit}}
       renderItem={({item}) => {
         if (item.type === 'header') return <SectionHeader title={item.group.title} count={item.group.tasks.length} />;
         const task = item.task;
@@ -1058,11 +1072,15 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       }} />;
   };
   const renderWorkspaceBoard = () => {
-    const sorted = sortTasks(contextTasks, viewPreferences.sortBy);
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const sorted = sortTasks(displayedTasks, viewPreferences.sortBy);
     const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
     const groups = groupTasks(sorted, viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
       projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
-    if (activeTab !== 'done') groups.push({key: 'workspace-completed', title: 'Completed', tasks: showDone ? completedItems.slice(0, historyLimit) : [],
+    if (activeTab === 'done') {
+      if (!groups.length) groups.push({key: 'done-empty', title: 'Completed', tasks: []});
+      groups[groups.length - 1] = {...groups[groups.length - 1], footer: renderOlderHistoryControl()};
+    } else groups.push({key: 'workspace-completed', title: 'Completed', tasks: showDone ? completedItems.slice(0, historyLimit) : [], emptyMessage: null,
       header: <SectionHeader title="Completed" count={completedItems.length} expanded={showDone}
         onToggle={() => {setExpandedId(null); setShowDone(value => !value);}} />,
       footer: showDone ? <>
@@ -1439,6 +1457,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
               <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
                 commitOnSelect={actionSheet.kind === 'composer-move'}
+                onCreateCollection={(projectId, name) => workspaceService.createOfflineCollection(projectId, name)}
                 onCommitSelection={(projectId, sectionId) => {setComposer(previous => ({...previous, ...composerLocation, projectId, sectionId, explicit: true})); setActionSheet(null);}}
                 onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
               {actionSheet.kind !== 'composer-move' && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionLocation.projectId} onPress={() => {

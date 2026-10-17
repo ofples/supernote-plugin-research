@@ -11,7 +11,8 @@ export default function WorkspaceTaskRow(props: any) {
   const task = workspace.project(props.task);
   if (task.deleted) return null;
   const checked = props.checked || task.completed;
-  const expanded = !workspace.selectionMode && workspace.expandedId === id;
+  const descriptionExpanded = workspace.expandedId === id;
+  const expanded = !workspace.selectionMode && descriptionExpanded;
   const creating = id.startsWith('ui:');
   const protectedHistory = workspace.protectedHistory(task);
   const excludedFromSelection = workspace.selectionMode && !workspace.canSelect(task);
@@ -20,7 +21,7 @@ export default function WorkspaceTaskRow(props: any) {
   return <View>
     <TaskRow {...props} task={task} checked={workspace.selectionMode ? false : checked} selected={workspace.selectionMode && selected}
       outlineSelected={expanded}
-      inlineDescription={expanded ? inlineDescription : undefined}
+      inlineDescription={descriptionExpanded ? inlineDescription : undefined}
       selectionMode={workspace.selectionMode} roundCheck={!workspace.selectionMode}
       disabled={creating || protectedHistory || excludedFromSelection}
       onSyncPress={creating ? () => workspace.retryCreate(id) : props.onSyncPress}

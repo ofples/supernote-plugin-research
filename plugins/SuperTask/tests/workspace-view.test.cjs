@@ -40,6 +40,19 @@ test('workspace sorting is presentation-only and undated tasks sort last', () =>
   assert.deepEqual(tasks.map(task => task.id), ['b', 'a', 'c', 'd']);
 });
 
+test('due-time sorting and date grouping normalize offset timestamps across local midnight', () => {
+  const tasks = [
+    {id: 'late', due: {datetime: '2026-10-17T23:30:00-02:00'}},
+    {id: 'early', due: {datetime: '2026-10-18T01:00:00+02:00'}},
+    {id: 'floating', due: {datetime: '2026-10-20T01:15:00'}},
+  ];
+  assert.deepEqual(prefs.sortTasks(tasks, 'due').map(task => task.id), ['early', 'late', 'floating']);
+  const localDay = require('../src/components/taskDueLabel').getDueDateTimeKey(tasks[0].due.datetime).slice(0, 10);
+  const grouped = prefs.groupTasks(tasks, 'date', {today: '2026-10-16'});
+  assert.equal(grouped.find(group => group.tasks.some(task => task.id === 'late')).title, localDay);
+  assert.deepEqual(tasks.map(task => task.id), ['late', 'early', 'floating']);
+});
+
 test('board grouping keeps no-collection and date buckets explicit', () => {
   const groups = prefs.groupTasks([
     {id: '1', section_id: 's', project_id: 'p', due: {date: '2026-10-19'}},
@@ -107,6 +120,59 @@ test('selection actions remain in a fixed-height horizontal scroll slot', () => 
   assert.match(board, /header: <SectionHeader title="Completed"/);
   assert.doesNotMatch(board, /renderCompletedSection\(\)/);
   assert.match(boardSource, /<FlatList horizontal/);
+});
+
+test('an expanded description keeps its rendered height through multiselect while quick actions hide', () => {
+  const native = {View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: {create: value => value}};
+  const loadTs = (relative, overrides = {}) => {
+    const filename = path.join(__dirname, relative);
+    const mod = new Module(filename, module); mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
+    const normal = mod.require.bind(mod); mod.require = name => Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+    mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true}}).outputText, filename);
+    return mod.exports;
+  };
+  const actualTaskRow = loadTs('../src/components/TaskRow.tsx', {'react-native': native,
+    '../utils/debug': {log() {}}, '../utils/useFontScale': {useFontScale: () => 1},
+    './settings': {Check: 'Check'}, './Chip': {__esModule: true, default: 'Chip'}}).default;
+  const workspaceTaskRow = loadTs('../src/workspace/WorkspaceTaskRow.tsx', {'react-native': native,
+    '../components/TaskRow': {__esModule: true, default: actualTaskRow},
+    '../components/TaskQuickActions': {__esModule: true, default: 'QuickActions'}});
+  const context = (selectionMode, selectedIds) => ({selectionMode, selectedIds, expandedId: 'task', identity: task => task.id,
+    project: task => task, protectedHistory: () => false, canSelect: () => true, toggle() {}, select() {}, expand() {},
+    complete() {}, retryCreate() {}, edit() {}, action() {}, canOrder: () => false, order() {}});
+  const task = {id: 'task', content: 'Task', description: 'The details stay visible.'};
+  let tree;
+  act(() => {tree = create(React.createElement(workspaceTaskRow.WorkspaceContext.Provider, {value: context(false, [])},
+    React.createElement(workspaceTaskRow.default, {task, onPress() {}, onCheckPress() {}})));});
+  const description = () => tree.root.findByProps({accessibilityLabel: 'Description: The details stay visible.'});
+  const originalStyle = description().props.style;
+  assert.equal(tree.root.findAllByType('QuickActions').length, 1);
+  act(() => tree.update(React.createElement(workspaceTaskRow.WorkspaceContext.Provider, {value: context(true, ['task'])},
+    React.createElement(workspaceTaskRow.default, {task, onPress() {}, onCheckPress() {}}))));
+  assert.deepEqual(description().props.style, originalStyle);
+  assert.equal(tree.root.findAllByType('QuickActions').length, 0);
+  act(() => tree.unmount());
+});
+
+test('collapsed Completed board column has no empty-task message', () => {
+  const native = {View: 'View', Text: 'Text', StyleSheet: {create: value => value}, FlatList: ({data = [], renderItem, ListEmptyComponent, ListFooterComponent, ...props}) =>
+    React.createElement('List', props, ...(data.length ? data.map((item, index) => React.createElement(React.Fragment, {key: index}, renderItem({item}))) : [ListEmptyComponent]), ListFooterComponent)};
+  const filename = path.join(__dirname, '../src/components/WorkspaceBoard.tsx');
+  const mod = new Module(filename, module); mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
+  const normal = mod.require.bind(mod);
+  mod.require = name => name === 'react-native' ? native : name === '../utils/useFontScale' ? {useFontScale: () => 1} : normal(name);
+  mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true}}).outputText, filename);
+  const Board = mod.exports.default;
+  let tree;
+  act(() => {tree = create(React.createElement(Board, {groups: [
+    {key: 'regular', title: 'Regular', tasks: []}, {key: 'workspace-completed', title: 'Completed', tasks: [], emptyMessage: null},
+  ], renderTask: () => null, taskKey: task => task.id}));});
+  const emptyLabels = tree.root.findAllByType('Text').map(node => node.props.children);
+  assert.ok(emptyLabels.includes('No tasks'));
+  assert.equal(emptyLabels.filter(label => label === 'No tasks').length, 1, 'only the regular empty column has its placeholder');
+  act(() => tree.unmount());
 });
 
 test('project picker commits immediately only when its opt-in is enabled', () => {

@@ -2,7 +2,7 @@ import React from 'react';
 import {View, Text, FlatList, StyleSheet} from 'react-native';
 import {useFontScale} from '../utils/useFontScale';
 
-type Group = {key: string; title: string; tasks: any[]; header?: React.ReactElement | null; footer?: React.ReactElement | null};
+type Group = {key: string; title: string; tasks: any[]; header?: React.ReactElement | null; footer?: React.ReactElement | null; emptyMessage?: string | null};
 type Props = {groups: Group[]; renderTask: (task: any, group: Group) => any; taskKey: (task: any) => string; extraData?: any};
 
 /** Horizontal, virtualized columns. Each column virtualizes its own task rows. */
@@ -15,7 +15,7 @@ export default function WorkspaceBoard({groups, renderTask, taskKey, extraData}:
       {item.header || <View style={styles.heading}><Text numberOfLines={1} style={[styles.title, {fontSize: Math.round(15 * scale)}]}>{item.title}</Text>
         <Text style={styles.count}>{item.tasks.length}</Text></View>}
       <FlatList data={item.tasks} keyExtractor={task => taskKey(task)} renderItem={({item: task}) => renderTask(task, item)}
-        extraData={extraData} ListEmptyComponent={item.key === 'completed' ? null : <Text style={styles.empty}>No tasks</Text>} ListFooterComponent={item.footer} />
+        extraData={extraData} ListEmptyComponent={item.emptyMessage === null ? null : <Text style={styles.empty}>{item.emptyMessage || 'No tasks'}</Text>} ListFooterComponent={item.footer} />
     </View>} />;
 }
 

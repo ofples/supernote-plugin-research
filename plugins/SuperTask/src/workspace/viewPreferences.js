@@ -2,6 +2,7 @@ const VIEWS = ['list', 'board'];
 const GROUPS = ['collection', 'project', 'date', 'none'];
 const SORTS = ['manual', 'priority', 'due', 'title'];
 const {projectSections} = require('../collections/model');
+const {getDueDateTimeKey} = require('../components/taskDueLabel');
 
 function defaults(context) {
   const groupBy = context.startsWith('project:') || context === 'inbox' ? 'collection' :
@@ -34,8 +35,8 @@ function sortTasks(tasks, sortBy) {
   const result = [...(tasks || [])];
   if (sortBy === 'priority') return result.sort((a, b) => (Number(b.priority) || 1) - (Number(a.priority) || 1));
   if (sortBy === 'due') return result.sort((a, b) => {
-    const left = String(a.due?.datetime || a.due?.date || ''), right = String(b.due?.datetime || b.due?.date || '');
-    return (left ? 0 : 1) - (right ? 0 : 1) || left.localeCompare(right);
+    const leftRaw = String(a.due?.datetime || a.due?.date || ''), rightRaw = String(b.due?.datetime || b.due?.date || '');
+    return (leftRaw ? 0 : 1) - (rightRaw ? 0 : 1) || getDueDateTimeKey(leftRaw).localeCompare(getDueDateTimeKey(rightRaw));
   });
   if (sortBy === 'title') return result.sort((a, b) => String(a.content || a.title || '').localeCompare(String(b.content || b.title || '')));
   return result;
@@ -52,7 +53,7 @@ function groupTasks(tasks, groupBy, {projects = [], collections = [], today = ''
     }
     if (groupBy === 'project') return `project:${encodeURIComponent(String(task.project_id || 'inbox'))}`;
     if (groupBy === 'date') {
-      const date = String(task.due?.datetime || task.due?.date || '').slice(0, 10);
+      const date = getDueDateTimeKey(String(task.due?.datetime || task.due?.date || '')).slice(0, 10);
       if (!date) return 'date:undated';
       if (date < today) return 'date:overdue';
       return `date:${date}`;

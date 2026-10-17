@@ -24,7 +24,7 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const today = require('../src/offline/model').localDate(new Date());
   const next = new Date(); next.setDate(next.getDate() + 1);
   const tomorrow = require('../src/offline/model').localDate(next);
-  const tasks = [{id: 'one', content: 'Due task', project_id: 'p', section_id: 's', due: {date: today}, source: {filePath: '/note/Test.note', pageNum: 2}, syncState: 'synced'},
+  const tasks = [{id: 'one', content: 'Due task', description: 'Task description remains visible during selection.', project_id: 'p', section_id: 's', due: {date: today}, source: {filePath: '/note/Test.note', pageNum: 2}, syncState: 'synced'},
     {id: 'two', content: 'Tomorrow task', project_id: 'p', due: {date: tomorrow}, syncState: 'synced'},
     {id: 'inbox', content: 'Inbox task', project_id: 'i', syncState: 'pending'}, ...extraTasks];
   let data = {tasks, allTasks: tasks, projects: [{id: 'p', name: 'Work'}, {id: 'i', name: 'Inbox', is_inbox_project: true}],
@@ -34,16 +34,25 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const completed = []; const reopened = []; const retries = []; const navCalls = []; const savedDrafts = [];
   let finishProject; const projectGate = new Promise(resolve => {finishProject = resolve;});
   let session = null; let reads = 0; let scans = 0; let cacheListener;
-  const accountKey = 'cached-private-account-key';
+  let accountKey = 'cached-private-account-key';
   let cacheRevision = 1;
   let loadConfig = async () => config;
-  const saveConfig = async patch => {
-    if (patch.workspacePreferences) {
-      config.workspacePreferences = {...(config.workspacePreferences || {}), ...patch.workspacePreferences,
-        accounts: {...(config.workspacePreferences?.accounts || {}), ...(patch.workspacePreferences.accounts || {})}};
-    }
-    for (const [key, value] of Object.entries(patch)) if (key !== 'workspacePreferences') config[key] = value;
-    return true;
+  let saveChain = Promise.resolve(); let nextSaveGate = null;
+  const saveConfig = changes => {
+    const run = saveChain.then(async () => {
+      const gate = nextSaveGate; nextSaveGate = null;
+      if (gate) await gate.promise;
+      const patch = typeof changes === 'function' ? changes({...config}) : changes;
+      if (patch == null) return true;
+      if (patch.workspacePreferences) {
+        config.workspacePreferences = {...(config.workspacePreferences || {}), ...patch.workspacePreferences,
+          accounts: {...(config.workspacePreferences?.accounts || {}), ...(patch.workspacePreferences.accounts || {})}};
+      }
+      for (const [key, value] of Object.entries(patch)) if (key !== 'workspacePreferences') config[key] = value;
+      return true;
+    });
+    saveChain = run.catch(() => {});
+    return run;
   };
   const api = {completeTask: async id => {completed.push(id); data = {...data, tasks: data.tasks.filter(task => task.id !== id),
     allTasks: data.allTasks.map(task => task.id === id ? {...task, completed: true} : task)};}, reopenTask: async id => {
@@ -99,6 +108,8 @@ function workspace(config = {}, note = false, extraTasks = [], historyRefresh) {
   const nav = {push: (...args) => navCalls.push(args)};
   return {Home: view.default, normalize: view.normalizeTaskView, syncChangeLabel: view.syncChangeLabel, nav, completed, reopened, retries, navCalls, savedDrafts, config, service, accountKey,
     setLoadConfig: loader => {loadConfig = loader;}, updateData: update => {data = update(data);},
+    holdNextSave: () => {let release; const promise = new Promise(resolve => {release = resolve;}); nextSaveGate = {promise}; return release;}, flushSaves: () => saveChain,
+    switchAccount: (nextKey, token) => {accountKey = nextKey; config.apiToken = token; data = {...data, accountKey: nextKey}; cacheRevision++;},
     emitCache: () => {cacheRevision++; cacheListener({...data, accountKey, revision: cacheRevision, completedTasks: data.allTasks.filter(task => task.completed)});}, getReads: () => reads, getScans: () => scans, finishProject, freezeReferences: () => {frozenReferences = references().map(reference => ({...reference}));},
     markMissing: (id, leakIntoActive = false) => {
       data = {...data, allTasks: data.allTasks.map(task => task.id === id ? {...task, remoteId: 'acknowledged-remote', remoteMissing: true} : task)};
@@ -633,4 +644,81 @@ test('composer destination commits a collection or no-collection choice immediat
   assert.equal(tree.root.findAllByType('Modal').length, 0, 'project with no collections commits on project choice');
   assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Personal');
   await act(async () => tree.unmount());
+});
+
+test('serialized workspace preference updates preserve both account scopes and discard a queued old-account write', async () => {
+  const model = workspace({apiToken: 'token-a'}); let tree;
+  const firstAccount = model.accountKey;
+  model.config.workspacePreferences = {accounts: {[firstAccount]: {today: {view: 'list', groupBy: 'project', sortBy: 'manual', completedExpanded: false}}}};
+  const releaseFirstSave = model.holdNextSave();
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Workspace view options'}).props.onPress());
+  await act(async () => pressText(tree, 'Board').props.onPress());
+  await act(async () => {model.switchAccount('private-account-b', 'token-b'); model.emitCache();});
+  await act(async () => pressText(tree, 'Title').props.onPress());
+  await act(async () => {releaseFirstSave(); await model.flushSaves();});
+  const accounts = model.config.workspacePreferences.accounts;
+  assert.equal(accounts[firstAccount].today.view, 'list', 'the pending write captured for account A must not commit after switching');
+  assert.equal(accounts[firstAccount].today.sortBy, 'manual');
+  assert.equal(accounts['private-account-b'].today.sortBy, 'title', 'account B change commits against the latest private settings');
+  await act(async () => tree.unmount());
+});
+
+test('creating a collection from the one-tap destination picker commits and closes the composer sheet', async () => {
+  const model = workspace(); let tree;
+  model.service.createOfflineCollection = async (projectId, name) => {
+    const section = {id: 'new-collection', project_id: projectId, name};
+    model.updateData(data => ({...data, sections: [...data.sections, section]}));
+    model.emitCache();
+    return section;
+  };
+  await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+  await act(async () => tree.root.findByType('Composer').props.onChooseDestination());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Choose project Work'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'New collection in Work'}).props.onPress());
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'New collection name'}).props.onChangeText('New section'));
+  await act(async () => tree.root.findByProps({accessibilityLabel: 'Save new collection'}).props.onPress());
+  assert.equal(tree.root.findAllByType('Modal').length, 0);
+  assert.equal(tree.root.findByType('Composer').props.destinationLabel, 'Work / New section');
+  await act(async () => tree.unmount());
+});
+
+test('custom sorted list and board retain row expansion, quick actions, and long-press selection', async () => {
+  for (const layout of ['list', 'board']) {
+    const model = workspace(); let tree;
+    await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+    await switchTo(tree, 'project:p');
+    await act(async () => tree.root.findByProps({accessibilityLabel: 'Workspace view options'}).props.onPress());
+    if (layout === 'list') await act(async () => pressText(tree, 'Title').props.onPress());
+    else await act(async () => pressText(tree, 'Board').props.onPress());
+    let row = tree.root.findAllByType('TaskRow').find(item => item.props.task.id === 'one');
+    await act(async () => row.props.onPress());
+    row = tree.root.findAllByType('TaskRow').find(item => item.props.task.id === 'one');
+    assert.equal(row.props.outlineSelected, true, `${layout}: tap expands the row`);
+    assert.equal(row.props.rightAccessory.type, 'QuickActions', `${layout}: expanded row keeps task actions`);
+    await act(async () => row.props.onLongPress());
+    row = tree.root.findAllByType('TaskRow').find(item => item.props.task.id === 'one');
+    assert.equal(row.props.selectionMode, true, `${layout}: long press enters selection mode`);
+    assert.equal(row.props.selected, true, `${layout}: selected row is visibly selected`);
+    assert.equal(row.props.rightAccessory, null, `${layout}: selection replaces expanded actions without losing the row`);
+    assert.equal(row.props.inlineDescription, 'Task description remains visible during selection.', `${layout}: selection does not collapse the expanded description geometry`);
+    await act(async () => tree.unmount());
+  }
+});
+
+test('Done custom list and board honor the history limit and retain the older-history control', async () => {
+  const history = Array.from({length: 25}, (_, index) => ({id: `history-${index}`, content: `History ${index}`, project_id: 'p',
+    completed: true, completed_at: `2026-09-${String(25 - Math.floor(index / 3)).padStart(2, '0')}T${String(index % 24).padStart(2, '0')}:00:00Z`}));
+  for (const layout of ['list', 'board']) {
+    const model = workspace({}, false, history); let tree;
+    model.config.workspacePreferences = {accounts: {[model.accountKey]: {done: {view: layout, groupBy: 'none', sortBy: 'title'}}}};
+    await act(async () => {tree = create(React.createElement(model.Home, {nav: model.nav}));});
+    await switchTo(tree, 'done');
+    assert.equal(tree.root.findAllByType('TaskRow').length, 20, `${layout}: initial history window is limited`);
+    const older = tree.root.findByProps({accessibilityLabel: 'Load older completed tasks'});
+    await act(async () => older.props.onPress());
+    assert.equal(tree.root.findAllByType('TaskRow').length, 25, `${layout}: loading more reveals remaining history`);
+    assert.ok(tree.root.findByProps({accessibilityLabel: 'Load older completed tasks'}));
+    await act(async () => tree.unmount());
+  }
 });

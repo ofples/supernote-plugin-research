@@ -63,6 +63,7 @@ export default function ProjectPicker({projects, selectedId, onChange, sections 
       if (mounted.current) {
         onChange(selectedProject.id);
         onSectionChange?.(section.id);
+        if (commitOnSelect) onCommitSelection?.(selectedProject.id, section.id);
         setCreating(false);
         setName('');
       }
