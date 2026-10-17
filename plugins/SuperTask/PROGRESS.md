@@ -1,5 +1,15 @@
 # SuperTask progress
 
+## Planned beta.22 — capture review and workspace preferences — 17 October 2026
+
+The `feature/capture-review-polish` branch contains the next local implementation pass. Beta.22 is **planned; no beta.22 package has been built or installed**, and none of the new behavior below has device verification yet. Beta.21 remains the last device-verified checkpoint; see [TESTING.md](TESTING.md) and [native interaction validation](docs/native-interactions-validation.md) for its exact evidence and the new pending checks.
+
+Batch review now keeps the task rows in the main viewport and places batch defaults, selection, row addition, and Lines/Paragraphs grouping behind a compact Batch actions panel. Initial capture uses device OCR as the baseline; OpenAI refinement stays optional, with AI-by-default disabled unless enabled in settings. When enabled for lasso capture, AI and device OCR race in the background and device OCR remains the fallback. AI configuration now supports a selectable, user-maintained list of model IDs. Quick Add recognizes unambiguous known project/collection references, `%label` and legacy `@label`, P1–P4 priorities, and supported dates/times; unknown or conflicting shorthand remains visible for review. A spaced dash can separate the title from its description. See [Batch capture shorthand](docs/batch-capture-shorthand.md).
+
+The workspace adds List/Board presentation, grouping and sort choices persisted by Todoist account and view scope; Completed expansion state is persisted in the same scope. The inline composer destination picker applies a collection or explicit No collection in one tap. Optional gesture/launcher settings and safer gesture handling remain off by default where applicable; their hardware behavior is pending. Existing beta.21 implementation and evidence are preserved below.
+
+Focused parser, OCR grouping, due serialization, batch review, assignment, AI validation and TaskDetail due-preservation checks passed locally (47 focused tests in this pass). The full beta.22 build, combined test/type/lint/package/Hermes checks, and every new device check remain pending. No release or deployment is claimed.
+
 ## Responsive cache and compact interactions - 5 October 2026
 
 Beta.21/code26 is installed/enabled on the Nomad. Runtime `8ce712c`, workspace `76fc02a`, launcher `5023491`. Duplicate cache/history/reference reads are removed; complete cached data seeds the first render, unchanged arrays/rows retain identity, interaction projections are memoized and native note scans wait for This Note. Account/hydration races remain guarded; native durability is unchanged. Upcoming shows scheduled tasks after today through Sunday. Collections collapse in project panes/All projects, while Select all still includes hidden tasks. Selection Cancel shares the action-button style; its count is at the usable right edge clear of host Home. The footer is compact and fixed, Refresh is plain text, and Projects has one dotted divider below its header with no Done divider. Monochrome drawn action icons have matching targets and one outer border; dialogs fit content vertically over an undimmed list.

@@ -1,5 +1,23 @@
 # Native interactions beta verification
 
+## Planned beta.22 follow-up — local only
+
+The `feature/capture-review-polish` pass is planned for beta.22. It is not yet integrated into the testing branch, built, installed, or verified on a Supernote. Beta.21 remains the latest hardware-verified checkpoint below; do not carry its test counts or device observations forward as evidence for beta.22.
+
+Automated focused coverage currently exercises compact batch actions and save retry, task-row override preservation, Lines/Paragraphs grouping and explicit split, shorthand parsing, due-time serialization, AI metadata validation, and TaskDetail preservation of unchanged timed/recurring due values. The combined branch must still pass its full test, type, lint, native package, and Hermes checks.
+
+The pending runtime review includes:
+
+- Batch actions modal size, transparent undimmed background, no animation, stable Save/Saving/Retry control geometry, and task rows remaining in the primary viewport.
+- Device OCR as baseline/fallback; explicit AI refinement consent, AI-by-default behavior only when enabled, model selection, cancellation/timeout, and image/text disclosure.
+- OCR Lines/Paragraphs grouping before edits, bullet boundaries, wrapped-line joining, and manual newline split; title-description spaced-dash handling.
+- Supported shorthand, retained unknown/conflicting directives, multiword project/collection matches, and unchanged row overrides.
+- Account/view-scoped List/Board, grouping, sort and Completed expansion preferences across relaunch and account changes.
+- Inline destination selection applying a collection or No collection immediately; settings and other staged ProjectPicker flows should retain their existing behavior.
+- Optional two-finger bottom-edge gesture cooldown/rejection behavior and optional launcher permission, position, rotation, hide, and coexistence behavior. Both need device evidence; the launcher remains off by default.
+
+Record the beta.22 artifact hash and automated evidence in [TESTING.md](../TESTING.md), then add device observations only after a coordinated tester run. No real task/note edits are needed for layout checks.
+
 This record distinguishes automated checks, scratch server evidence and device checks. Specification: `NATIVE_INTERACTIONS.md`; activated goal: `NATIVE_INTERACTIONS_GOAL.md`. Beta.14 is installed/enabled and startup/layout/separators inspected; see TESTING.md for the exact artifact hash. Beta.12/initial beta.13 local-delivery records below are historical.
 
 ## Reconnected-device smoke check

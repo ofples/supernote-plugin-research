@@ -1,5 +1,15 @@
 # Combined SuperTask testing
 
+## Planned beta.22 — not built or device-verified
+
+The local feature branch `feature/capture-review-polish` is planned for beta.22 and has not yet been integrated into `release/workflow-overview-testing`. No beta.22 package has been built, installed, or checked on hardware. Beta.21 remains the last verified artifact and its historical record below is unchanged.
+
+This pass adds compact batch actions, configurable OCR Lines/Paragraphs grouping, shorthand parsing with review-preserving fallbacks, optional AI model-list controls, account/view-scoped List/Board/group/sort/Completed preferences, one-tap inline collection destination selection, and gesture/launcher follow-ups. The focused parser, grouping, due, batch and TaskDetail checks passed 47/47 locally; the full integration checks and device checklist below remain required for beta.22.
+
+Before calling beta.22 ready, integrate all ten feature heads with `syncTestingBranch.ps1`, run the full offline test suite, TypeScript and lint checks, build the native plugin, inspect the actual `.snplg` and nested native contents, and compile the bundle with the pinned Hermes compiler. Then record the exact artifact version, size and SHA-256 here. Do not infer installed or device-verified status from those local checks.
+
+Device checks for this pass: Batch actions content sizing and no dimming/animation; row viewport and touch targets at supported font scales; grouping changes before edits and explicit split behavior; OCR/AI fallback and cancellation; one-tap collection and No collection destinations; persisted List/Board/sort/group/Completed choices across relaunch and account switch; gesture cooldown and launcher permission/edge/rotation/coexistence. Preserve existing device data and report each check separately from automated evidence.
+
 ## Connected device follow-up — 5 October 2026
 
 The Nomad `SN078D10010594` reconnected. Beta.13/code 18 was installed through Select Plugin Package from the exact inspected file and enabled ON; Plugin Manager displayed **0.4.0-beta.13**. Startup and the new runtime UI were inspected: Settings/Close header, pane menu, contextual inline composer, plain project sidebar with fixed New project, and expanded cached Completed footer without an Undo banner. Initial cache showed 24 tasks / 0 queued. Configuration before/after installation was identical; backup remains in ignored `build/device-beta13-backup`. No scratch or real tasks/notes were modified, and no AI request was made.
