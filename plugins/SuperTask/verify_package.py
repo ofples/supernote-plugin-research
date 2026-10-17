@@ -40,7 +40,7 @@ with zipfile.ZipFile(artifact) as plugin:
                        b'projectVisibility', b'Sync summary', b'Cancel AI / Use device OCR', b'New collection']:
             assert marker in bundle, f'Missing feedback workflow implementation: {marker}'
     if (root / 'src/workspace/intents.js').exists():
-        for marker in [b'Enter task', b'Task actions', b'Confirm delete', b'Use this location',
+        for marker in [b'Enter task', b'Task actions', b'Confirm delete', b'commitOnSelect', b'onCommitSelection',
                        b'New project', b'Completed', b'project_create', b'collection_create', b'order_key']:
             assert marker in bundle, f'Missing native task interaction implementation: {marker}'
     if (root / 'src/launcher/service.js').exists():
