@@ -1,13 +1,14 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-const native = {View: 'View', Pressable: 'Pressable', StyleSheet: {create: value => value}};
+const native = {View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: {create: value => value}};
 function load(file) {
   const filename = path.resolve(__dirname, file); const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
@@ -19,16 +20,17 @@ function load(file) {
   return mod.exports;
 }
 
-test('header and workspace controls are right-aligned, borderless icon buttons with accessible labels', async () => {
-  const {HeaderActionButtons, WorkspaceViewControls} = load('../src/components/WorkspaceActionButtons.tsx');
+test('workspace header and view controls use bordered text while sidebar remains an accessible icon', async () => {
+  const {HeaderActionButtons, WorkspaceViewControls, WorkspaceSidebarToggle} = load('../src/components/WorkspaceActionButtons.tsx');
   const calls = [];
-  let header; let controls;
+  let header; let controls; let sidebar;
   await act(async () => {header = create(React.createElement(HeaderActionButtons, {
     onSettings: () => calls.push('settings'), onClose: () => calls.push('close'),
   }));});
   await act(async () => {controls = create(React.createElement(WorkspaceViewControls, {
     onViewOptions: () => calls.push('view'), onListMenu: () => calls.push('menu'), viewOptionsOpen: true,
   }));});
+  await act(async () => {sidebar = create(React.createElement(WorkspaceSidebarToggle, {collapsed: true, onPress: () => calls.push('sidebar')}));});
 
   for (const tree of [header, controls]) {
     const group = tree.root.findByType('View');
@@ -39,17 +41,30 @@ test('header and workspace controls are right-aligned, borderless icon buttons w
       const styles = button.props.style({pressed: false});
       const style = Object.assign({}, ...styles.filter(value => typeof value === 'object'));
       assert.equal(button.props.accessibilityRole, 'button');
-      assert.equal(style.width, 44); assert.equal(style.height, 44);
-      assert.equal(style.borderWidth, undefined);
-      assert.equal(button.findAllByType('View').length > 0, true, 'each control renders a native icon');
+      assert.equal(style.minWidth, 44); assert.equal(style.minHeight, 44);
+      assert.equal(style.borderWidth, 1);
+      assert.equal(button.findAllByType('Text').length, 1, 'each restored control has a visible text label');
     }
   }
   assert.deepEqual(header.root.findAllByType('Pressable').map(button => button.props.accessibilityLabel), ['Settings', 'Close']);
   assert.deepEqual(controls.root.findAllByType('Pressable').map(button => button.props.accessibilityLabel), ['Workspace view options', 'List menu']);
-  assert.equal(controls.root.findByProps({accessibilityLabel: 'Workspace view options'}).props.accessibilityState.expanded, true);
-  for (const button of [...header.root.findAllByType('Pressable'), ...controls.root.findAllByType('Pressable')]) {
+  assert.deepEqual(header.root.findAllByType('Text').map(text => text.props.children), ['Settings', 'Close']);
+  assert.deepEqual(controls.root.findAllByType('Text').map(text => text.props.children), ['View', '…']);
+  assert.equal(controls.root.findAllByType('Pressable')[0].props.accessibilityState.expanded, true);
+  const sidebarButton = sidebar.root.findByType('Pressable');
+  assert.equal(sidebarButton.props.accessibilityLabel, 'Show sidebar');
+  assert.equal(sidebarButton.findAllByType('Text').length, 0, 'sidebar keeps the existing icon affordance');
+  for (const button of [...header.root.findAllByType('Pressable'), ...controls.root.findAllByType('Pressable'), sidebarButton]) {
     await act(async () => button.props.onPress());
   }
-  assert.deepEqual(calls, ['settings', 'close', 'view', 'menu']);
-  await act(async () => {header.unmount(); controls.unmount();});
+  assert.deepEqual(calls, ['settings', 'close', 'view', 'menu', 'sidebar']);
+  await act(async () => {header.unmount(); controls.unmount(); sidebar.unmount();});
+});
+
+test('workspace header actions use the 44 dp Home reserve and selection keeps its 60 dp clearance', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/screens/TaskHome.tsx'), 'utf8');
+  assert.match(source, /paddingRight: selectionMode \? 60 : 44/);
+  assert.match(source, /paddingRight: 44,/);
+  const component = fs.readFileSync(path.resolve(__dirname, '../src/components/WorkspaceActionButtons.tsx'), 'utf8');
+  assert.match(component, /marginLeft: 'auto', flexShrink: 0/);
 });

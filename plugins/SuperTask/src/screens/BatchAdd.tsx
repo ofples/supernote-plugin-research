@@ -249,21 +249,16 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   const today = () => localDate(new Date());
   const tomorrow = () => {const date = new Date(); date.setDate(date.getDate() + 1); return localDate(date);};
   return <View style={s.page}>
-    <View style={s.header}><Text style={[s.title, scaledTitle]}>{saved ? 'Tasks saved' : 'Review tasks'}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={saved ? 'Done' : 'Cancel'} style={s.button} onPress={() => {cancelRefinement(); goBack();}} disabled={busy && !controller.current}><Text style={[s.label, scaledLabel]}>{saved ? 'Done' : 'Cancel'}</Text></Pressable>
+    <View style={s.header}>
+      <Text numberOfLines={1} style={[s.title, {flex: 1}, scaledTitle]}>{saved ? 'Tasks saved' : 'Review tasks'}</Text>
+      {!saved && <Pressable accessibilityRole="button" accessibilityLabel="Batch actions" accessibilityState={{disabled: locked}} style={[s.headerAction, locked && s.disabledButton]} onPress={() => setBatchActionsOpen(true)} disabled={locked}>
+        <Text style={[s.label, scaledLabel]}>Batch actions</Text>
+      </Pressable>}
+      <Pressable accessibilityRole="button" accessibilityLabel={saved ? 'Done' : 'Cancel'} style={s.headerAction} onPress={() => {cancelRefinement(); goBack();}} disabled={busy && !controller.current}>
+        <Text style={[s.label, scaledLabel]}>{saved ? 'Done' : 'Cancel'}</Text>
+      </Pressable>
     </View>
     {!saved && <>
-      <View style={s.intro}>
-        <Text style={[s.text, scaledText]}>One task per row. Edit recognition, merge wrapped lines, or insert line breaks and split. Handwriting remains unchanged.</Text>
-        <Text style={[s.text, scaledText]}>Captured {localDate(new Date(captureTime))}. {selected.length} of {rows.length} selected.</Text>
-      </View>
-      <View style={s.toolbar}>
-        <View style={s.summary}>
-          <Text numberOfLines={1} style={[s.summaryText, scaledText]}>{projects.find((p: any) => p.id === defaults.projectId)?.name || 'Inbox'}{defaults.sectionId ? ` / ${sections.find((section: any) => section.id === defaults.sectionId)?.name || 'Collection'}` : ''} · {defaults.dueString || 'No date'} · P{5 - defaults.priority}</Text>
-          <Text numberOfLines={1} style={[s.summaryText, scaledText]}>{selected.length} of {rows.length} selected{defaults.labels.length ? ` · ${defaults.labels.join(', ')}` : ''}</Text>
-        </View>
-        {!locked && <Pressable accessibilityRole="button" accessibilityLabel="Batch actions" style={s.button} onPress={() => setBatchActionsOpen(true)}><Text style={[s.label, scaledLabel]}>Batch actions</Text></Pressable>}
-      </View>
       {!locked && batchActionsOpen && <Modal visible transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setBatchActionsOpen(false)}>
         <KeyboardAvoidanceViewport contentStyle={s.modalScreen}><View style={s.modalCard}>
           <View style={s.modalHeader}><Text style={[s.modalTitle, scaledTitle]}>Batch actions</Text>
@@ -372,10 +367,9 @@ export default function BatchAdd({nav, active = true, initialContent = '', initi
   </View>;
 }
 
-const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {padding: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1},
-  intro: {paddingHorizontal: 16, paddingTop: 12, gap: 8},
-  toolbar: {paddingHorizontal: 12, paddingVertical: 5, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1, borderBottomColor: '#000'},
-  summary: {flex: 1, minWidth: 0, gap: 1}, summaryText: {color: '#000', fontSize: 12},
+const s = StyleSheet.create({page: {flex: 1, backgroundColor: '#fff'}, header: {minHeight: 56, paddingHorizontal: 12, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1},
+  headerAction: {minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#000'},
+  disabledButton: {opacity: 0.45},
   modalScreen: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12}, modalCard: {width: '96%', maxWidth: 640, maxHeight: '90%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
   modalHeader: {padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1, borderColor: '#000'},
   modalTitle: {flexShrink: 1, fontWeight: '700', color: '#000'}, modalScroll: {flexShrink: 1}, modalContent: {padding: 10, gap: 10},
