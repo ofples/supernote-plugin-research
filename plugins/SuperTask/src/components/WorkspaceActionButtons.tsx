@@ -1,7 +1,7 @@
 import React from 'react';
 import {View, Pressable, StyleSheet} from 'react-native';
 
-type WorkspaceIcon = 'settings' | 'close' | 'view' | 'menu';
+type WorkspaceIcon = 'settings' | 'close' | 'view' | 'menu' | 'sidebar';
 
 type IconButtonProps = {
   icon: WorkspaceIcon;
@@ -38,6 +38,11 @@ function WorkspaceIcon({name}: {name: WorkspaceIcon}) {
       <View style={styles.viewCell} /><View style={styles.viewCell} />
     </View>;
   }
+  if (name === 'sidebar') {
+    return <View style={styles.sidebarIcon}>
+      <View style={styles.sidebarRail} /><View style={styles.sidebarPane} />
+    </View>;
+  }
   return <View style={styles.menuDots}>
     <View style={styles.menuDot} /><View style={styles.menuDot} /><View style={styles.menuDot} />
   </View>;
@@ -61,6 +66,10 @@ export function WorkspaceViewControls({onViewOptions, onListMenu, viewOptionsOpe
   </View>;
 }
 
+export function WorkspaceSidebarToggle({collapsed, onPress}: {collapsed: boolean; onPress: () => void}) {
+  return <IconButton icon="sidebar" label={collapsed ? 'Show sidebar' : 'Hide sidebar'} expanded={!collapsed} onPress={onPress} />;
+}
+
 const styles = StyleSheet.create({
   headerActions: {flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4},
   viewControls: {flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2},
@@ -81,4 +90,7 @@ const styles = StyleSheet.create({
   viewCell: {width: 8, height: 8, borderWidth: 1.5, borderColor: '#000000'},
   menuDots: {width: 22, height: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2},
   menuDot: {width: 4, height: 4, borderRadius: 2, backgroundColor: '#000000'},
+  sidebarIcon: {width: 21, height: 19, flexDirection: 'row', borderWidth: 1.5, borderColor: '#000000'},
+  sidebarRail: {width: 6, borderRightWidth: 1.5, borderColor: '#000000', backgroundColor: '#000000'},
+  sidebarPane: {flex: 1},
 });

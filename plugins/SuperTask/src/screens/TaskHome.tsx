@@ -11,7 +11,6 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
@@ -39,12 +38,12 @@ const {localDate} = require('../offline/model');
 const {splitTitleDescription} = require('../batch/descriptionParser');
 import {log, logError} from '../utils/debug';
 import TaskSidebar from '../components/NativeTaskSidebar';
-import {HeaderActionButtons, WorkspaceViewControls} from '../components/WorkspaceActionButtons';
+import {HeaderActionButtons, WorkspaceSidebarToggle, WorkspaceViewControls} from '../components/WorkspaceActionButtons';
 import TaskRow, {WorkspaceContext} from '../workspace/WorkspaceTaskRow';
 import InlineTaskComposer from '../components/InlineTaskComposer';
 import WorkspaceSelectionBar from '../components/WorkspaceSelectionBar';
 import DatePicker from '../components/DatePicker';
-import {KeyboardAwareScrollView, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
 import ProjectPicker from '../components/ProjectPicker';
 import PriorityPicker from '../components/PriorityPicker';
 import ProjectOverview from '../components/ProjectOverview';
@@ -152,6 +151,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const preferenceRevision = useRef(0);
   const localPreferencePatches = useRef<Record<string, any>>({});
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => cfg0?.sidebarCollapsed === true);
+  const sidebarPreferenceRevision = useRef(0);
   const [preferenceSaveError, setPreferenceSaveError] = useState('');
   const [historyDays, setHistoryDays] = useState(30);
   const [historyLimit, setHistoryLimit] = useState(20);
@@ -222,6 +223,12 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, {[context]: patch});
   };
   const setShowDone = (update: (value: boolean) => boolean) => updateViewPreferences({completedExpanded: update(showDone)});
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    sidebarPreferenceRevision.current += 1;
+    setSidebarCollapsed(next);
+    saveConfig({sidebarCollapsed: next}).catch(() => {});
+  };
   const seedTasks = useMemo(() => {
     const seen = new Set();
     return [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
@@ -233,7 +240,11 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const optimisticDone: any[] = useMemo(() => projected.filter((task: any) => task.completed && !task.deleted), [projected]);
   useEffect(() => {
     if (!active) return;
-    loadConfig().then(withCurrentAccount(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);})).catch(() => {});
+    loadConfig().then(withCurrentAccount(config => {
+      setVisibilityConfig(config);
+      setDebugModeOn(config.debugMode === true);
+      if (sidebarPreferenceRevision.current === 0) setSidebarCollapsed(config.sidebarCollapsed === true);
+    })).catch(() => {});
   }, [active]);
   useEffect(() => {
     const accountKey = getCachedWorkspace()?.accountKey;
@@ -1112,7 +1123,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         <Chip label={String(noteTasks.length)} />
         {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
       </View>}
-      <WorkspaceBoard groups={groups} renderTask={renderTask} taskKey={rowIdentity}
+      <WorkspaceBoard groups={groups} renderTask={renderTask} taskKey={rowIdentity} contextKey={`${resolvedTab}:${viewPreferences.groupBy}`}
         extraData={{selectedIds, selectionMode, showDone, sortBy: viewPreferences.sortBy}} />
     </View>;
   };
@@ -1345,12 +1356,18 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     <View style={styles.container}>
       {/* Keep the header height stable when the undo action replaces its controls. */}
       <View style={[styles.header, {height: Math.max(76, Math.round(22 * scale * 1.3) + 32)}]}>
-        {selectionMode ? <WorkspaceSelectionBar count={selectedIds.length}
-          allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
-          onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
-          onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
-          onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} /> : <>
-          <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
+        {selectionMode ? <View style={styles.selectionHeader}>
+          <WorkspaceSidebarToggle collapsed={sidebarCollapsed} onPress={toggleSidebar} />
+          <WorkspaceSelectionBar count={selectedIds.length}
+            allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
+            onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
+            onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
+            onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} />
+        </View> : <>
+          <View style={styles.headerLeft}>
+            <WorkspaceSidebarToggle collapsed={sidebarCollapsed} onPress={toggleSidebar} />
+            <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
+          </View>
           <HeaderActionButtons onSettings={() => nav.push('config')} onClose={closePlugin} />
         </>}
       </View>
@@ -1375,9 +1392,11 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
       </View>)}
       <View style={styles.workspace}>
-        <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
-          noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
-          onCreateProject={() => openContainerAction('project')} />
+        <View style={sidebarCollapsed ? styles.sidebarHidden : styles.sidebar}>
+          <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
+            noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
+            onCreateProject={() => openContainerAction('project')} />
+        </View>
         <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
           <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
             <WorkspaceViewControls viewOptionsOpen={viewOptionsOpen}
@@ -1427,7 +1446,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </View>}
             {actionSheet?.kind === 'container' ? <>
               {!!actionSheet.frozen ? <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
-              <View style={styles.inputRow}><TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
+              <View style={styles.inputRow}><KeyboardAwareTextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable></View>
               {!!actionSheet.id && <>
                 <Text style={styles.sheetText}>{containerProof ? containerProof.countIsMinimum ? `At least ${containerProof.count} saved tasks. Deleting all includes uncached and completed tasks in this ${actionSheet.containerKind}.` : `${containerProof.count} tasks in this ${actionSheet.containerKind}.` : 'Checking saved contents…'}</Text>
@@ -1473,7 +1492,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </View>}
             {actionSheet?.kind === 'labels' && <>
               <Text style={styles.sheetText}>Replace labels on selected tasks. Separate names with commas; leave empty to clear.</Text>
-              <View style={styles.inputRow}><TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
+              <View style={styles.inputRow}><KeyboardAwareTextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable></View>
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
@@ -1616,6 +1635,8 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
 const styles = StyleSheet.create({
   pressed: {backgroundColor: '#eeeeee'},
   workspace: {flex: 1, flexDirection: 'row'},
+  sidebar: {width: 216, height: '100%', flexDirection: 'row', flexShrink: 0},
+  sidebarHidden: {display: 'none'},
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
   composerSlot: {alignSelf: 'stretch'},
   composerHidden: {opacity: 0},
@@ -1652,6 +1673,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#000000',
   },
+  headerLeft: {flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1},
+  selectionHeader: {flexDirection: 'row', alignItems: 'center', flex: 1},
   iconButton: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center'},
   emptyList: {padding: 24},
   historyLink: {minHeight: 48, alignSelf: 'flex-end', justifyContent: 'center', paddingHorizontal: 16},
