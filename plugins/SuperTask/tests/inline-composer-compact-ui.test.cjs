@@ -41,6 +41,7 @@ test('inline composer keeps destination beside calendar with clipped label and f
   ]);
   const row = tree.root.findByProps({style: styles.inputRow});
   assert.equal(row.props.style.flexDirection, 'row');
+  assert.equal(row.props.style.flexWrap, undefined);
   assert.equal(row.findAllByType('Pressable').length, 3);
   const destination = buttons[1];
   assert.equal(destination.props.style, styles.destination);
@@ -54,5 +55,6 @@ test('inline composer keeps destination beside calendar with clipped label and f
   assert.equal(buttons[0].findByType('Text').props.numberOfLines, 1, 'long date labels stay on one line');
   assert.ok(buttons[0].findByType('Text').props.style[0].maxWidth <= 64);
   assert.equal(buttons[2].props.accessibilityLabel, 'Add task', 'Add stays a separate reachable control at large font scale');
+  assert.equal(styles.addButton.minHeight, 48);
   await act(async () => tree.unmount());
 });
