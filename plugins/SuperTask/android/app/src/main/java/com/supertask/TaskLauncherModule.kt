@@ -10,7 +10,9 @@ import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -225,14 +227,22 @@ class TaskLauncherModule(private val context: ReactApplicationContext) :
                 private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
                 override fun onDraw(canvas: Canvas) {
                     super.onDraw(canvas)
-                    canvas.drawColor(Color.WHITE)
-                    paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = dp(1).toFloat()
-                    canvas.drawRect(1f, 1f, width - 1f, height - 1f, paint)
-                    val unit = width / 8f
-                    for (row in 2..5) {
-                        canvas.drawRect(unit * 1.5f, unit * row, unit * 2.5f, unit * (row + 0.55f), paint)
-                        canvas.drawLine(unit * 3.5f, unit * (row + 0.25f), unit * 6.5f, unit * (row + 0.25f), paint)
+                    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                    val icon = dp(32).toFloat()
+                    val left = (width - icon) / 2f
+                    val top = (height - icon) / 2f
+                    val bounds = android.graphics.RectF(left, top, left + icon, top + icon)
+                    paint.color = Color.WHITE; paint.style = Paint.Style.FILL
+                    canvas.drawRoundRect(bounds, dp(6).toFloat(), dp(6).toFloat(), paint)
+                    paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = dp(2).toFloat()
+                    paint.strokeCap = Paint.Cap.ROUND; paint.strokeJoin = Paint.Join.ROUND
+                    canvas.drawRoundRect(bounds, dp(6).toFloat(), dp(6).toFloat(), paint)
+                    val check = Path().apply {
+                        moveTo(width / 2f - dp(7), height / 2f)
+                        lineTo(width / 2f - dp(2), height / 2f + dp(5))
+                        lineTo(width / 2f + dp(8), height / 2f - dp(7))
                     }
+                    canvas.drawPath(check, paint)
                 }
             }
             panel.tag = tag; panel.contentDescription = "Open SuperTask. Drag to move. Hold for Hide and Settings."
