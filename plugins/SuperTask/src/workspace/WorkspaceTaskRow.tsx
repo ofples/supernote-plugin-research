@@ -15,9 +15,12 @@ export default function WorkspaceTaskRow(props: any) {
   const creating = id.startsWith('ui:');
   const protectedHistory = workspace.protectedHistory(task);
   const excludedFromSelection = workspace.selectionMode && !workspace.canSelect(task);
+  const rawDescription = String(task.description || '');
+  const inlineDescription = rawDescription.split(/\n*---\n\[SuperTask\] Captured from:/)[0].trim();
   return <View>
     <TaskRow {...props} task={task} checked={workspace.selectionMode ? false : checked} selected={workspace.selectionMode && selected}
       outlineSelected={expanded}
+      inlineDescription={expanded ? inlineDescription : undefined}
       selectionMode={workspace.selectionMode} roundCheck={!workspace.selectionMode}
       disabled={creating || protectedHistory || excludedFromSelection}
       onSyncPress={creating ? () => workspace.retryCreate(id) : props.onSyncPress}

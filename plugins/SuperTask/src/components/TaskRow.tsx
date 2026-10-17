@@ -34,9 +34,10 @@ type Props = {
   onLongPress?: (task: any) => void;
   rightAccessory?: React.ReactNode;
   outlineSelected?: boolean;
+  inlineDescription?: string;
 };
 
-export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress, rightAccessory, outlineSelected = false}: Props) {
+export default function TaskRow({task, onCheckPress, onPress, showProject, showCollection, pageNum, checked, selected, completedAt, onOpenNote, compact = false, roundCheck = false, onSyncPress, disabled = false, selectionMode = false, onLongPress, rightAccessory, outlineSelected = false, inlineDescription}: Props) {
   const scale = useFontScale();
   const [rowWidth, setRowWidth] = useState(0);
 
@@ -85,6 +86,7 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
       </Pressable>
       <View style={styles.content}>
         <Text style={[styles.title, {fontSize: Math.round(16 * scale), lineHeight: Math.round(22 * scale)}]}>{task.content}</Text>
+        {!!inlineDescription?.trim() && <Text accessibilityLabel={`Description: ${inlineDescription.trim()}`} style={[styles.description, {fontSize: Math.round(14 * scale), lineHeight: Math.round(19 * scale)}]}>{inlineDescription.trim()}</Text>}
         {chips.length > 0 && (
           <View style={styles.meta}>
             {chips.map((c, i) => (
@@ -107,10 +109,10 @@ export default function TaskRow({task, onCheckPress, onPress, showProject, showC
         </Pressable>
       ) : null}
     </Pressable>
-    {outlineSelected ? <View pointerEvents="none" style={styles.selectedOutline} /> : null}
     {rightAccessory ? <View pointerEvents="box-none" style={styles.accessoryOverlay}>
       {React.isValidElement(rightAccessory) ? React.cloneElement(rightAccessory as React.ReactElement<any>, {maxWidth: Math.max(0, rowWidth - 82)}) : rightAccessory}
     </View> : null}
+    {outlineSelected ? <View pointerEvents="none" style={styles.selectedOutline} /> : null}
     </View>
   );
 }
@@ -123,7 +125,7 @@ function formatDate(dateStr: string): string {
 
 const styles = StyleSheet.create({
   rowHost: {position: 'relative'},
-  accessoryOverlay: {position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center', backgroundColor: '#ffffff', zIndex: 2},
+  accessoryOverlay: {position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center', zIndex: 2},
   syncTarget: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginLeft: 4},
   syncSymbol: {fontSize: 23, fontWeight: '700', color: '#000'},
   row: {
@@ -139,7 +141,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   compactRow: {paddingVertical: 6, paddingHorizontal: 12, minHeight: 56},
-  selectedOutline: {position: 'absolute', top: 0, left: 2, right: 0, bottom: 0, borderWidth: 1, borderBottomWidth: 0, borderColor: '#000000', borderStyle: 'solid', zIndex: 1},
+  selectedOutline: {position: 'absolute', top: 0, left: 2, right: 0, bottom: 0, borderWidth: 2, borderBottomWidth: 1, borderColor: '#000000', borderStyle: 'solid', zIndex: 3, elevation: 3},
   checkTarget: {
     width: 44,
     minHeight: 44,
@@ -159,6 +161,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: 22,
   },
+  description: {color: '#222222', marginTop: 3},
   meta: {
     flexDirection: 'row',
     flexWrap: 'wrap',

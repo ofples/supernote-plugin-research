@@ -30,10 +30,11 @@ test('quick actions are icon-only accessible targets and keep their callbacks', 
     assert.equal(button.findAllByType('Text').length, 0);
     assert.equal(button.findAllByType('View').length > 0, true);
     assert.equal(buttonStyle.borderLeftWidth, index === 0 ? 0 : 1);
+    assert.equal(buttonStyle.backgroundColor, 'transparent');
   }
   const strip = tree.root.findByType('ScrollView');
-  assert.equal(strip.props.style[0].borderWidth, 1);
-  assert.equal(strip.props.style[0].borderColor, '#000000');
+  assert.equal(strip.props.style[0].backgroundColor, 'transparent');
+  assert.equal(strip.props.style[0].borderWidth, undefined);
   assert.equal(strip.props.style[0].width, undefined);
   assert.equal(strip.props.contentContainerStyle.flexDirection, 'row');
   for (const button of buttons) await act(async () => button.props.onPress());
