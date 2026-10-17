@@ -65,7 +65,7 @@ After creating a task, you have two options for marking the original handwriting
 
 Either way, the content on your note page is linked to the task in Todoist, and vice versa.
 
-For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.22 is built and installed; device checks verified Today/Done switching, stationary multiselect and the AI-by-default setting. Board/view options were not accessible in the bounded UI run. Handwriting capture, optional gestures/launcher and other workflows listed in [TESTING.md](TESTING.md) remain pending.
+For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.22 is built and installed; device checks verified Today/Done switching, the List/Board control and Board rendering, stationary multiselect, and the AI-by-default setting. Sorting/grouping details, handwriting capture, optional gestures/launcher and other workflows listed in [TESTING.md](TESTING.md) remain pending.
 
 ### Quick capture with finger gesture
 
