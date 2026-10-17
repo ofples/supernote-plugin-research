@@ -93,6 +93,32 @@ test('metadata scanners ignore confirmed project-name spans and dates inside URL
   assert.equal(unknownHash.dueString, undefined);
 });
 
+test('quick add consumes AM and PM suffixes as part of local times without leaving fragments', () => {
+  const parsed = parseQuickAdd('Meet due 2026-10-18 at 9:30pm', {});
+  assert.equal(parsed.content, 'Meet');
+  assert.equal(parsed.dueString, '2026-10-18T21:30:00');
+  const morning = parseQuickAdd('Meet 2026-10-18 12:05am', {});
+  assert.equal(morning.content, 'Meet');
+  assert.equal(morning.dueString, '2026-10-18T00:05:00');
+});
+
+test('quick add preserves explicit ISO instants instead of partially consuming their zone suffix', () => {
+  for (const value of ['2026-10-18T09:30:00Z', '2026-10-18T09:30:00+05:30']) {
+    const text = `Meet due ${value}`;
+    const parsed = parseQuickAdd(text, {});
+    assert.equal(parsed.content, text);
+    assert.equal(parsed.dueString, undefined);
+  }
+});
+
+test('unsupported recurrence, reminder, and deadline dates remain visible instead of becoming one-time due dates', () => {
+  for (const text of ['Water every day starting tomorrow', 'Remind me tomorrow to call', 'Set deadline: 2026-10-18']) {
+    const parsed = parseQuickAdd(text, {});
+    assert.equal(parsed.content, text);
+    assert.equal(parsed.dueString, undefined);
+  }
+});
+
 test('conflicting priorities remain in source text and do not select either value', () => {
   const conflict = parseQuickAdd('Handle this p1 p2', {});
   assert.equal(conflict.content, 'Handle this p1 p2');

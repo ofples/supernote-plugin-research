@@ -140,23 +140,28 @@ function labelTokens(text, excludedSpans = []) {
 
 function parseTime(value) {
   let hour, minute;
-  let match = value.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  let second = 0;
+  let match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)$/i);
   if (match) {
-    hour = Number(match[1]); minute = Number(match[2] || 0);
-    if (hour < 1 || hour > 12 || minute > 59) return null;
-    hour = (hour % 12) + (match[3].toLowerCase() === 'pm' ? 12 : 0);
+    hour = Number(match[1]); minute = Number(match[2]); second = Number(match[3] || 0);
+    if (hour < 1 || hour > 12 || minute > 59 || second > 59) return null;
+    hour = (hour % 12) + (match[4].toLowerCase() === 'pm' ? 12 : 0);
   } else {
-    match = value.match(/^(\d{1,2}):(\d{2})$/);
+    match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (!match) return null;
-    hour = Number(match[1]); minute = Number(match[2]);
-    if (hour > 23 || minute > 59) return null;
+    hour = Number(match[1]); minute = Number(match[2]); second = Number(match[3] || 0);
+    if (hour > 23 || minute > 59 || second > 59) return null;
   }
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 }
 
 function parseDue(text, capturedAt = Date.now(), excludedSpans = []) {
   const candidates = [];
-  const blocked = [...protectedRanges(text), ...excludedSpans];
+  const recurrence = /\b(?:every\s+(?:(?:other|second|third|fourth)\s+)?(?:\d+\s+)?(?:days?|weeks?|months?|years?|weekdays?|weekends?)|each\s+(?:day|week|month|year|weekday|weekend)|daily|weekly|monthly|yearly|annually)\b(?:\s+(?:starting|from|beginning)(?:\s+on)?\s+(?:today|tomorrow|tonight|\d{4}-\d{2}-\d{2}))?/giu;
+  const reminder = /\b(?:remind(?:er)?(?:\s+me)?|deadline|alert(?:\s+me)?|notify(?:\s+me)?)\b[^.;\n]{0,64}?\b(?:today|tomorrow|tonight|\d{4}-\d{2}-\d{2})\b/giu;
+  const unsupportedTemporal = [...text.matchAll(recurrence), ...text.matchAll(reminder)]
+    .map(match => ({start: match.index, end: match.index + match[0].length}));
+  const blocked = [...protectedRanges(text), ...excludedSpans, ...unsupportedTemporal];
   const add = (start, end, date, time) => {
     if (inside(start, blocked) || blocked.some(span => start < span.end && end > span.start)) return;
     if (text[start - 1] === '#') return;
@@ -171,14 +176,16 @@ function parseDue(text, capturedAt = Date.now(), excludedSpans = []) {
     const time = match[3] ? parseTime(match[3].replace(/\s+/g, '')) : null;
     if (!match[3] || time) add(match.index, relative.lastIndex, date, time);
   }
-  const absolute = /\b(?:(due)\s+)?(\d{4}-\d{2}-\d{2})(?:(?:[ T]|\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?))?(?![\d:])/gi;
+  const absolute = /\b(?:(due)\s+)?(\d{4}-\d{2}-\d{2})(?:(?:[ T]|\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)([zZ]|[+-]\d{2}:?\d{2})?)?(?![\d:])/gi;
   while ((match = absolute.exec(text))) {
+    // Offline due dates are local floating values. Keep explicit instants and
+    // offsets intact rather than stripping their zone and changing meaning.
+    if (match[4]) continue;
     let time;
     if (match[3]) {
-      const parsed = parseTime(match[3].length === 5 ? match[3] : match[3].slice(0, 5));
+      const parsed = parseTime(match[3].replace(/\s+/g, ''));
       if (!parsed) continue;
-      time = match[3].length === 8 ? `${parsed.slice(0, 6)}${match[3].slice(-2)}` : parsed;
-      const seconds = Number(time.slice(-2)); if (seconds > 59) continue;
+      time = parsed;
     }
     add(match.index, absolute.lastIndex, match[2], time);
   }
