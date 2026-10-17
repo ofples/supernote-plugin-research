@@ -1,16 +1,22 @@
-# Beta.26 device validation — pending
+# Beta.27 device validation — pending reconnect
 
-The beta.26 package `build/outputs/SuperTask-native-beta26.snplg` is built and package-verified locally. Beta.24 is the only installed version confirmed; beta.25 and beta.26 have not been installed. Beta.24 demonstrated that the TaskHome footer moves above the keyboard and that the New project modal reflows. In Config > Setup, the deep **New AI model ID** field and Add button remained clipped below the keyboard. This field has not been rechecked on beta.25 or beta.26. Automated checks and package inspection do not establish device behavior.
+Beta.27/code 32 is built and verified locally at `build/outputs/SuperTask-native-beta27.snplg` (7,609,670 bytes; SHA-256 `5ca085ae1964bc9940629ff716c048d8987bb4802d520ac386a5a95704fd267f`). It has not been installed: the Nomad disconnected before transfer. Afterward, ADB listed only a Pixel 10 Pro and an emulator; neither was touched. Beta.26 remains the latest confirmed installed runtime.
 
-1. Install the exact beta.26 package and verify Plugin Manager shows **0.4.0-beta.26**, code **31**, enabled ON.
-2. In Settings > Setup, expand the model list and focus **New AI model ID**. Verify the field and Add button are fully visible above the keyboard. Do not type a model ID or tap Add/Save. Focus the token field only to verify visibility; do not read or change its contents.
-3. Check TaskHome Settings/Close alignment against the host Home control and inspect View/ellipsis controls. Confirm selection mode keeps the header height and its existing clearance; inspect sidebar collapse/reopen and task quick actions with the white background and selection outline.
-4. Use the inline composer in portrait and large font with Inbox and a long project/collection name. Confirm the destination and date remain single-line and truncate, all controls stay reachable, and Add remains available.
-5. Open BatchAdd and confirm the header contains Review tasks, Batch actions and Cancel. Open Batch actions and check its controls; verify row editing, status/error messages and saved confirmation remain usable.
-6. Focus fields deep in TaskAdd, QuickAdd, TaskDetail and BatchAdd, including multiline descriptions. Check ProjectPicker's New collection name and TaskHome rename/create/labels dialogs. Confirm focused fields stay visible as the keyboard opens and as content grows, then dismiss the keyboard and confirm the screen returns to its prior layout.
-7. Repeat representative checks after rotation. Inspect a modal whose panel starts below the top edge, and check the two-lane board pager, Previous/Next bounds and page reset.
+On beta.26, Plugin Manager showed **0.4.0-beta.26**, enabled **ON**. Luna confirmed bordered Settings/Close, View and ellipsis controls; sidebar collapse/reopen and list reflow; inline date and destination on one row; long destination truncation to `Y...` with the picker reachable; Add visible with the keyboard open; and the deep Setup **New AI model ID** field/Add model button visible after a small upward scroll. Dismissing the keyboard restored the page/footer. No model ID was entered or saved.
 
-Record each result separately. Do not edit, complete or delete tasks, modify notes, or change token/model settings during layout checks. See [TESTING.md](TESTING.md) for local package and automated results.
+The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png) shows the host Home circle overlapping Close's lower-right border corner while leaving its label clear. Beta.27 increases the normal-header reserve from 44 to 56 dp; selection remains 60 dp and header height remains unchanged. Verify that fix against the actual host Home control after reconnecting; the geometry is not yet device-verified.
+
+| Check | Result |
+|---|---|
+| Beta.26 installed runtime identity | Verified: 0.4.0-beta.26, ON |
+| Beta.26 Settings/Close, View/ellipsis, sidebar collapse/reflow | Verified |
+| Beta.26 inline composer date/destination row and long-label picker | Verified; label clipped to `Y...` |
+| Beta.26 Setup New AI model ID/Add model keyboard reachability | Verified after a small upward scroll; no text entered or saved |
+| Beta.27 normal-header Home clearance | Pending: beta.27 package not installed |
+| BatchAdd header/actions/modal, task quick-action frame, New Project modal, board pagination | Pending |
+| Other keyboard fields, large-font/rotation and modal geometry | Pending |
+
+The unsaved beta.26 composer test text was discarded with its X; Add was never pressed, Inbox was restored, and no task/note or model setting changed. ADB forward list was empty and left unchanged. See [TESTING.md](TESTING.md) for local checks and package details.
 
 # Workflow validation — 3 October 2026
 

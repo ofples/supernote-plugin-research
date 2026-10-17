@@ -61,10 +61,10 @@ test('workspace header and view controls use bordered text while sidebar remains
   await act(async () => {header.unmount(); controls.unmount(); sidebar.unmount();});
 });
 
-test('workspace header actions use the 44 dp Home reserve and selection keeps its 60 dp clearance', () => {
+test('workspace header actions reserve 56 dp for the host Home control and selection keeps 60 dp clearance', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../src/screens/TaskHome.tsx'), 'utf8');
-  assert.match(source, /paddingRight: selectionMode \? 60 : 44/);
-  assert.match(source, /paddingRight: 44,/);
+  assert.match(source, /paddingRight: selectionMode \? 60 : 56/);
+  assert.match(source, /paddingRight: 56,/);
   const component = fs.readFileSync(path.resolve(__dirname, '../src/components/WorkspaceActionButtons.tsx'), 'utf8');
   assert.match(component, /marginLeft: 'auto', flexShrink: 0/);
 });

@@ -140,7 +140,7 @@ test('sidebar collapse persists across opens and its toggle keeps its header slo
   const sidebar = () => tree.root.findByType('Sidebar').parent;
   assert.equal(sidebar().props.style.display, 'none');
   const header = reserve => tree.root.findAllByType('View').find(node => node.props.style?.some?.(style => style?.paddingRight === reserve));
-  const originalHeaderHeight = header(44).props.style[1].height;
+  const originalHeaderHeight = header(56).props.style[1].height;
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Show sidebar'}).props.onPress());
   await act(async () => model.flushSaves());
   assert.equal(model.config.sidebarCollapsed, false);
@@ -640,7 +640,7 @@ test('selection mode keeps the header height and mounted composer slot unchanged
   assert.equal(tree.root.findAllByType('Composer').length, 1, 'selection must hide the mounted composer instead of removing its slot');
   await act(async () => tree.root.findByType('Selection').props.onCancel());
   assert.equal(headerStyle()[1].height, beforeHeight);
-  assert.equal(headerStyle()[1].paddingRight, 44);
+  assert.equal(headerStyle()[1].paddingRight, 56);
   assert.equal(JSON.stringify(composerSlot().props.style[0]), beforeComposerLayout);
   assert.equal(composerSlot().props.pointerEvents, 'auto');
   await act(async () => tree.unmount());
