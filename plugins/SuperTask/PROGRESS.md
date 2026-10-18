@@ -1,14 +1,20 @@
 # SuperTask progress
 
-## Beta.27 — Home clearance adjustment — 17 October 2026
+## Beta.28 — standard TaskHome header spacing — 18 October 2026
 
-Runtime fix commit `23719c3` increases the normal TaskHome header's host-Home reserve from 44 to 56 dp; selection mode keeps its 60 dp reserve and header height stays fixed. Metadata/build commit `cd700ee` sets **0.4.0-beta.27/code 32**. The local package `build/outputs/SuperTask-native-beta27.snplg` is **7,609,670 bytes**, SHA-256 `5ca085ae1964bc9940629ff716c048d8987bb4802d520ac386a5a95704fd267f`. The verifier passed actual identity, native DEX and ARM64 inspection. Pinned Hermes produced a 5,025,904-byte HBC, SHA-256 `92ee6f31294d2b10393a0caaff726c5fc3dcc8a34ebcad4945540284a228f60c7`; JS bundle is 3,276,574 bytes. Full checks pass: **331/331 tests**, focused header/sidebar UI coverage **40/40** with surface callbacks exercised, TypeScript, ESLint quiet mode, local Android build and package verification. The Nomad disconnected before beta.27 transfer, so the Home clearance fix is device-pending.
+Runtime/test commit `5757efbbc3d92bddcec9c2a2450aefa0b1ab49f6` removes the special right reserve: normal and selection headers both use symmetric 16 dp padding. Settings stays immediately left of Close and the fixed-height formula is unchanged. Metadata/build commit `94ec1a8c5624498366d129b2266d674a460bc5da` sets **0.4.0-beta.28/code 33**. The verified local package `build/outputs/SuperTask-native-beta28.snplg` is **7,609,646 bytes**, SHA-256 `5a343da7e54e25e8c06ec19fac8edcf4c3360a33fe850b79b935f8310b545ad5`. The verifier passed actual identity, native DEX and ARM64 inspection. Pinned Hermes produced a 5,025,865-byte HBC, SHA-256 `8857642ea4886d36ccdc2cfe625d40128c7f8012487038582841b861ca31d35f`; JS bundle is 3,276,536 bytes, SHA-256 `081fc57ee82d38972f6c0faf271f69fdb7c2527b9deb3b2e8e68a387418e48e9`. Full checks pass: **331/331 tests**, focused header/sidebar UI coverage **40/40** with surface callbacks exercised, TypeScript, ESLint quiet mode, local Android build, package verification and pinned Hermes. Beta.28 is local-only because the Nomad remains disconnected; no device checks were performed.
+
+The beta.27 56/60 dp right reserve was unnecessary: the host Home control floats and can move, so its overlap does not define the header edge. Beta.28 restores symmetric 16 dp padding. Beta.27 was not installed.
+
+## Beta.27 — superseded local spacing experiment — 17 October 2026
+
+Runtime commit `23719c3` and metadata commit `cd700ee` set **0.4.0-beta.27/code 32** with a 56 dp normal / 60 dp selection right reserve. This local-only spacing experiment was superseded by beta.28 after the user clarified that the floating host Home button must be disregarded. Beta.27 was not installed.
 
 ## Beta.26 — compact capture and workspace controls — 17 October 2026
 
 Runtime UI commit `2e41674e312f88781b150c15ede6c496c3e46534`; metadata/build commit `2bf4a0c5760c142826b112172689310a562b72fb` sets **0.4.0-beta.26/code 31**. The offline suite passed 331/331; TypeScript and ESLint quiet mode passed. Local package and pinned Hermes verification passed. Luna installed beta.26 on Nomad `SN078D10010594`; Plugin Manager showed 0.4.0-beta.26 enabled ON. Device checks confirmed the bordered header/view/menu text buttons, sidebar toggle and list reflow, one-row calendar/destination with long-label clipping and reachable picker, Add visible while keyboard open, and the Setup New AI model ID/Add model controls visible after a small scroll. Keyboard dismissal restored the page/footer. No model text or task was saved.
 
-The captured device screenshot `C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png` shows the Home circle overlapping the Close border corner; this led to the beta.27 reserve increase. BatchAdd, task quick-action framing, New Project modal and board pagination remain unverified. ADB forward list was empty and unchanged. No note/task or model settings were changed. See [TESTING.md](TESTING.md) and [device validation](VALIDATION.md).
+The captured device screenshot `C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png` shows the movable Home circle overlapping the Close border corner; it does not define the header's right edge. BatchAdd, task quick-action framing, New Project modal and board pagination remain unverified. ADB forward list was empty and unchanged. No note/task or model settings were changed. See [TESTING.md](TESTING.md) and [device validation](VALIDATION.md).
 
 ## Beta.22 — capture review and workspace preferences — 17 October 2026
 
