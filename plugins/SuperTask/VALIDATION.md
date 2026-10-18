@@ -1,10 +1,10 @@
-# Beta.27 device validation — pending reconnect
+# Beta.28 device validation — pending reconnect
 
-Beta.27/code 32 is built and verified locally at `build/outputs/SuperTask-native-beta27.snplg` (7,609,670 bytes; SHA-256 `5ca085ae1964bc9940629ff716c048d8987bb4802d520ac386a5a95704fd267f`). It has not been installed: the Nomad disconnected before transfer. Afterward, ADB listed only a Pixel 10 Pro and an emulator; neither was touched. Beta.26 remains the latest confirmed installed runtime.
+Beta.28/code33 is built and verified locally at `build/outputs/SuperTask-native-beta28.snplg` (7,609,646 bytes; SHA-256 `5a343da7e54e25e8c06ec19fac8edcf4c3360a33fe850b79b935f8310b545ad5`). It has not been installed: the Nomad was disconnected at the last device check. Beta.26 remains the latest confirmed installed runtime; beta.27 was built locally but never installed.
 
 On beta.26, Plugin Manager showed **0.4.0-beta.26**, enabled **ON**. Luna confirmed bordered Settings/Close, View and ellipsis controls; sidebar collapse/reopen and list reflow; inline date and destination on one row; long destination truncation to `Y...` with the picker reachable; Add visible with the keyboard open; and the deep Setup **New AI model ID** field/Add model button visible after a small upward scroll. Dismissing the keyboard restored the page/footer. No model ID was entered or saved.
 
-The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png) shows the host Home circle overlapping Close's lower-right border corner while leaving its label clear. Beta.27 increases the normal-header reserve from 44 to 56 dp; selection remains 60 dp and header height remains unchanged. Verify that fix against the actual host Home control after reconnecting; the geometry is not yet device-verified.
+The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png) shows the movable host Home circle touching Close's lower-right border corner while leaving its label clear. Treat this as floating-control overlap, not a header boundary. Beta.27's 56/60 dp special reserves were unnecessary and have been superseded. Beta.28 uses symmetric 16 dp padding in both normal and selection headers, keeps Settings immediately left of Close, and preserves fixed header height. Verify the header placement on beta.28 after the Nomad reconnects; no beta.28 device check has been performed.
 
 | Check | Result |
 |---|---|
@@ -12,7 +12,7 @@ The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/L
 | Beta.26 Settings/Close, View/ellipsis, sidebar collapse/reflow | Verified |
 | Beta.26 inline composer date/destination row and long-label picker | Verified; label clipped to `Y...` |
 | Beta.26 Setup New AI model ID/Add model keyboard reachability | Verified after a small upward scroll; no text entered or saved |
-| Beta.27 normal-header Home clearance | Pending: beta.27 package not installed |
+| Beta.28 standard symmetric header placement | Pending: beta.28 package not installed |
 | BatchAdd header/actions/modal, task quick-action frame, New Project modal, board pagination | Pending |
 | Other keyboard fields, large-font/rotation and modal geometry | Pending |
 
