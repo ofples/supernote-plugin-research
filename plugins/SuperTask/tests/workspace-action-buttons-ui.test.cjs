@@ -61,10 +61,12 @@ test('workspace header and view controls use bordered text while sidebar remains
   await act(async () => {header.unmount(); controls.unmount(); sidebar.unmount();});
 });
 
-test('workspace header actions reserve 56 dp for the host Home control and selection keeps 60 dp clearance', () => {
+test('workspace header uses symmetric padding without a reserved Home-control gutter', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../src/screens/TaskHome.tsx'), 'utf8');
-  assert.match(source, /paddingRight: selectionMode \? 60 : 56/);
-  assert.match(source, /paddingRight: 56,/);
+  assert.match(source, /header:\s*\{[^}]*padding:\s*16,/s);
+  assert.doesNotMatch(source, /paddingRight:\s*(?:selectionMode|56|60)/);
+  assert.doesNotMatch(source, /host Home control/);
+  assert.match(source, /height: Math\.max\(76, Math\.round\(22 \* scale \* 1\.3\) \+ 32\)/);
   const component = fs.readFileSync(path.resolve(__dirname, '../src/components/WorkspaceActionButtons.tsx'), 'utf8');
   assert.match(component, /marginLeft: 'auto', flexShrink: 0/);
 });

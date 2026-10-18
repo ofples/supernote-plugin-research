@@ -1355,7 +1355,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     <WorkspaceContext.Provider value={workspace}>
     <View style={styles.container}>
       {/* Keep the header height stable when the undo action replaces its controls. */}
-      <View style={[styles.header, {height: Math.max(76, Math.round(22 * scale * 1.3) + 32), paddingRight: selectionMode ? 60 : 56}]}>
+      <View style={[styles.header, {height: Math.max(76, Math.round(22 * scale * 1.3) + 32)}]}>
         {selectionMode ? <View style={styles.selectionHeader}>
           <WorkspaceSidebarToggle collapsed={sidebarCollapsed} onPress={toggleSidebar} />
           <WorkspaceSelectionBar count={selectedIds.length}
@@ -1663,9 +1663,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    // Leave room for the host Home control at the right edge; keep the normal
-    // header controls clear of its lower-right corner on the Nomad.
-    paddingRight: 56,
     borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
