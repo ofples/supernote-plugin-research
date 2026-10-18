@@ -16,6 +16,9 @@ const DEFAULT_CONFIG = {
   apiToken: '',
   aiApiKey: '',
   aiModel: 'gpt-4.1-mini',
+  // Explicit opt-in. Older configs inherit false and continue using device OCR.
+  aiByDefault: false,
+  aiModels: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   privacyWarning: '',
   debugServerUrl: '',
   defaultProjectId: null,
@@ -134,10 +137,15 @@ export async function reloadConfig() {
   _runtimeConfig = null;
   return loadConfig();
 }
-export function saveConfig(changes) {
+export function saveConfig(changesOrUpdater) {
   const run = _saveChain.then(async () => {
     try {
       const current = await loadConfig();
+      // Updaters execute inside the serialized save queue, against the newest
+      // private settings. Returning null is an intentional account-switch no-op.
+      const changes = typeof changesOrUpdater === 'function' ? changesOrUpdater({...current}) : changesOrUpdater;
+      if (changes == null) return true;
+      if (typeof changes !== 'object' || Array.isArray(changes)) return false;
       const merged = {...current, ...changes};
       const {storage} = await privateStorage();
       await storage.saveSettings(JSON.stringify(merged));

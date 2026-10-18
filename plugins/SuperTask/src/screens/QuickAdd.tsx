@@ -10,11 +10,10 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
 } from 'react-native';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {PluginCommAPI, PluginNoteAPI} from 'sn-plugin-lib';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig} from '../utils/config';
@@ -439,10 +438,10 @@ export default function QuickAdd({nav}: {nav: Nav}) {
 
     // phase === 'ready'
     return (
-      <ScrollView style={s.panelScroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView style={s.panelScroll}>
         <View style={s.field}>
           <Text style={[s.label, {fontSize: Math.round(15 * scale)}]}>Task</Text>
-          <TextInput
+          <KeyboardAwareTextInput
             style={[s.input, {fontSize: Math.round(16 * scale)}]}
             value={content}
             onChangeText={setContent}
@@ -468,7 +467,7 @@ export default function QuickAdd({nav}: {nav: Nav}) {
 
         <View style={s.field}>
           <Text style={[s.label, {fontSize: Math.round(15 * scale)}]}>Description</Text>
-          <TextInput
+          <KeyboardAwareTextInput
             style={[s.input, s.inputDesc, {fontSize: Math.round(16 * scale)}]}
             value={description}
             onChangeText={setDescription}
@@ -480,7 +479,7 @@ export default function QuickAdd({nav}: {nav: Nav}) {
         <Pressable style={s.submitBtn} onPress={handleSubmit}>
           <Text style={[s.submitBtnText, {fontSize: Math.round(17 * scale)}]}>Add to Todoist</Text>
         </Pressable>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     );
   };
 

@@ -11,7 +11,6 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import {PluginCommAPI, PluginFileAPI, NativePluginManager} from 'sn-plugin-lib';
@@ -39,15 +38,20 @@ const {localDate} = require('../offline/model');
 const {splitTitleDescription} = require('../batch/descriptionParser');
 import {log, logError} from '../utils/debug';
 import TaskSidebar from '../components/NativeTaskSidebar';
+import {HeaderActionButtons, WorkspaceSidebarToggle, WorkspaceViewControls} from '../components/WorkspaceActionButtons';
 import TaskRow, {WorkspaceContext} from '../workspace/WorkspaceTaskRow';
 import InlineTaskComposer from '../components/InlineTaskComposer';
 import WorkspaceSelectionBar from '../components/WorkspaceSelectionBar';
 import DatePicker from '../components/DatePicker';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput, KeyboardAvoidanceViewport} from '../components/KeyboardAvoidance';
 import ProjectPicker from '../components/ProjectPicker';
 import PriorityPicker from '../components/PriorityPicker';
 import ProjectOverview from '../components/ProjectOverview';
 import SectionHeader from '../components/SectionHeader';
 import Chip from '../components/Chip';
+import WorkspaceBoard from '../components/WorkspaceBoard';
+import WorkspaceViewOptions from '../components/WorkspaceViewOptions';
+const {normalizePreferences, preferencesForAccount, mergePreferencePatches, sortTasks, groupTasks, defaults: viewDefaults} = require('../workspace/viewPreferences');
 
 type Nav = {
   push: (name: string, params?: Record<string, any>) => void;
@@ -137,7 +141,19 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const [doneFetched, setDoneFetched] = useState(false);
   // F-030: footer toggle -- show completed-today tasks inline on the Today
   // tab, same row pattern as the Done tab (filled box, Done chip, reopen)
-  const [completedExpanded, setCompletedExpanded] = useState<Record<string, boolean>>({});
+  const [workspacePreferences, setWorkspacePreferences] = useState<any>(() => {
+    const accountKey = cached0?.accountKey;
+    return preferencesForAccount(cfg0?.workspacePreferences, accountKey);
+  });
+  const [workspacePreferenceAccountKey, setWorkspacePreferenceAccountKey] = useState<string | null>(() => cached0?.accountKey || null);
+  const workspacePreferencesRef = useRef(workspacePreferences);
+  const workspacePreferenceAccountRef = useRef(workspacePreferenceAccountKey);
+  const preferenceRevision = useRef(0);
+  const localPreferencePatches = useRef<Record<string, any>>({});
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => cfg0?.sidebarCollapsed === true);
+  const sidebarPreferenceRevision = useRef(0);
+  const [preferenceSaveError, setPreferenceSaveError] = useState('');
   const [historyDays, setHistoryDays] = useState(30);
   const [historyLimit, setHistoryLimit] = useState(20);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -170,8 +186,49 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const resolvedTab = activeTab.startsWith('project:') ? `project:${resolveContainerId(activeTab.slice(8), projectList)}` : activeTab;
   const activeProject = resolvedTab.startsWith('project:') ? projectList.find(project => String(project.id) === resolvedTab.slice(8)) : null;
   const completedViewKey = activeProject ? `project:${activeProject.localId || activeProject.id}` : resolvedTab;
-  const showDone = completedExpanded[completedViewKey] !== false;
-  const setShowDone = (update: (value: boolean) => boolean) => setCompletedExpanded(previous => ({...previous, [completedViewKey]: update(previous[completedViewKey] !== false)}));
+  const preferenceAccountKey = syncInfo?.accountKey || cached0?.accountKey;
+  const scopedWorkspacePreferences = workspacePreferenceAccountKey === preferenceAccountKey ? workspacePreferences : {};
+  const viewPreferences = normalizePreferences(scopedWorkspacePreferences[completedViewKey], completedViewKey);
+  const showDone = viewPreferences.completedExpanded;
+  const persistWorkspacePreferencePatches = (accountKey: string, accountToken: string | undefined, patches: Record<string, any>) => saveConfig((latestConfig: any) => {
+    if (getCachedWorkspace()?.accountKey !== accountKey || getCachedConfig()?.apiToken !== accountToken) return null;
+    const store = latestConfig.workspacePreferences || {};
+    const accountPreferences = preferencesForAccount(store, accountKey);
+    const merged = mergePreferencePatches(accountPreferences, patches);
+    return {workspacePreferences: {...store, accounts: {...(store.accounts || {}), [accountKey]: merged}}};
+  }).then(saved => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) {
+      setPreferenceSaveError(saved ? '' : 'View preferences could not be saved.');
+    }
+    return saved;
+  }).catch(() => {
+    if (getCachedWorkspace()?.accountKey === accountKey && getCachedConfig()?.apiToken === accountToken) setPreferenceSaveError('View preferences could not be saved.');
+    return false;
+  });
+  const updateViewPreferences = (patch: any, context = completedViewKey) => {
+    const accountKey = getCachedWorkspace()?.accountKey;
+    if (!accountKey) return;
+    const storedForAccount = preferencesForAccount(getCachedConfig()?.workspacePreferences, accountKey);
+    const currentForAccount = workspacePreferenceAccountRef.current === accountKey
+      ? workspacePreferencesRef.current : storedForAccount;
+    const nextForAccount = {...currentForAccount, [context]: normalizePreferences({...currentForAccount[context], ...patch}, context)};
+    workspacePreferencesRef.current = nextForAccount;
+    workspacePreferenceAccountRef.current = accountKey;
+    preferenceRevision.current += 1;
+    localPreferencePatches.current[accountKey] = {...(localPreferencePatches.current[accountKey] || {}), [context]: {
+      ...(localPreferencePatches.current[accountKey]?.[context] || {}), ...patch,
+    }};
+    setWorkspacePreferenceAccountKey(accountKey);
+    setWorkspacePreferences(nextForAccount);
+    persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, {[context]: patch});
+  };
+  const setShowDone = (update: (value: boolean) => boolean) => updateViewPreferences({completedExpanded: update(showDone)});
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    sidebarPreferenceRevision.current += 1;
+    setSidebarCollapsed(next);
+    saveConfig({sidebarCollapsed: next}).catch(() => {});
+  };
   const seedTasks = useMemo(() => {
     const seen = new Set();
     return [...baseTasks, ...doneTasks.filter(task => !task.occurrenceHistory || !task.due?.is_recurring), ...creatingDrafts]
@@ -183,8 +240,30 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
   const optimisticDone: any[] = useMemo(() => projected.filter((task: any) => task.completed && !task.deleted), [projected]);
   useEffect(() => {
     if (!active) return;
-    loadConfig().then(withCurrentAccount(config => {setVisibilityConfig(config); setDebugModeOn(config.debugMode === true);})).catch(() => {});
+    loadConfig().then(withCurrentAccount(config => {
+      setVisibilityConfig(config);
+      setDebugModeOn(config.debugMode === true);
+      if (sidebarPreferenceRevision.current === 0) setSidebarCollapsed(config.sidebarCollapsed === true);
+    })).catch(() => {});
   }, [active]);
+  useEffect(() => {
+    const accountKey = getCachedWorkspace()?.accountKey;
+    if (!accountKey) return;
+    const revision = preferenceRevision.current;
+    loadConfig().then(withCurrentAccount(config => {
+      if (getCachedWorkspace()?.accountKey !== accountKey) return;
+      const loaded = preferencesForAccount(config.workspacePreferences, accountKey);
+      const patches = localPreferencePatches.current[accountKey] || {};
+      const resolved = revision === preferenceRevision.current ? loaded : mergePreferencePatches(loaded, patches);
+      workspacePreferencesRef.current = resolved;
+      workspacePreferenceAccountRef.current = accountKey;
+      setWorkspacePreferenceAccountKey(accountKey);
+      setWorkspacePreferences(resolved);
+      if (revision !== preferenceRevision.current) {
+        persistWorkspacePreferencePatches(accountKey, getCachedConfig()?.apiToken, patches);
+      }
+    })).catch(() => {});
+  }, [syncInfo?.accountKey]);
 
   // B-033 (SNDEV-69): the plugin view appears via partial refresh, and the
   // mostly-white first frames leave the note's top half ghosting through
@@ -666,6 +745,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
       );
     }
 
+    const boardProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const customPresentation = viewPreferences.view === 'board' || viewPreferences.sortBy !== 'manual' || viewPreferences.groupBy !== viewDefaults(resolvedTab).groupBy;
+    if (customPresentation && boardProjectId && !isProjectVisible(visibilityConfig, boardProjectId, projectList)) {
+      return <View style={styles.centered}><Text style={styles.emptyText}>This project is hidden in Settings. Choose a visible project from the sidebar.</Text></View>;
+    }
+    if (viewPreferences.view === 'board') return renderWorkspaceBoard();
+    if (viewPreferences.sortBy !== 'manual' || viewPreferences.groupBy !== viewDefaults(resolvedTab).groupBy) return renderWorkspaceList();
+
     if (activeTab === 'note') return <ScrollView onScrollBeginDrag={() => setExpandedId(null)}>{renderThisNote()}{renderCompletedSection()}</ScrollView>;
     if (activeTab === 'tomorrow') return renderSimpleTasks(projectFiltered(tasks).filter(task => (task.due?.date || '').slice(0, 10) === tomorrow), 'No tasks due tomorrow');
     if (activeTab === 'inbox') return renderProjectTasks(inboxProject?.id, 'Inbox');
@@ -962,6 +1049,84 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }).sort((a, b) => (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || ''));
   const selectableTasks = (selectionHistory ? activeTab === 'done' ? contextTasks : completedItems : contextTasks).filter((task: any) => !String(task.id).startsWith('ui:') && !historyProtected(task));
   const selectableKey = selectableTasks.map((task: any) => rowIdentity(task)).join('|');
+  const recentDoneTasks = () => contextTasks.slice().sort((a: any, b: any) =>
+    (b.occurrenceCompletedAt || b.completed_at || '').localeCompare(a.occurrenceCompletedAt || a.completed_at || '')).slice(0, historyLimit);
+  const renderOlderHistoryControl = () => <Pressable style={styles.historyLink} accessibilityRole="button" accessibilityLabel="Load older completed tasks"
+    disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.headerButtonText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>;
+  const renderWorkspaceList = () => {
+    const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const displayed = groupTasks(sortTasks(displayedTasks, viewPreferences.sortBy), viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
+      projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
+    const rows: any[] = displayed.flatMap((group: any) => [
+      ...(viewPreferences.groupBy === 'none' ? [] : [{key: `header:${group.key}`, type: 'header', group}]),
+      ...group.tasks.map((task: any) => ({key: rowIdentity(task), type: 'task', task})),
+    ]);
+    return <FlatList data={rows} keyExtractor={item => item.key} onScrollBeginDrag={() => setExpandedId(null)}
+      ListHeaderComponent={activeTab === 'note' ? <View style={styles.thisPageHeader}>
+        <Text style={[styles.thisPageTitle, {fontSize: Math.round(13 * scale)}]}>This Note</Text><Chip label={String(noteTasks.length)} />
+        {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
+      </View> : null}
+      ListEmptyComponent={<View style={styles.emptyList}><Text style={styles.emptyText}>{activeTab === 'note' ? 'No active tasks in this note' : 'No tasks in this view'}</Text></View>}
+      ListFooterComponent={activeTab === 'done' ? renderOlderHistoryControl() : renderCompletedSection()} extraData={{selectedIds, selectionMode, sortBy: viewPreferences.sortBy, historyLimit}}
+      renderItem={({item}) => {
+        if (item.type === 'header') return <SectionHeader title={item.group.title} count={item.group.tasks.length} />;
+        const task = item.task;
+        const note = activeTab === 'note' ? noteTasks.find((entry: any) => sameTaskReference(entry.task, task)) : null;
+        const device = activeTab === 'device' ? deviceEntries.find((entry: any) => sameTaskReference(entry, task)) : null;
+        const pageNum = note?.pageNum ?? device?.pageNum;
+        const path = activeTab === 'device' ? device?.notePath || device?.source?.filePath : noteCtx?.filePath;
+        return <TaskRow task={task} checked={!!task.completed} completedAt={task.occurrenceCompletedAt || task.completed_at}
+          onCheckPress={task.completed ? handleReopen : sel.completeOne} disabled={sel.busy}
+          onSyncPress={() => setSyncSheetOpen(true)} onPress={handleTaskPress}
+          showProject={projectMap[task.project_id]} showCollection={collectionName(task)} pageNum={pageNum}
+          onOpenNote={path && pageNum !== undefined && (activeTab !== 'note' || pageNum !== noteCtx?.pageNum)
+            ? () => handleOpenNote(path, pageNum, task.id) : undefined} />;
+      }} />;
+  };
+  const renderWorkspaceBoard = () => {
+    const displayedTasks = activeTab === 'done' ? recentDoneTasks() : contextTasks;
+    const sorted = sortTasks(displayedTasks, viewPreferences.sortBy);
+    const selectedProjectId = resolvedTab.startsWith('project:') ? resolvedTab.slice(8) : activeTab === 'inbox' ? inboxProject?.id : null;
+    const groups = groupTasks(sorted, viewPreferences.groupBy, {projects: projectList, collections: collectionList, today,
+      projectId: selectedProjectId, includeEmptyCollections: !!selectedProjectId && viewPreferences.groupBy === 'collection'});
+    if (activeTab === 'done') {
+      if (!groups.length) groups.push({key: 'done-empty', title: 'Completed', tasks: []});
+      groups[groups.length - 1] = {...groups[groups.length - 1], footer: renderOlderHistoryControl()};
+    } else groups.push({key: 'workspace-completed', title: 'Completed', tasks: showDone ? completedItems.slice(0, historyLimit) : [], emptyMessage: null,
+      header: <SectionHeader title="Completed" count={completedItems.length} expanded={showDone}
+        onToggle={() => {setExpandedId(null); setShowDone(value => !value);}} />,
+      footer: showDone ? <>
+        {!!doneError && <Text accessibilityRole="alert" style={styles.sheetText}>{doneError}</Text>}
+        <Pressable accessibilityRole="button" accessibilityLabel="Load older completed tasks" style={styles.historyLink}
+          disabled={historyLoading} onPress={loadMoreHistory}><Text style={styles.historyLinkText}>{historyLoading ? 'Loading history…' : 'Older completed tasks ›'}</Text></Pressable>
+      </> : null});
+    const renderTask = (task: any, group: any) => {
+      if (group.key === 'workspace-completed') return <TaskRow key={rowIdentity(task)} task={task} checked
+        completedAt={task.occurrenceCompletedAt || task.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress}
+        onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[task.project_id]} showCollection={collectionName(task)} />;
+      const note = activeTab === 'note' ? noteTasks.find((item: any) => sameTaskReference(item.task, task)) : null;
+      const device = activeTab === 'device' ? deviceEntries.find((item: any) => sameTaskReference(item, task)) : null;
+      const pageNum = note?.pageNum ?? device?.pageNum;
+      const path = activeTab === 'device' ? device?.notePath || device?.source?.filePath : noteCtx?.filePath;
+      return <TaskRow key={rowIdentity(task)} task={task} selected={selectedIds.includes(rowIdentity(task))}
+        checked={!!task.completed} completedAt={task.occurrenceCompletedAt || task.completed_at}
+        onCheckPress={task.completed ? handleReopen : sel.completeOne} disabled={sel.busy}
+        onSyncPress={() => setSyncSheetOpen(true)} onPress={handleTaskPress}
+        showProject={projectMap[task.project_id]} showCollection={collectionName(task)} pageNum={pageNum}
+        onOpenNote={path && pageNum !== undefined && (activeTab !== 'note' || pageNum !== noteCtx?.pageNum)
+          ? () => handleOpenNote(path, pageNum, task.id) : undefined} />;
+    };
+    return <View style={{flex: 1}}>
+      {activeTab === 'note' && <View style={styles.thisPageHeader}>
+        <Text style={[styles.thisPageTitle, {fontSize: Math.round(13 * scale)}]}>This Note</Text>
+        <Chip label={String(noteTasks.length)} />
+        {!!noteCtx && <Text style={styles.thisPageNote}>{noteLabel(noteCtx.filePath, noteCtx.fileName)}</Text>}
+      </View>}
+      <WorkspaceBoard groups={groups} renderTask={renderTask} taskKey={rowIdentity} contextKey={`${resolvedTab}:${viewPreferences.groupBy}`}
+        extraData={{selectedIds, selectionMode, showDone, sortBy: viewPreferences.sortBy}} />
+    </View>;
+  };
   const excludedKeepProjects = new Set([actionSheet?.id, ...(containerProof?.projects || [])].filter(id => id != null).map(String));
   let excludedChanged = true;
   while (excludedChanged) {
@@ -1100,6 +1265,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     } finally {submission.saving = false;}
   };
   const canOrder = (task: any, direction: string) => {
+    if (viewPreferences.sortBy !== 'manual') return false;
     if (!resolvedTab.startsWith('project:') && activeTab !== 'inbox' && activeTab !== 'projects') return false;
     const siblings = tasks.filter(value => String(value.project_id) === String(task.project_id) &&
       String(value.section_id || '') === String(task.section_id || '') && String(value.parent_id || '') === String(task.parent_id || ''));
@@ -1121,6 +1287,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     }};
   const changeView = (view: string) => {
     const next = normalizeTaskView(view);
+    setViewOptionsOpen(false);
     sel.clearSelection(); setActiveTab(next); setSessionTab(next);
     setExpandedId(null); setHistoryLimit(20);
     setComposer(previous => previous.value.trim() ? previous : {...previous, explicit: false});
@@ -1150,10 +1317,8 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     finally {setSyncRetrying(false);}
   };
   const renderCompletedSection = () => <View accessibilityLabel="Completed section">
-    <Pressable accessibilityRole="button" accessibilityLabel="Expand completed tasks" accessibilityState={{expanded: showDone}}
-      onPress={() => {setExpandedId(null); setShowDone(value => !value);}}>
-      <SectionHeader title={`${showDone ? '⌄' : '›'} Completed`} count={completedItems.length} />
-    </Pressable>
+    <SectionHeader title="Completed" count={completedItems.length} expanded={showDone}
+      onToggle={() => {setExpandedId(null); setShowDone(value => !value);}} />
     {showDone && completedItems.slice(0, historyLimit).map(task => <TaskRow key={rowIdentity(task)} task={task} checked
       completedAt={task.occurrenceCompletedAt || task.completed_at} onCheckPress={handleReopen} onPress={handleTaskPress}
       onSyncPress={() => setSyncSheetOpen(true)} showProject={projectMap[task.project_id]} showCollection={collectionName(task)} />)}
@@ -1190,17 +1355,20 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
     <WorkspaceContext.Provider value={workspace}>
     <View style={styles.container}>
       {/* Keep the header height stable when the undo action replaces its controls. */}
-      <View style={[styles.header, {minHeight: Math.round(22 * scale * 1.3) + 32}]}>
-        {selectionMode ? <WorkspaceSelectionBar count={selectedIds.length}
-          allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
-          onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
-          onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
-          onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} /> : <>
-          <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
-          <View style={styles.headerButtons}>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => nav.push('config')}><Text style={styles.headerButtonText}>Settings</Text></Pressable>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={closePlugin}><Text style={styles.headerButtonText}>Close</Text></Pressable>
+      <View style={[styles.header, {height: Math.max(76, Math.round(22 * scale * 1.3) + 32)}]}>
+        {selectionMode ? <View style={styles.selectionHeader}>
+          <WorkspaceSidebarToggle collapsed={sidebarCollapsed} onPress={toggleSidebar} />
+          <WorkspaceSelectionBar count={selectedIds.length}
+            allSelected={selectedIds.length > 0 && selectedIds.length === selectableTasks.length}
+            onCancel={clearSelection} onMove={() => openTaskAction('move', selectedIds)}
+            onDate={() => openTaskAction('date', selectedIds)} onMore={() => openTaskAction('more', selectedIds)}
+            onSelectAll={() => setSelectedIds(selectedIds.length === selectableTasks.length ? [] : selectableTasks.map((task: any) => rowIdentity(task)))} />
+        </View> : <>
+          <View style={styles.headerLeft}>
+            <WorkspaceSidebarToggle collapsed={sidebarCollapsed} onPress={toggleSidebar} />
+            <Text style={[styles.title, {fontSize: Math.round(22 * scale)}]}>SuperTask</Text>
           </View>
+          <HeaderActionButtons onSettings={() => nav.push('config')} onClose={closePlugin} />
         </>}
       </View>
 
@@ -1224,26 +1392,32 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Retry local save" onPress={() => mutations.retry(failure.sequence)}><Text style={styles.headerButtonText}>Retry</Text></Pressable>
       </View>)}
       <View style={styles.workspace}>
-        <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
-          noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
-          onCreateProject={() => openContainerAction('project')} />
+        <View style={sidebarCollapsed ? styles.sidebarHidden : styles.sidebar}>
+          <TaskSidebar activeView={resolvedTab} projects={projectList} visibleProjectIds={shownProjectIds}
+            noteAvailable={!!noteCtx} counts={counts} onViewChange={changeView}
+            onCreateProject={() => openContainerAction('project')} />
+        </View>
         <View style={styles.body} onTouchStart={event => {if (event.target === event.currentTarget) setExpandedId(null);}}>
           <View style={styles.projectHeading} onTouchStart={() => setExpandedId(null)}><Text style={styles.projectTitle}>{resolvedTab.startsWith('project:') ? projectMap[resolvedTab.slice(8)] || 'Unavailable project' : ({today: 'Today', tomorrow: 'Tomorrow', upcoming: 'Upcoming', inbox: 'Inbox', projects: 'All projects', note: 'This Note', device: 'On Device', done: 'Done'} as Record<string, string>)[activeTab]}</Text>
-            <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="List menu" onPress={() => setActionSheet({kind: 'list-menu'})}><Text style={styles.headerButtonText}>…</Text></Pressable></View>
-          {!selectionMode && activeTab !== 'done' && <InlineTaskComposer value={composer.value}
+            <WorkspaceViewControls viewOptionsOpen={viewOptionsOpen}
+              onViewOptions={() => setViewOptionsOpen(value => !value)}
+              onListMenu={() => setActionSheet({kind: 'list-menu'})} />
+          </View>
+          {activeTab !== 'done' && <View pointerEvents={selectionMode ? 'none' : 'auto'} style={[styles.composerSlot, selectionMode && styles.composerHidden]}><InlineTaskComposer value={composer.value}
             onChangeText={value => setComposer(previous => ({...previous, ...composerLocation, value, explicit: true,
               source: previous.value ? previous.source : activeTab === 'note' && noteCtx ? {filePath: noteCtx.filePath, pageNum: noteCtx.pageNum} : null}))} dueDate={composerLocation.dueDate}
             destinationLabel={destinationLabel} onSubmit={saveComposer}
             onChooseDate={() => {setActionDate(composerLocation.dueDate); setActionSheet({kind: 'composer-date'});}}
-            onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} />}
+            onChooseDestination={() => {setActionLocation({projectId: composerLocation.projectId, sectionId: composerLocation.sectionId}); setActionSheet({kind: 'composer-move'});}} /></View>}
           {renderContent()}
+          {viewOptionsOpen && <WorkspaceViewOptions value={viewPreferences} onClose={() => setViewOptionsOpen(false)} onChange={patch => updateViewPreferences(patch)} />}
 
         </View>
       </View>
 
       <View style={[styles.footer, {height: Math.max(30, Math.round(13 * scale) + 12)}]}>
-        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {syncMessage || 'Sync details'}</Text>
+        <Pressable style={styles.syncSummary} accessibilityRole="button" accessibilityLabel="Open sync summary" accessibilityValue={{text: `${taskCount} tasks, ${syncInfo?.pendingCount || 0} queued. ${preferenceSaveError || syncMessage || 'Sync details'}`}} onPress={() => {setSyncSheetOpen(true); refreshSyncSheet().catch(() => {});}}>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.footerText, {fontSize: Math.round(13 * scale)}]}>{taskCount} tasks · {syncInfo?.pendingCount || 0} queued · {preferenceSaveError || syncMessage || 'Sync details'}</Text>
         </Pressable>
         <View style={styles.footerRight}>
           <Pressable style={styles.footerRefresh} accessibilityRole="button" accessibilityLabel="Refresh" onPress={() => {
@@ -1258,10 +1432,10 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
         </View>
       </View>
       <Modal visible={!!actionSheet} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setActionSheet(null)}>
-        <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
+        <View style={styles.sheetBackdrop}><KeyboardAvoidanceViewport style={styles.sheetViewport} contentStyle={styles.sheetViewportContent}><View style={styles.sheet}>
           <View style={styles.projectHeading}><Text style={styles.projectTitle}>{actionSheet?.kind === 'container' ? `${actionSheet.id ? 'Edit' : 'New'} ${actionSheet.containerKind}` : 'Task actions'}</Text>
             <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => setActionSheet(null)} accessibilityLabel="Close task actions"><Text style={styles.headerButtonText}>Close</Text></Pressable></View>
-          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent}>
             {actionSheet?.kind === 'list-menu' && <View style={styles.actionRow}>
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} accessibilityLabel="Select tasks" onPress={() => {setSelectionHistory(activeTab === 'done'); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select tasks</Text></Pressable>
               {activeTab !== 'done' && <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {setSelectionHistory(true); setSelectionMode(true); setActionSheet(null);}}><Text style={styles.headerButtonText}>Select completed history</Text></Pressable>}
@@ -1272,7 +1446,7 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </View>}
             {actionSheet?.kind === 'container' ? <>
               {!!actionSheet.frozen ? <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => performContainerAction(actionSheet.frozen.action, actionSheet.frozen.mode)}><Text style={styles.headerButtonText}>Retry same container change</Text></Pressable> : <>
-              <View style={styles.inputRow}><TextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
+              <View style={styles.inputRow}><KeyboardAwareTextInput accessibilityLabel={`${actionSheet.containerKind} name`} style={{flex: 1, borderWidth: 1, color: '#000', padding: 12, minHeight: 48, fontSize: Math.round(16 * scale)}} value={actionName} onChangeText={setActionName} />
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionName.trim()} onPress={() => performContainerAction('save')}><Text style={styles.headerButtonText}>Save name</Text></Pressable></View>
               {!!actionSheet.id && <>
                 <Text style={styles.sheetText}>{containerProof ? containerProof.countIsMinimum ? `At least ${containerProof.count} saved tasks. Deleting all includes uncached and completed tasks in this ${actionSheet.containerKind}.` : `${containerProof.count} tasks in this ${actionSheet.containerKind}.` : 'Checking saved contents…'}</Text>
@@ -1300,12 +1474,14 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             }} />}
             {(actionSheet?.kind === 'move' || actionSheet?.kind === 'composer-move') && <>
               <ProjectPicker projects={projectList.filter(project => !String(project.id).startsWith('ui:'))} sections={collectionList.filter(section => !String(section.id).startsWith('ui:'))} selectedId={actionLocation.projectId} selectedSectionId={actionLocation.sectionId}
+                commitOnSelect
+                onCreateCollection={(projectId, name) => workspaceService.createOfflineCollection(projectId, name)}
+                onCommitSelection={(projectId, sectionId) => {
+                  if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, projectId, sectionId, explicit: true}));
+                  else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: projectId, section_id: sectionId}});
+                  setActionSheet(null);
+                }}
                 onChange={projectId => setActionLocation({projectId, sectionId: null})} onSectionChange={sectionId => setActionLocation(previous => ({...previous, sectionId}))} />
-              <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} disabled={!actionLocation.projectId} onPress={() => {
-                if (actionSheet.kind === 'composer-move') setComposer(previous => ({...previous, ...composerLocation, ...actionLocation, explicit: true}));
-                else mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {project_id: actionLocation.projectId, section_id: actionLocation.sectionId}});
-                setActionSheet(null);
-              }}><Text style={styles.headerButtonText}>Use this location</Text></Pressable>
             </>}
             {actionSheet?.kind === 'priority' && <PriorityPicker value={0} onChange={priority => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {priority}}); setActionSheet(null);}} />}
             {actionSheet?.kind === 'more' && <View style={styles.actionRow}>
@@ -1316,13 +1492,13 @@ export default function TaskHome({nav, focusTab, initialView, active = true}: Pr
             </View>}
             {actionSheet?.kind === 'labels' && <>
               <Text style={styles.sheetText}>Replace labels on selected tasks. Separate names with commas; leave empty to clear.</Text>
-              <View style={styles.inputRow}><TextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
+              <View style={styles.inputRow}><KeyboardAwareTextInput accessibilityLabel="Labels" value={actionLabels} onChangeText={setActionLabels} style={{flex: 1, minHeight: 48, borderWidth: 1, padding: 8, color: '#000'}} />
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'edit', patch: {labels: [...new Set(actionLabels.split(',').map(label => label.trim()).filter(Boolean))]}}); setActionSheet(null);}}><Text style={styles.headerButtonText}>Apply labels</Text></Pressable></View>
             </>}
             {actionSheet?.kind === 'delete' && <><Text style={styles.sheetText}>Delete {actionSheet.ids.length} selected task{actionSheet.ids.length === 1 ? '' : 's'}? This also syncs to Todoist.</Text>
               <Pressable style={({pressed}) => [styles.headerButton, pressed && styles.pressed]} onPress={() => {mutations.mutate(actionSheet.ids, {kind: 'delete'}); setActionSheet(null); clearSelection();}}><Text style={styles.headerButtonText}>Confirm delete</Text></Pressable></>}
-          </ScrollView>
-        </View></View>
+          </KeyboardAwareScrollView>
+        </View></KeyboardAvoidanceViewport></View>
       </Modal>
       <Modal visible={syncSheetOpen} transparent animationType="none" presentationStyle="overFullScreen" onRequestClose={() => setSyncSheetOpen(false)}>
         <View style={[styles.sheetBackdrop, {width: Dimensions.get('screen').width, height: Dimensions.get('screen').height}]}><View style={styles.sheet}>
@@ -1459,13 +1635,19 @@ function groupByDateBucket(tasks: any[], today: string): any[] {
 const styles = StyleSheet.create({
   pressed: {backgroundColor: '#eeeeee'},
   workspace: {flex: 1, flexDirection: 'row'},
+  sidebar: {width: 216, height: '100%', flexDirection: 'row', flexShrink: 0},
+  sidebarHidden: {display: 'none'},
   projectHeading: {minHeight: 56, padding: 12, gap: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderColor: '#000'},
+  composerSlot: {alignSelf: 'stretch'},
+  composerHidden: {opacity: 0},
   projectTitle: {flex: 1, fontSize: 20, fontWeight: '700', color: '#000'},
   emptyCollection: {padding: 16, fontSize: 15, color: '#000'},
   newCollection: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, alignSelf: 'stretch', backgroundColor: '#fff'},
   newCollectionText: {fontSize: 15, color: '#000', fontWeight: '700'},
   syncSummary: {minWidth: 0, flex: 1, alignSelf: 'stretch', justifyContent: 'center', paddingRight: 10},
   sheetBackdrop: {flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center'},
+  sheetViewport: {flex: 1, alignSelf: 'stretch'},
+  sheetViewportContent: {flex: 1, justifyContent: 'center', alignItems: 'center'},
   sheet: {width: '90%', maxWidth: 720, maxHeight: '85%', flexShrink: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#000'},
   sheetScroll: {flexGrow: 0, flexShrink: 1},
   footerRefresh: {alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: 8},
@@ -1481,8 +1663,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    // The host Home control occupies the top-right corner above this view.
-    paddingRight: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#000000',
   },
@@ -1491,10 +1671,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#000000',
   },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  headerLeft: {flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1},
+  selectionHeader: {flexDirection: 'row', alignItems: 'center', flex: 1},
   iconButton: {minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center'},
   emptyList: {padding: 24},
   historyLink: {minHeight: 48, alignSelf: 'flex-end', justifyContent: 'center', paddingHorizontal: 16},

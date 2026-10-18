@@ -6,13 +6,14 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 function load(file, overrides) {
   const filename = path.resolve(__dirname, file);
   const mod = new Module(filename, module);
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+  mod.require = name => name.endsWith('KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);
@@ -93,7 +94,7 @@ test('batch Add row uses the configured collection; changing its project clears 
   const saved = [];
   const Batch = load('../src/screens/BatchAdd.tsx', {
     '../utils/useFontScale': {useFontScale: () => 1},
-    'react-native': {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: {create: value => value}},
+    'react-native': {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', Modal: 'Modal', StyleSheet: {create: value => value}},
     'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
     '../utils/closePlugin': {closePlugin() {}},
     '../offline/service': {saveOfflineBatch: async rows => {saved.push(rows); return rows;}},
@@ -106,7 +107,9 @@ test('batch Add row uses the configured collection; changing its project clears 
   const button = (tree, label) => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
   let tree;
   await act(async () => {tree = create(React.createElement(Batch, {nav: {}, projects, defaultProjectId: 'p', defaultSectionId: 'ps'}));});
+  await act(async () => button(tree, 'Batch actions').props.onPress());
   await act(async () => button(tree, 'Add row').props.onPress());
+  await act(async () => button(tree, 'Close').props.onPress());
   await act(async () => button(tree, 'Details').props.onPress());
   assert.equal(tree.root.findByType('Picker').props.selectedSectionId, 'ps');
   await act(async () => tree.root.findByType('Picker').props.onChange('q'));
@@ -114,6 +117,39 @@ test('batch Add row uses the configured collection; changing its project clears 
   await act(async () => tree.root.findByType('Picker').props.onSectionChange('qs'));
   await act(async () => button(tree, 'Save 1 task').props.onPress());
   assert.equal(saved[0][0].projectId, 'q'); assert.equal(saved[0][0].sectionId, 'qs');
+  await act(async () => tree.unmount());
+});
+
+test('changing OCR grouping preserves selection when identical source lines occur in separate paragraphs', async () => {
+  const Batch = load('../src/screens/BatchAdd.tsx', {
+    '../utils/useFontScale': {useFontScale: () => 1},
+    'react-native': {View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Pressable', ScrollView: 'ScrollView', Modal: 'Modal', StyleSheet: {create: value => value}},
+    'sn-plugin-lib': {PluginManager: {registerPluginLifeListener: () => ({remove() {}})}},
+    '../utils/closePlugin': {closePlugin() {}},
+    '../utils/config': {loadConfig: async () => ({})},
+    '../offline/service': {saveOfflineBatch: async rows => rows},
+    '../batch/refine': {},
+    '../collections/useLocations': {useLocations: () => ({projects, sections})},
+    '../components/ProjectPicker': {__esModule: true, default: () => null},
+    '../components/PriorityPicker': {__esModule: true, default: () => null},
+    '../components/DatePicker': {__esModule: true, default: () => null},
+  }).default;
+  const button = (tree, label) => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => text.props.children === label));
+  const rowToggle = (tree, number) => tree.root.findAllByType('Pressable').find(node => node.findAllByType('Text').some(text => Array.isArray(text.props.children) && text.props.children.includes(number) && text.props.children.some(part => typeof part === 'string' && /^[☑□]/.test(part))));
+  const selectedRows = tree => [1, 2].map(number => {
+    const node = rowToggle(tree, number);
+    const children = node.findAllByType('Text').find(text => Array.isArray(text.props.children) && text.props.children.includes(number)).props.children;
+    return `${String(children.find(part => typeof part === 'string' && /^[☑□]/.test(part)).trim()[0])} ${number}`;
+  });
+  let tree;
+  await act(async () => {tree = create(React.createElement(Batch, {nav: {}, projects, initialContent: 'Call vet\n\nCall vet'}));});
+  await act(async () => button(tree, 'Batch actions').props.onPress());
+  await act(async () => rowToggle(tree, 2).props.onPress());
+  assert.deepEqual(selectedRows(tree), ['☑ 1', '□ 2']);
+  await act(async () => button(tree, 'Paragraphs').props.onPress());
+  assert.deepEqual(selectedRows(tree), ['☑ 1', '□ 2']);
+  await act(async () => button(tree, 'Lines').props.onPress());
+  assert.deepEqual(selectedRows(tree), ['☑ 1', '□ 2']);
   await act(async () => tree.unmount());
 });
 

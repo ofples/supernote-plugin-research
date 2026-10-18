@@ -15,12 +15,11 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
   Clipboard,
 } from 'react-native';
+import {KeyboardAwareScrollView, KeyboardAwareTextInput} from '../components/KeyboardAvoidance';
 import {closePlugin} from '../utils/closePlugin';
 import {loadConfig, saveConfig, getCachedConfig, getConfigSource, wasTemplateGenerated} from '../utils/config';
 import {setConfigLoader, testConnection, getProjects} from '../api/todoist';
@@ -30,6 +29,7 @@ import {importTokenFromFile, findTokenFile, TOKEN_DIR_LABEL} from '../utils/toke
 import {PERMISSION_GROUPS, getPermissionStates, ensurePermissionGroup} from '../utils/permissions';
 import ProjectPicker from '../components/ProjectPicker';
 import AISettingsFields from '../components/AISettingsFields';
+const {normalizeAIModels} = require('../utils/aiModels');
 import LauncherSettings from '../launcher/LauncherSettings';
 const {isProjectVisible, toggleProjectVisibility} = require('../utils/projectVisibility');
 import {useLocations} from '../collections/useLocations';
@@ -132,6 +132,8 @@ export default function Config({nav, initialPage}: Props) {
   const [defaultSectionId, setDefaultSectionId] = useState<string | null>(cfg0?.defaultSectionId || null);
   const [aiApiKey, setAiApiKey] = useState(cfg0?.aiApiKey || '');
   const [aiModel, setAiModel] = useState(cfg0?.aiModel || 'gpt-4.1-mini');
+  const [aiModels, setAiModels] = useState<string[]>(() => normalizeAIModels(cfg0?.aiModels, cfg0?.aiModel || 'gpt-4.1-mini'));
+  const [aiByDefault, setAiByDefault] = useState(cfg0?.aiByDefault === true);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiStatus, setAiStatus] = useState('');
   const [aiSetupHintDismissed, setAiSetupHintDismissed] = useState(cfg0?.aiSetupHintDismissed === true);
@@ -192,6 +194,8 @@ export default function Config({nav, initialPage}: Props) {
       setDefaultSectionId(config.defaultSectionId || null);
       setAiApiKey(config.aiApiKey || '');
       setAiModel(config.aiModel || 'gpt-4.1-mini');
+      setAiModels(normalizeAIModels(config.aiModels, config.aiModel || 'gpt-4.1-mini'));
+      setAiByDefault(config.aiByDefault === true);
       setAiSetupHintDismissed(config.aiSetupHintDismissed === true);
       if (config.postCreateAction) setPostCreateAction(config.postCreateAction);
       if (config.debugMode !== undefined) setDebugMode(config.debugMode);
@@ -261,14 +265,60 @@ export default function Config({nav, initialPage}: Props) {
   const handleSaveAISettings = async () => {
     setAiSaving(true);
     setAiStatus('');
-    const ok = await applyChange('aiSettings', {aiApiKey: aiApiKey.trim(), aiModel: aiModel.trim() || 'gpt-4.1-mini'});
+    const models = normalizeAIModels(aiModels, aiModel.trim() || 'gpt-4.1-mini');
+    const ok = await applyChange('aiSettings', {aiApiKey: aiApiKey.trim(), aiModel: aiModel.trim() || 'gpt-4.1-mini', aiModels: models});
     setAiStatus(ok ? 'Saved privately on this device.' : 'Could not save settings.');
     setAiSaving(false);
+  };
+
+  const handleSelectAIModel = async (value: string) => {
+    const previousModel = aiModel;
+    setAiModel(value);
+    setAiStatus('');
+    setAiSaving(true);
+    try {
+      const ok = await applyChange('aiSettings', {aiModel: value});
+      if (!ok) setAiModel(getCachedConfig()?.aiModel || previousModel);
+      setAiStatus(ok ? 'Model saved privately on this device.' : 'Could not save the model.');
+      return ok;
+    } finally {setAiSaving(false);}
+  };
+
+  const handleChangeAIModels = async (models: string[], selectedModel?: string) => {
+    setAiModels(models);
+    if (selectedModel !== undefined) setAiModel(selectedModel);
+    setAiSaving(true);
+    setAiStatus('');
+    try {
+      const changes: Record<string, any> = {aiModels: models};
+      if (selectedModel !== undefined) changes.aiModel = selectedModel;
+      const ok = await applyChange('aiSettings', changes);
+      if (!ok) {
+        const durable = getCachedConfig();
+        const savedModel = durable?.aiModel || 'gpt-4.1-mini';
+        setAiModels(normalizeAIModels(durable?.aiModels, savedModel));
+        if (selectedModel !== undefined) setAiModel(savedModel);
+      }
+      setAiStatus(ok ? 'Model list saved privately on this device.' : 'Could not save the model list.');
+      return ok;
+    } finally {setAiSaving(false);}
   };
 
   const handleDismissAISetupHint = async () => {
     const ok = await applyChange('aiSetupHint', {aiSetupHintDismissed: true});
     if (ok) { setAiSetupHintDismissed(true); }
+  };
+
+  const handleToggleAIDefault = async () => {
+    const previous = getCachedConfig()?.aiByDefault === true;
+    const next = !aiByDefault;
+    setAiByDefault(next);
+    setAiStatus('');
+    const ok = await applyChange('aiByDefault', {aiByDefault: next});
+    if (!ok) {
+      setAiByDefault(previous);
+      setAiStatus('Could not save AI by default. Try again.');
+    }
   };
 
   // ── Account handlers ─────────────────────────────────────
@@ -465,7 +515,7 @@ export default function Config({nav, initialPage}: Props) {
         </View>
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
 
         {/* ── Setup page: Account & Sync ── */}
         {page === 'setup' && (
@@ -476,7 +526,7 @@ export default function Config({nav, initialPage}: Props) {
             onInfo={() => setInfoSheet('token')}
             saved={savedRow === 'token'}>
             <View style={s.inputRow}>
-              <TextInput
+              <KeyboardAwareTextInput
                 style={[s.input, {flex: 1}]}
                 value={token}
                 onChangeText={setToken}
@@ -621,7 +671,7 @@ export default function Config({nav, initialPage}: Props) {
               applyChange('bezel', {bezelSwipeEnabled: v}, true);
             }}
             label="Bezel swipe"
-            hint="Two fingers together from the bottom edge; pause after writing"
+            hint="Two fingers near the bottom edge; move upward together after writing"
             saved={savedRow === 'bezel'}
           />
 
@@ -757,8 +807,10 @@ export default function Config({nav, initialPage}: Props) {
                 <Text style={s.btnSmallText}>Dismiss</Text>
               </Pressable>
             </View>}
-            <AISettingsFields apiKey={aiApiKey} model={aiModel} status={aiStatus} saving={aiSaving}
-              onApiKeyChange={setAiApiKey} onModelChange={setAiModel} onSave={handleSaveAISettings} />
+            <CheckRow checked={aiByDefault} onToggle={handleToggleAIDefault} label="AI by default" hint="For lasso captures, try AI automatically when an API key is set. Device OCR remains available." saved={savedRow === 'aiByDefault'} />
+            <AISettingsFields apiKey={aiApiKey} model={aiModel} models={aiModels} status={aiStatus} saving={aiSaving}
+              onApiKeyChange={setAiApiKey} onModelChange={handleSelectAIModel}
+              onModelsChange={handleChangeAIModels} onSave={handleSaveAISettings} />
           </Section>
         )}
 
@@ -812,7 +864,7 @@ export default function Config({nav, initialPage}: Props) {
           )}
         </Section>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* ── Info sheets (one template) ── */}
       <InfoSheet
@@ -886,7 +938,7 @@ export default function Config({nav, initialPage}: Props) {
         intro="Ways to get to your task list from a note, and what to expect once you are there."
         sections={[
           {label: 'Toolbar button', body: 'Tap SuperTask in the note toolbar plugin menu. Always available; nothing to enable.'},
-          {label: 'Bezel swipe (optional)', body: 'Start two fingers together at the very bottom edge and move both upward about a finger length. Off by default. All contacts must travel together before lifting. Uneven motion, extra contacts, pen activity and ambiguous touch streams are rejected. Pause at least 1.5 seconds after writing. Device traces are still needed to tune deliberate activation.'},
+          {label: 'Bezel swipe (optional)', body: 'Off by default. Start one finger near the bottom edge and add a second within half a second. Keep both near their starting spots until the second finger lands, then move both upward together at least a finger length before lifting. A third finger, wide spacing, uneven motion, pen activity, or a recent pen stroke cancels the gesture. Pause at least 1.5 seconds after writing. The timing and distance still need device checks.'},
           {label: 'Long press on a task link', body: 'Hold one finger on the dashed box around a captured task for about a second to open that task directly. Always on -- it needs a link under your finger, so nothing accidental can fire it.'},
           {label: 'Pen cooldown', body: 'For 1.5 seconds after any pen contact, finger gestures are ignored. This is what stops your palm from opening SuperTask mid-sentence. Pause briefly after writing before you gesture.'},
           {label: 'Default tab', body: 'The tab SuperTask opens on. "Last opened" returns you to whatever tab you were on when you closed it.'},

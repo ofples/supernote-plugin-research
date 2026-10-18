@@ -27,7 +27,8 @@ with zipfile.ZipFile(artifact) as plugin:
     bundle = plugin.read('SuperTask.bundle')
     assert len(bundle) > 1_000_000
     assert b'config.local' not in bundle
-    for marker in [b'Review tasks', b'Refine with AI', b'Saved ', b'getLassoElements', b'json_schema']:
+    for marker in [b'Review tasks', b'Batch actions', b'Task destination:', b'Change destination',
+                   b'Refine with AI', b'Saved ', b'getLassoElements', b'json_schema']:
         assert marker in bundle, f'Missing JS implementation: {marker}'
     if (root / 'src/overview/model.js').exists():
         for marker in [b'Expand all', b'Collapse all', b'Comfortable']:
@@ -40,7 +41,7 @@ with zipfile.ZipFile(artifact) as plugin:
                        b'projectVisibility', b'Sync summary', b'Cancel AI / Use device OCR', b'New collection']:
             assert marker in bundle, f'Missing feedback workflow implementation: {marker}'
     if (root / 'src/workspace/intents.js').exists():
-        for marker in [b'Enter task', b'Task actions', b'Confirm delete', b'Use this location',
+        for marker in [b'Enter task', b'Task actions', b'Confirm delete', b'commitOnSelect', b'onCommitSelection',
                        b'New project', b'Completed', b'project_create', b'collection_create', b'order_key']:
             assert marker in bundle, f'Missing native task interaction implementation: {marker}'
     if (root / 'src/launcher/service.js').exists():

@@ -20,8 +20,9 @@
  *      clusters can mimic it and why it is opt-in
  *
  * 4. BEZEL SWIPE (F-021, config-gated, default OFF):
- *    - Two or three stable finger IDs begin in the bottom 4% of the screen.
- *    - Each must move upward at least 150px concurrently, with bounded drift
+ *    - Two stable finger IDs begin in the bottom 8% of the screen.
+ *    - The second finger may join within 500ms; both move upward at least
+ *      150px concurrently, with bounded drift
  *      and coherent motion; malformed, cancelled, palm/pen and reentry streams
  *      fail closed. Screen bounds come from native display metrics.
  *    - Classification lives in launcher/strictEdgeSwipe.cjs; no relaxed path.
@@ -74,7 +75,7 @@
 
 import {PluginManager, PluginCommAPI, PluginFileAPI} from 'sn-plugin-lib';
 import {NativeModules, Dimensions, DeviceEventEmitter} from 'react-native';
-const {StrictEdgeSwipe} = require('../launcher/strictEdgeSwipe.cjs');
+const {StrictEdgeSwipe, EDGE_START_Y_FRACTION} = require('../launcher/strictEdgeSwipe.cjs');
 const _strictSwipe = new StrictEdgeSwipe();
 let _edgeStream = false;
 let _dimensionSub = null;
@@ -233,7 +234,7 @@ export function initGestureDetector() {
     onMsg: (msg) => {
       _eventCount++;
       const swipeAction = msg.action & 255;
-      if (swipeAction === 0) _edgeStream = _bezelEnabled && _strictSwipe.height > 0 && msg.pointers?.[0]?.y >= _strictSwipe.height * 0.96;
+      if (swipeAction === 0) _edgeStream = _bezelEnabled && _strictSwipe.height > 0 && msg.pointers?.[0]?.y >= _strictSwipe.height * EDGE_START_Y_FRACTION;
       const edgeStream = _edgeStream;
       const strictLaunch = _strictSwipe.feed(msg, _bezelEnabled, isViewOpen() || _actionInProgress);
       if (swipeAction === 1 || swipeAction === 3) _edgeStream = false;

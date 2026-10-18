@@ -65,6 +65,8 @@ After creating a task, you have two options for marking the original handwriting
 
 Either way, the content on your note page is linked to the task in Todoist, and vice versa.
 
+For batch capture syntax, grouping, review behavior and the optional AI privacy controls, see [Batch capture shorthand](docs/batch-capture-shorthand.md). Beta.26 restores bordered text controls for Settings, Close, View and the list menu, keeps the sidebar toggle icon, places the composer destination beside the calendar, and moves Batch actions into the review header. Beta.26 was installed on the Nomad and checked: the deep New AI model ID field/Add model button became visible after scrolling with the keyboard open, and the compact composer remained reachable. Beta.28/code33 is built, package-verified and installed; Plugin Manager shows it enabled ON. It uses symmetric 16 dp header padding in both normal and selection modes, keeps Settings immediately left of Close, and preserves header height. The active TaskHome screenshot confirms Settings immediately beside Close at the far right; the movable Home overlay overlaps part of Close and is disregarded. Selection-mode height and other pending controls still need device verification. See [TESTING.md](TESTING.md) and [VALIDATION.md](VALIDATION.md).
+
 ### Quick capture with finger gesture
 
 If enabled in settings (Preferences > Handwriting), you can hold your finger on the page for 400ms then drag to draw a selection area. This opens the quick-add overlay directly, skipping the lasso tool step.
@@ -97,7 +99,7 @@ Both cases are workarounds for now -- the Supernote SDK doesn't yet provide dire
 
 ## Configuration
 
-Open SuperTask's settings via the gear icon (Settings > Apps > Plugins > SuperTask), or from within the plugin's main menu.
+Open SuperTask's settings with the **Settings** button in the plugin header, or from Settings > Apps > Plugins > SuperTask.
 
 ### Connections tab
 - **API Token** -- your Todoist API token

@@ -6,6 +6,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const React = require('react');
 const {act, create} = require('react-test-renderer');
+const keyboardAvoidance = require('./keyboard-avoidance-mock.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 function load(file, overrides = {}) {
@@ -14,7 +15,7 @@ function load(file, overrides = {}) {
   mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const normal = mod.require.bind(mod);
-  mod.require = name => Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
+  mod.require = name => name.endsWith('KeyboardAvoidance') ? keyboardAvoidance : Object.hasOwn(overrides, name) ? overrides[name] : normal(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true},
   }).outputText, filename);
@@ -117,7 +118,7 @@ test('collection creation reports failure and keeps the form open for correction
   await act(async () => tree.root.findByProps({accessibilityLabel: 'New collection name'}).props.onChangeText('Garden'));
   await act(async () => tree.root.findByProps({accessibilityLabel: 'Save new collection'}).props.onPress());
   assert.equal(tree.root.findAllByProps({accessibilityRole: 'alert'}).some(n => n.children.includes('Collection could not be saved.')), true);
-  assert.equal(tree.root.findAllByProps({accessibilityLabel: 'New collection name'}).length, 1);
+  assert.equal(tree.root.findAllByType('Input').filter(input => input.props.accessibilityLabel === 'New collection name').length, 1);
   await act(async () => tree.unmount());
 });
 
