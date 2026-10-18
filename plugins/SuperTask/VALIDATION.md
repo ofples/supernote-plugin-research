@@ -1,10 +1,10 @@
-# Beta.28 device validation — pending reconnect
+# Beta.28 device validation — installed, focused checks pending
 
-Beta.28/code33 is built and verified locally at `build/outputs/SuperTask-native-beta28.snplg` (7,609,646 bytes; SHA-256 `5a343da7e54e25e8c06ec19fac8edcf4c3360a33fe850b79b935f8310b545ad5`). It has not been installed: the Nomad was disconnected at the last device check. Beta.26 remains the latest confirmed installed runtime; beta.27 was built locally but never installed.
+Beta.28/code33 is built and package-verified at `build/outputs/SuperTask-native-beta28.snplg` (7,609,646 bytes; SHA-256 `5a343da7e54e25e8c06ec19fac8edcf4c3360a33fe850b79b935f8310b545ad5`). Luna installed it on Nomad `SN078D10010594`; the transferred package hash matched and Plugin Manager shows **0.4.0-beta.28**, enabled **ON**. The active TaskHome screenshot [beta28-taskhome.png](C:/Users/pless/AppData/Local/Temp/beta28-taskhome.png) confirms Settings immediately left of Close at the far right. The movable Home overlay covers part of Close and is disregarded. Beta.27 was built locally but never installed.
 
 On beta.26, Plugin Manager showed **0.4.0-beta.26**, enabled **ON**. Luna confirmed bordered Settings/Close, View and ellipsis controls; sidebar collapse/reopen and list reflow; inline date and destination on one row; long destination truncation to `Y...` with the picker reachable; Add visible with the keyboard open; and the deep Setup **New AI model ID** field/Add model button visible after a small upward scroll. Dismissing the keyboard restored the page/footer. No model ID was entered or saved.
 
-The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png) shows the movable host Home circle touching Close's lower-right border corner while leaving its label clear. Treat this as floating-control overlap, not a header boundary. Beta.27's 56/60 dp special reserves were unnecessary and have been superseded. Beta.28 uses symmetric 16 dp padding in both normal and selection headers, keeps Settings immediately left of Close, and preserves fixed header height. Verify the header placement on beta.28 after the Nomad reconnects; no beta.28 device check has been performed.
+The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/Local/Temp/beta26-header-home-overlap.png) shows the movable host Home circle touching Close's lower-right border corner. Treat this as floating-control overlap, not a header boundary. Beta.27's 56/60 dp special reserves were unnecessary and have been superseded. The active beta.28 TaskHome screenshot [beta28-taskhome.png](C:/Users/pless/AppData/Local/Temp/beta28-taskhome.png) shows Settings immediately left of Close at the far right with standard symmetric header spacing; the floating Home overlay obscures part of Close and is disregarded. Beta.28 uses symmetric 16 dp padding in both normal and selection headers and preserves fixed header height. Selection-mode stability still needs verification.
 
 | Check | Result |
 |---|---|
@@ -12,11 +12,13 @@ The beta.26 screenshot [beta26-header-home-overlap.png](C:/Users/pless/AppData/L
 | Beta.26 Settings/Close, View/ellipsis, sidebar collapse/reflow | Verified |
 | Beta.26 inline composer date/destination row and long-label picker | Verified; label clipped to `Y...` |
 | Beta.26 Setup New AI model ID/Add model keyboard reachability | Verified after a small upward scroll; no text entered or saved |
-| Beta.28 standard symmetric header placement | Pending: beta.28 package not installed |
+| Beta.28 package/runtime version | Verified installed: 0.4.0-beta.28, ON; transferred package hash matched |
+| Beta.28 active normal header placement | Verified by screenshot; Settings is immediately left of Close at far right |
+| Beta.28 selection header height stability | Pending; selection check stopped |
 | BatchAdd header/actions/modal, task quick-action frame, New Project modal, board pagination | Pending |
 | Other keyboard fields, large-font/rotation and modal geometry | Pending |
 
-The unsaved beta.26 composer test text was discarded with its X; Add was never pressed, Inbox was restored, and no task/note or model setting changed. ADB forward list was empty and left unchanged. See [TESTING.md](TESTING.md) for local checks and package details.
+The unsaved beta.26 composer test text was discarded with its X; Add was never pressed, Inbox was restored, and no task/note or model setting changed. During the beta.28 pass, the handwritten note page was briefly displayed and its previous page position restored; no note content was edited. ADB forward list was empty and left unchanged. See [TESTING.md](TESTING.md) for local checks and package details.
 
 # Workflow validation — 3 October 2026
 
